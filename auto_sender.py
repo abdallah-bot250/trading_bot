@@ -665,16 +665,14 @@ def run():
                 if plan == "vip" and bot_active == 1 and api_key and api_secret:
                     try:
                         execute_trade(
-                            api_key=api_key,
-                            api_secret=api_secret,
-                            symbol=signal["pair"],
-                            side=signal["direction"],
-                            amount=trade_amount,
-                            trade_type=trade_type,
-                            tp=signal["tp"],
-                            sl=signal["sl"],
-                            chat_id=chat_id
-                        )
+                        api_key=api_key,
+                        api_secret=api_secret,
+                        signal=signal,
+                        trade_type=trade_type,
+                        risk_percent=adjust_risk(profit),
+                        chat_id=chat_id
+            )
+                    
                         log(f"Auto trade executed for {chat_id}")
                     except Exception as e:
                         log(f"Auto trade failed for {chat_id}: {e}")
