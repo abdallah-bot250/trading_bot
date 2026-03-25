@@ -1,6 +1,0 @@
-﻿__pycache__/
-*.pyc
-users.db
-users.json
-.env
-.venv/
