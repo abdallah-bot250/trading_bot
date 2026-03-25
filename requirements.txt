@@ -1,0 +1,11 @@
+flask
+pandas
+numpy
+scikit-learn
+joblib
+requests
+gunicorn
+ccxt
+werkzeug
+psycopg2-binary
+python-dotenv

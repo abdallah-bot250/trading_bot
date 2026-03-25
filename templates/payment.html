@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Payment</title>
+
+<style>
+body {
+    background: #141e30;
+    color: white;
+    text-align: center;
+    font-family: Arial;
+}
+
+.container {
+    background: #1f2a40;
+    padding: 30px;
+    width: 350px;
+    margin: auto;
+    border-radius: 10px;
+}
+
+button {
+    padding: 15px;
+    width: 100%;
+    margin-top: 20px;
+    background: #ff9800;
+    border: none;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.plan {
+    margin-top: 10px;
+    font-size: 18px;
+    color: #00e676;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>💳 الدفع</h2>
+
+<p class="plan">📦 خطتك: {{plan}}</p>
+
+<p>اضغط على الزر للدفع وتفعيل الاشتراك فوراً 👇</p>
+
+<a href="/create-payment?plan={{plan}}">
+    <button>🚀 ادفع الآن (Crypto)</button>
+</a>
+
+<p style="margin-top:15px; font-size:14px; color:#ccc;">
+⚡ بعد الدفع سيتم تفعيل حسابك تلقائياً خلال ثواني
+</p>
+
+</div>
+
+</body>
+</html>
