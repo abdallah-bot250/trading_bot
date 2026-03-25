@@ -623,35 +623,99 @@ def webhook():
     try:
         data = request.get_json(silent=True) or {}
 
-        message = data.get("message", {})
-        chat = message.get("chat", {})
+        message = data.get("message", {}) or {}
+        chat = message.get("chat", {}) or {}
         text = (message.get("text") or "").strip()
-        chat_id = str(chat.get("id") or "")
+        chat_id = str(chat.get("id") or "").strip()
 
         if not chat_id:
+            log("⚠️ Telegram webhook received without chat_id")
             return "ok", 200
 
-        # /start command
+        log(f"📩 Telegram message | chat_id={chat_id} | text={text}")
+
+        # ================= /start =================
         if text.startswith("/start"):
             conn = db()
             c = conn.cursor()
 
-            c.execute("SELECT email FROM users WHERE chat_id = %s", (chat_id,))
-            user = c.fetchone()
-            conn.close()
+            try:
+                c.execute("""
+                    SELECT email, free_signals_used, is_paid
+                    FROM users
+                    WHERE chat_id = %s
+                """, (chat_id,))
+                user = c.fetchone()
 
-            if user:
-                send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
-            else:
-                register_link = f"{BASE_URL}/register?chat_id={chat_id}"
-                send(chat_id, f"""🔥 أهلاً بيك في AI Crypto Trader
+                if user:
+                    email = user[0]
+                    free_signals_used = int(user[1] or 0)
+                    is_paid = bool(user[2])
+
+                    send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
+
+                    # لو المستخدم مدفوع
+                    if is_paid:
+                        send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
+                        return "ok", 200
+
+                    # لو لسه ماخدش الإشارتين المجانيين
+                    if free_signals_used < 2:
+                        free_signals = [
+                            {
+                                "pair": "BTC/USDT",
+                                "entry": "64000",
+                                "tp": "64850",
+                                "sl": "63550",
+                                "side": "LONG"
+                            },
+                            {
+                                "pair": "ETH/USDT",
+                                "entry": "3450",
+                                "tp": "3510",
+                                "sl": "3410",
+                                "side": "LONG"
+                            }
+                        ]
+
+                        for i, signal in enumerate(free_signals, 1):
+                            send(chat_id, f"""🔥 إشارة مجانية #{i}
+
+📊 الزوج: {signal['pair']}
+📍 الدخول: {signal['entry']}
+🎯 الهدف: {signal['tp']}
+🛑 وقف الخسارة: {signal['sl']}
+📈 الاتجاه: {signal['side']}
+""")
+
+                        c.execute("""
+                            UPDATE users
+                            SET free_signals_used = 2
+                            WHERE chat_id = %s
+                        """, (chat_id,))
+                        conn.commit()
+
+                        send(chat_id, "🎁 تم إرسال الإشارتين المجانيين بنجاح.")
+                    else:
+                        send(chat_id, "📌 أنت استلمت الإشارتين المجانيين بالفعل.")
+
+                else:
+                    register_link = f"{BASE_URL}/register?chat_id={chat_id}"
+                    send(chat_id, f"""🔥 أهلاً بيك في AI Crypto Trader
 
 اربط حسابك من هنا:
 {register_link}
 
-بعد التسجيل هتقدر تستقبل الإشارات تلقائي 🚀
+🚀 بعد التسجيل هتقدر تستقبل الإشارات تلقائي
 """)
 
+            except Exception as db_err:
+                log(f"❌ /start DB Error: {db_err}")
+                send(chat_id, "❌ حصل خطأ أثناء التحقق من حسابك. حاول تاني بعد شوية.")
+            finally:
+                conn.close()
+
+        # ================= HELP / DEFAULT =================
         else:
             send(chat_id, "👋 ابعت /start علشان تربط حسابك بالموقع.")
 
