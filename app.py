@@ -668,20 +668,25 @@ def payment_webhook():
 
     try:
         # 🔐 تحقق من التوقيع
-        signature = request.headers.get("x-nowpayments-sig")
-        ipn_secret = os.environ.get("NOWPAYMENTS_IPN_SECRET")
+        signature = request.headers.get("x-nowpayments-sig", "").strip()
+        ipn_secret = os.environ.get("NOWPAYMENTS_IPN_SECRET", "").strip()
 
-        if ipn_secret and signature:
-            sorted_data = json.dumps(data, separators=(',', ':'), sort_keys=True)
-            generated_sig = hmac.new(
-                ipn_secret.encode(),
-                sorted_data.encode(),
-                hashlib.sha512
-            ).hexdigest()
+        if not signature or not ipn_secret:
+            log("❌ Missing NOWPayments signature or IPN secret")
+            return "missing signature", 403
 
-            if signature != generated_sig:
-                log("❌ Invalid NOWPayments signature")
-                return "invalid signature", 403
+        # IMPORTANT: NOWPayments expects JSON body serialized in a stable way
+        sorted_data = json.dumps(data, sort_keys=True, separators=(",", ":"))
+
+        generated_sig = hmac.new(
+            key=ipn_secret.encode("utf-8"),
+            msg=sorted_data.encode("utf-8"),
+            digestmod=hashlib.sha512
+        ).hexdigest()
+
+        if not hmac.compare_digest(signature.lower(), generated_sig.lower()):
+            log(f"❌ Invalid NOWPayments signature | recv={signature} | gen={generated_sig}")
+            return "invalid signature", 403
 
         payment_status = data.get("payment_status")
         if payment_status in ["finished", "confirmed"]:
