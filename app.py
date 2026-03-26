@@ -646,7 +646,7 @@ def webhook():
                     SELECT id, email, trades, is_paid
                     FROM users
                     WHERE chat_id = %s
-                    ORDER BY id ASC
+                    ORDER BY id DESC
                     LIMIT 1
                 """, (chat_id,))
                 user = c.fetchone()
@@ -667,9 +667,10 @@ def webhook():
                     # ================= الإشارتين المجانيين =================
                     if trades < 2:
                         free_signals = get_top_free_signals(limit=2)
+                        log(f"🎯 Free signals returned: {free_signals}")
 
                         if not free_signals:
-                            send(chat_id, "❌ لا توجد فرص قوية مجانية حاليًا، حاول لاحقًا.")
+                            send(chat_id, "❌ لا توجد فرصه قويه من فضلك انتظر حتي يكون لديك صفقه قويه ")
                         else:
                             sent_count = 0
 
