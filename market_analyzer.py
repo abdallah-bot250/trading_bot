@@ -449,78 +449,96 @@ def generate_free_signal(symbol, interval="5m"):
 
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
-    signals = []
-
-    # ================= المحاولة الأساسية =================
-    for symbol in SYMBOLS:
-        for tf in TIMEFRAMES:
-            try:
-                s = generate_free_signal(symbol, tf)
-
-                if s:
-                    ranking_score = float(s.get("confidence", 0)) + abs(float(s.get("score", 0)))
-                    s["ranking_score"] = ranking_score
-                    signals.append(s)
-            except:
-                continue
-
-    # ترتيب الأساسي
-    signals = sorted(signals, key=lambda x: x["ranking_score"], reverse=True)
-
-    unique_signals = []
-    used_pairs = set()
-
-    for signal in signals:
-        if signal["pair"] not in used_pairs:
-            unique_signals.append(signal)
-            used_pairs.add(signal["pair"])
-
-        if len(unique_signals) >= limit:
-            break
-
-    # ✅ لو لقينا إشارات قوية كفاية
-    if len(unique_signals) >= limit:
-        return unique_signals[:limit]
-
-    # ================= FALLBACK ذكي من السوق كله =================
-    fallback_signals = []
+    candidates = []
 
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
             try:
                 df = get_market_data(symbol, tf)
-                if df is None or len(df) < 50:
+                if df is None or len(df) < 60:
                     continue
 
+                # مؤشرات بسيطة وثابتة
+                df["rsi"] = rsi(df)
+                macd_line, signal_line = macd(df)
+                df["atr"] = atr(df)
+
                 entry = float(df["close"].iloc[-1])
-                recent_change = ((df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6]) * 100
+                rsi_val = float(df["rsi"].iloc[-1]) if pd.notna(df["rsi"].iloc[-1]) else 50
+                macd_val = float(macd_line.iloc[-1]) if pd.notna(macd_line.iloc[-1]) else 0
+                signal_val = float(signal_line.iloc[-1]) if pd.notna(signal_line.iloc[-1]) else 0
+                atr_val = float(df["atr"].iloc[-1]) if pd.notna(df["atr"].iloc[-1]) else 0
 
                 trend = detect_trend(df)
                 volume = volume_strength(df)
 
-                # تحديد الاتجاه بشكل بسيط لكن منطقي
-                if recent_change >= 0:
-                    direction = "LONG"
-                    tp = entry * 1.015
-                    sl = entry * 0.99
-                    trade_type = "SPOT"
-                    score = 2
-                else:
-                    direction = "SHORT"
-                    tp = entry * 0.985
-                    sl = entry * 1.01
-                    trade_type = "FUTURES"
-                    score = -2
+                # اتجاه بسيط وواضح
+                score = 0
 
-                confidence = 55
+                if macd_val > signal_val:
+                    score += 2
+                else:
+                    score -= 2
+
+                if rsi_val < 35:
+                    score += 2
+                elif rsi_val > 65:
+                    score -= 2
+
+                if trend == "UP":
+                    score += 1
+                elif trend == "DOWN":
+                    score -= 1
 
                 if volume == "STRONG":
-                    confidence += 5
+                    score += 1
+
+                # نحدد LONG أو SHORT
+                if score >= 1:
+                    direction = "LONG"
+                    trade_type = "SPOT"
+                elif score <= -1:
+                    direction = "SHORT"
+                    trade_type = "FUTURES"
+                else:
+                    # fallback بسيط حسب آخر حركة
+                    recent_change = ((df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6]) * 100
+                    if recent_change >= 0:
+                        direction = "LONG"
+                        trade_type = "SPOT"
+                        score = 1
+                    else:
+                        direction = "SHORT"
+                        trade_type = "FUTURES"
+                        score = -1
+
+                # أهداف من ATR أو نسبة ثابتة
+                if atr_val > 0:
+                    if direction == "LONG":
+                        tp = entry + (atr_val * 1.8)
+                        sl = entry - (atr_val * 1.0)
+                    else:
+                        tp = entry - (atr_val * 1.8)
+                        sl = entry + (atr_val * 1.0)
+                else:
+                    if direction == "LONG":
+                        tp = entry * 1.015
+                        sl = entry * 0.99
+                    else:
+                        tp = entry * 0.985
+                        sl = entry * 1.01
+
+                confidence = 58 + (abs(score) * 5)
+
+                if volume == "STRONG":
+                    confidence += 4
 
                 if trend == "UP" and direction == "LONG":
-                    confidence += 5
+                    confidence += 4
                 elif trend == "DOWN" and direction == "SHORT":
-                    confidence += 5
+                    confidence += 4
+
+                confidence = min(85, max(55, int(confidence)))
 
                 signal = {
                     "pair": symbol,
@@ -530,30 +548,33 @@ def get_top_free_signals(limit=2):
                     "entry": round(entry, 4),
                     "tp": round(tp, 4),
                     "sl": round(sl, 4),
-                    "confidence": min(confidence, 72),
+                    "confidence": confidence,
                     "trend": trend,
                     "volume": volume,
                     "smc": "UNKNOWN",
                     "trend_power": "UNKNOWN",
                     "structure": "UNKNOWN",
                     "score": score,
-                    "ranking_score": min(confidence, 72) + abs(score)
+                    "ranking_score": confidence + abs(score)
                 }
 
-                fallback_signals.append(signal)
+                candidates.append(signal)
 
-            except:
+            except Exception:
                 continue
 
-    # ترتيب fallback
-    fallback_signals = sorted(fallback_signals, key=lambda x: x["ranking_score"], reverse=True)
+    # ترتيب الأفضل
+    candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
 
-    for signal in fallback_signals:
-        if signal["pair"] not in used_pairs:
-            unique_signals.append(signal)
-            used_pairs.add(signal["pair"])
+    best = []
+    used_pairs = set()
 
-        if len(unique_signals) >= limit:
+    for s in candidates:
+        if s["pair"] not in used_pairs:
+            best.append(s)
+            used_pairs.add(s["pair"])
+
+        if len(best) >= limit:
             break
 
-    return unique_signals[:limit]
+    return best
