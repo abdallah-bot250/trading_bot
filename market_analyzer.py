@@ -454,7 +454,6 @@ def generate_free_signal(symbol, interval="5m"):
 
 
 # ================= FREE SIGNALS ONLY =================
-# ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     signals = []
 
@@ -471,6 +470,7 @@ def get_top_free_signals(limit=2):
             except:
                 continue
 
+    # ترتيب الأساسي
     signals = sorted(signals, key=lambda x: x["ranking_score"], reverse=True)
 
     unique_signals = []
@@ -484,59 +484,74 @@ def get_top_free_signals(limit=2):
         if len(unique_signals) >= limit:
             break
 
-    # ✅ لو لقينا إشارات خلاص
+    # ✅ لو لقينا إشارات قوية كفاية
     if len(unique_signals) >= limit:
         return unique_signals[:limit]
 
-    # ================= FALLBACK (يجيب أي فرص مقبولة) =================
+    # ================= FALLBACK ذكي من السوق كله =================
     fallback_signals = []
 
     for symbol in SYMBOLS:
-        try:
-            df = get_market_data(symbol, "5m")
-            if df is None or len(df) < 50:
+        for tf in TIMEFRAMES:
+            try:
+                df = get_market_data(symbol, tf)
+                if df is None or len(df) < 50:
+                    continue
+
+                entry = float(df["close"].iloc[-1])
+                recent_change = ((df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6]) * 100
+
+                trend = detect_trend(df)
+                volume = volume_strength(df)
+
+                # تحديد الاتجاه بشكل بسيط لكن منطقي
+                if recent_change >= 0:
+                    direction = "LONG"
+                    tp = entry * 1.015
+                    sl = entry * 0.99
+                    trade_type = "SPOT"
+                    score = 2
+                else:
+                    direction = "SHORT"
+                    tp = entry * 0.985
+                    sl = entry * 1.01
+                    trade_type = "FUTURES"
+                    score = -2
+
+                confidence = 55
+
+                if volume == "STRONG":
+                    confidence += 5
+
+                if trend == "UP" and direction == "LONG":
+                    confidence += 5
+                elif trend == "DOWN" and direction == "SHORT":
+                    confidence += 5
+
+                signal = {
+                    "pair": symbol,
+                    "timeframe": tf,
+                    "type": trade_type,
+                    "direction": direction,
+                    "entry": round(entry, 4),
+                    "tp": round(tp, 4),
+                    "sl": round(sl, 4),
+                    "confidence": min(confidence, 72),
+                    "trend": trend,
+                    "volume": volume,
+                    "smc": "UNKNOWN",
+                    "trend_power": "UNKNOWN",
+                    "structure": "UNKNOWN",
+                    "score": score,
+                    "ranking_score": min(confidence, 72) + abs(score)
+                }
+
+                fallback_signals.append(signal)
+
+            except:
                 continue
 
-            entry = df["close"].iloc[-1]
-
-            # نحاول نحدد اتجاه بسيط
-            recent_change = ((df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6]) * 100
-
-            if recent_change >= 0:
-                direction = "LONG"
-                tp = entry * 1.015
-                sl = entry * 0.99
-                trade_type = "SPOT"
-            else:
-                direction = "SHORT"
-                tp = entry * 0.985
-                sl = entry * 1.01
-                trade_type = "FUTURES"
-
-            signal = {
-                "pair": symbol,
-                "timeframe": "5m",
-                "type": trade_type,
-                "direction": direction,
-                "entry": round(entry, 4),
-                "tp": round(tp, 4),
-                "sl": round(sl, 4),
-                "confidence": 55,
-                "trend": "UNKNOWN",
-                "volume": "UNKNOWN",
-                "smc": "UNKNOWN",
-                "trend_power": "UNKNOWN",
-                "structure": "UNKNOWN",
-                "score": 1,
-                "ranking_score": 55
-            }
-
-            fallback_signals.append(signal)
-
-        except:
-            continue
-
-    # ترتيب الـ fallback
+    # ترتيب fallback
     fallback_signals = sorted(fallback_signals, key=lambda x: x["ranking_score"], reverse=True)
 
     for signal in fallback_signals:
