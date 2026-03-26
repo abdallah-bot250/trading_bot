@@ -176,10 +176,10 @@ def valid_signal(signal):
         return (
             signal
             and signal.get("pair")
-            and signal.get("entry")
-            and signal.get("tp")
-            and signal.get("sl")
-            and signal.get("confidence", 0) >= MIN_CONFIDENCE
+            and signal.get("entry") is not None
+            and signal.get("tp") is not None
+            and signal.get("sl") is not None
+            and float(signal.get("confidence", 0)) >= 50
         )
     except:
         return False
