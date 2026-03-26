@@ -442,13 +442,7 @@ def generate_free_signal(symbol, interval="5m"):
         "score": score
     }
 
-    # ✅ AI FILTER أخف للمجاني
-    try:
-        ai_result = predict_trade(signal)
-        if ai_result is False and confidence < 65:
-            return None
-    except:
-        pass
+    
 
     return signal
 
