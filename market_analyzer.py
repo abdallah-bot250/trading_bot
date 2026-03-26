@@ -404,11 +404,12 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     # فلترة ضد الترند القوي
-    if direction == "LONG" and trend_power == "STRONG_BEAR":
-        return None
+    # فلترة أخف للمجاني
+    if direction == "LONG" and trend_power == "STRONG_BEAR" and confidence < 70:
+     return None
 
-    if direction == "SHORT" and trend_power == "STRONG_BULL":
-        return None
+    if direction == "SHORT" and trend_power == "STRONG_BULL" and confidence < 70:
+      return None
 
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val)

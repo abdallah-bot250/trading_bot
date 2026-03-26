@@ -603,7 +603,7 @@ def run():
             update_closed_trades()
             log("Closed trades updated")
 
-            signals = get_top_free_signals(limit=1)
+            signals = get_top_free_signals(limit=2)
             signal = signals[0] if signals else None
 
             log(f"Signal fetched: {signal}")
