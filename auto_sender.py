@@ -5,13 +5,11 @@ from market_analyzer import get_top_free_signals
 import ccxt
 import os
 import psycopg2
-import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BASE_URL = os.environ.get("BASE_URL", "https://web-production-c6a34.up.railway.app")
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 5
@@ -20,6 +18,7 @@ MAX_DAILY_LOSS_PERCENT = 5
 PAIR_COOLDOWN_MINUTES = 30
 GLOBAL_LOOP_SLEEP = 60
 MIN_CONFIDENCE = 55
+DUPLICATE_WINDOW_SECONDS = 300  # 5 دقائق بدل 15
 
 # ================= DUPLICATE SIGNAL CACHE =================
 LAST_SIGNAL_CACHE = {
@@ -45,10 +44,7 @@ def db():
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-    return psycopg2.connect(
-        database_url,
-        sslmode="require"
-    )
+    return psycopg2.connect(database_url, sslmode="require")
 
 # ================= TELEGRAM =================
 def send(chat_id, text):
@@ -176,18 +172,18 @@ def valid_signal(signal):
         return (
             signal
             and signal.get("pair")
+            and signal.get("direction") in ["LONG", "SHORT"]
             and signal.get("entry") is not None
             and signal.get("tp") is not None
             and signal.get("sl") is not None
-            and float(signal.get("confidence", 0)) >= 50
+            and float(signal.get("confidence", 0)) >= MIN_CONFIDENCE
         )
     except:
         return False
 
 # ================= FORMAT =================
 def format_signal(signal):
-    return f"""
-🔥 {signal['pair']}
+    return f"""🔥 {signal['pair']}
 
 📊 Type: {signal.get('type', 'FUTURES')}
 📈 Direction: {signal['direction']}
@@ -217,7 +213,7 @@ def is_paid_plan_active(plan, expiry, is_paid):
     if not expiry:
         return False
 
-    if expiry == "lifetime":
+    if str(expiry).lower() == "lifetime":
         return True
 
     try:
@@ -387,10 +383,7 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
                 type="TAKE_PROFIT_MARKET",
                 side=opposite_side,
                 amount=amount,
-                params={
-                    "stopPrice": tp_price,
-                    "closePosition": False
-                }
+                params={"stopPrice": tp_price, "closePosition": False}
             )
 
             exchange.create_order(
@@ -398,10 +391,7 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
                 type="STOP_MARKET",
                 side=opposite_side,
                 amount=amount,
-                params={
-                    "stopPrice": sl_price,
-                    "closePosition": False
-                }
+                params={"stopPrice": sl_price, "closePosition": False}
             )
 
         return True, "TP/SL placed"
@@ -579,13 +569,30 @@ def increment_trade(chat_id):
     except Exception as e:
         log(f"increment_trade error: {e}")
 
-LAST_SIGNAL_CACHE = {
-    "pair": None,
-    "direction": None,
-    "entry": None,
-    "time": None
-}
+# ================= DUPLICATE CHECK =================
+def is_duplicate_signal(signal):
+    try:
+        now = datetime.now()
 
+        if (
+            LAST_SIGNAL_CACHE["pair"] == signal.get("pair")
+            and LAST_SIGNAL_CACHE["direction"] == signal.get("direction")
+            and LAST_SIGNAL_CACHE["entry"] == signal.get("entry")
+            and LAST_SIGNAL_CACHE["time"] is not None
+            and (now - LAST_SIGNAL_CACHE["time"]).total_seconds() < DUPLICATE_WINDOW_SECONDS
+        ):
+            return True
+
+        LAST_SIGNAL_CACHE["pair"] = signal.get("pair")
+        LAST_SIGNAL_CACHE["direction"] = signal.get("direction")
+        LAST_SIGNAL_CACHE["entry"] = signal.get("entry")
+        LAST_SIGNAL_CACHE["time"] = now
+
+        return False
+    except:
+        return False
+
+# ================= MAIN =================
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
@@ -593,7 +600,6 @@ def run():
 
     users = get_users()
     log(f"Users found: {len(users)}")
-
     log("Entering main bot loop...")
 
     while True:
@@ -604,95 +610,96 @@ def run():
             log("Closed trades updated")
 
             signals = get_top_free_signals(limit=2)
-            signal = signals[0] if signals else None
+            log(f"Signals fetched: {signals}")
 
-            log(f"Signal fetched: {signal}")
-
-            if not valid_signal(signal):
-                log("Invalid / weak signal skipped")
+            if not signals:
+                log("No signals found")
                 time.sleep(30)
                 continue
 
-            # ================= DUPLICATE SIGNAL PROTECTION =================
-            now = datetime.now()
+            valid_signals = [s for s in signals if valid_signal(s)]
 
-            if (
-                LAST_SIGNAL_CACHE["pair"] == signal.get("pair")
-                and LAST_SIGNAL_CACHE["direction"] == signal.get("direction")
-                and LAST_SIGNAL_CACHE["entry"] == signal.get("entry")
-                and LAST_SIGNAL_CACHE["time"] is not None
-                and (now - LAST_SIGNAL_CACHE["time"]).total_seconds() < 900
-            ):
-                log("Duplicate signal skipped")
+            if not valid_signals:
+                log("No valid signals after validation")
                 time.sleep(30)
                 continue
-
-            LAST_SIGNAL_CACHE["pair"] = signal.get("pair")
-            LAST_SIGNAL_CACHE["direction"] = signal.get("direction")
-            LAST_SIGNAL_CACHE["entry"] = signal.get("entry")
-            LAST_SIGNAL_CACHE["time"] = now
-
-            log(f"New signal found: {signal}")
 
             users = get_users()
             log(f"Users loaded again: {len(users)}")
 
-            for user in users:
-                chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
-
-                if not chat_id:
+            for signal in valid_signals:
+                if is_duplicate_signal(signal):
+                    log(f"Duplicate signal skipped: {signal.get('pair')}")
                     continue
 
-                # ===== ACCESS CHECK =====
-# trial ياخد فقط أول إشارتين من auto sender لو لسه ماخدهمش
-                if plan == "trial":
-                    if not is_trial_allowed(trades):
+                log(f"Processing signal: {signal}")
+
+                for user in users:
+                    chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
+
+                    if not chat_id:
                         continue
 
-                # فقط المدفوعين
-                if not is_paid_plan_active(plan, expiry, is_paid):
-                    continue
-
-                # ===== PLAN FILTER =====
-                if plan == "basic" and signal["confidence"] < 80:
-                    continue
-
-                if plan == "pro" and signal["confidence"] < 75:
-                    continue
-
-                # ===== SEND SIGNAL =====
-                sent_ok = send(chat_id, format_signal(signal))
-
-                if sent_ok:
-                    log(f"Signal sent to {chat_id}")
-
+                    # ===== ACCESS CHECK =====
                     if plan == "trial":
-                        increment_trade(chat_id)
-                else:
-                    log(f"Signal failed to send to {chat_id}")
+                        if not is_trial_allowed(trades):
+                            continue
 
-                # ===== AUTO TRADE FOR VIP =====
-                if plan == "vip" and bot_active == 1 and api_key and api_secret:
-                    try:
-                        execute_trade(
-                            api_key=api_key,
-                            api_secret=api_secret,
-                            signal=signal,
-                            trade_type=trade_type,
-                            risk_percent=adjust_risk(profit),
-                            chat_id=chat_id
-                        )
+                    if not is_paid_plan_active(plan, expiry, is_paid):
+                        continue
 
-                        log(f"Auto trade executed for {chat_id}")
-                    except Exception as e:
-                        log(f"Auto trade failed for {chat_id}: {e}")
+                    # ===== PLAN FILTER =====
+                    if plan == "basic" and signal["confidence"] < 80:
+                        continue
 
-            time.sleep(60)
+                    if plan == "pro" and signal["confidence"] < 75:
+                        continue
+
+                    # ===== SEND SIGNAL =====
+                    sent_ok = send(chat_id, format_signal(signal))
+
+                    if sent_ok:
+                        log(f"Signal sent to {chat_id} -> {signal['pair']}")
+
+                        if plan == "trial":
+                            increment_trade(chat_id)
+                    else:
+                        log(f"Signal failed to send to {chat_id}")
+
+                    # ===== AUTO TRADE FOR VIP =====
+                    if plan == "vip" and bot_active == 1 and api_key and api_secret:
+                        try:
+                            can_trade, reason = can_trade_user(chat_id, trade_amount)
+                            if not can_trade:
+                                log(f"VIP trade blocked for {chat_id}: {reason}")
+                                continue
+
+                            if has_open_trade(chat_id, signal["pair"]):
+                                log(f"VIP skipped: already open trade on {signal['pair']} for {chat_id}")
+                                continue
+
+                            if pair_in_cooldown(chat_id, signal["pair"]):
+                                log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
+                                continue
+
+                            execute_trade(
+                                api_key=api_key,
+                                api_secret=api_secret,
+                                signal=signal,
+                                trade_type=trade_type,
+                                risk_percent=adjust_risk(profit),
+                                chat_id=chat_id
+                            )
+
+                            log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
+                        except Exception as e:
+                            log(f"Auto trade failed for {chat_id}: {e}")
+
+            time.sleep(GLOBAL_LOOP_SLEEP)
 
         except Exception as e:
             log(f"RUN LOOP ERROR: {e}")
             time.sleep(30)
-
 
 if __name__ == "__main__":
     run()
