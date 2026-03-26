@@ -1,7 +1,7 @@
 import time
 import requests
 from datetime import datetime, timedelta
-from market_analyzer import get_best_signal
+from market_analyzer import get_top_free_signals
 import ccxt
 import os
 import psycopg2
@@ -603,7 +603,9 @@ def run():
             update_closed_trades()
             log("Closed trades updated")
 
-            signal = get_best_signal()
+            signals = get_top_free_signals(limit=1)
+            signal = signals[0] if signals else None
+            
             log(f"Signal fetched: {signal}")
 
             if not valid_signal(signal):
