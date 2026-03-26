@@ -416,7 +416,7 @@ def generate_free_signal(symbol, interval="5m"):
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
 
     # ✅ أخف بوضوح للمجاني
-    if confidence < 35:
+    if confidence < 50:
         return None
 
     if direction == "LONG" and confidence < 82:

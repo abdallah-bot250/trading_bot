@@ -42,4 +42,4 @@ def predict_trade(signal):
         score += 1
 
     # ===== FINAL DECISION =====
-    return score >= 5
+    return score >= 3

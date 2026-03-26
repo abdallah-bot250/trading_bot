@@ -19,7 +19,7 @@ MAX_CONSECUTIVE_LOSSES = 3
 MAX_DAILY_LOSS_PERCENT = 5
 PAIR_COOLDOWN_MINUTES = 30
 GLOBAL_LOOP_SLEEP = 60
-MIN_CONFIDENCE = 70
+MIN_CONFIDENCE = 55
 
 # ================= DUPLICATE SIGNAL CACHE =================
 LAST_SIGNAL_CACHE = {
@@ -644,9 +644,10 @@ def run():
                     continue
 
                 # ===== ACCESS CHECK =====
-                # المجاني ياخد فقط من /start
+# trial ياخد فقط أول إشارتين من auto sender لو لسه ماخدهمش
                 if plan == "trial":
-                    continue
+                    if not is_trial_allowed(trades):
+                        continue
 
                 # فقط المدفوعين
                 if not is_paid_plan_active(plan, expiry, is_paid):
@@ -660,8 +661,15 @@ def run():
                     continue
 
                 # ===== SEND SIGNAL =====
-                send(chat_id, format_signal(signal))
-                log(f"Signal sent to {chat_id}")
+                sent_ok = send(chat_id, format_signal(signal))
+
+                if sent_ok:
+                    log(f"Signal sent to {chat_id}")
+
+                    if plan == "trial":
+                        increment_trade(chat_id)
+                else:
+                    log(f"Signal failed to send to {chat_id}")
 
                 # ===== AUTO TRADE FOR VIP =====
                 if plan == "vip" and bot_active == 1 and api_key and api_secret:
