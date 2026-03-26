@@ -316,7 +316,8 @@ def generate_signal(symbol, interval="5m"):
 
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
 
-    if confidence < MIN_CONFIDENCE:
+    # ✅ تخفيف فلتر الثقة فقط
+    if confidence < max(MIN_CONFIDENCE - 15, 55):
         return None
 
     # ================= TYPE =================
@@ -344,10 +345,11 @@ def generate_signal(symbol, interval="5m"):
 
     # 🔥 AI FILTER
     try:
-        if not predict_trade(signal):
+        ai_result = predict_trade(signal)
+        if ai_result is False and confidence < 75:
             return None
     except:
-        return None
+        pass
 
     return signal
 
