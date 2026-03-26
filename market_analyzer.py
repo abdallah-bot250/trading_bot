@@ -434,19 +434,30 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
 
 
 # ================= TP / SL =================
+# ================= TP / SL =================
 def dynamic_targets(entry, direction, atr_value):
+    try:
+        entry = float(entry)
+        atr_value = float(atr_value) if atr_value is not None else 0
+    except:
+        atr_value = 0
+
     if pd.isna(atr_value) or atr_value <= 0:
         if direction == "LONG":
-            return entry * 1.018, entry * 0.992
+            return entry * 1.02, entry * 0.99
         else:
-            return entry * 0.982, entry * 1.008
+            return entry * 0.98, entry * 1.01
+
+    # Minimum move protection
+    min_move = entry * 0.003   # 0.3%
+    real_move = max(atr_value * 1.8, min_move)
 
     if direction == "LONG":
-        tp = entry + (atr_value * 2.0)
-        sl = entry - (atr_value * 1.0)
+        tp = entry + real_move
+        sl = entry - (real_move * 0.65)
     else:
-        tp = entry - (atr_value * 2.0)
-        sl = entry + (atr_value * 1.0)
+        tp = entry - real_move
+        sl = entry + (real_move * 0.65)
 
     return tp, sl
 
@@ -474,6 +485,109 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
         confidence += 7
 
     return min(96, max(50, int(confidence)))
+
+# ================= PRICE FORMAT =================
+def format_price(price):
+    try:
+        price = float(price)
+
+        if price >= 1000:
+            return round(price, 2)
+        elif price >= 100:
+            return round(price, 3)
+        elif price >= 1:
+            return round(price, 4)
+        elif price >= 0.1:
+            return round(price, 5)
+        elif price >= 0.01:
+            return round(price, 6)
+        elif price >= 0.001:
+            return round(price, 7)
+        else:
+            return round(price, 8)
+    except:
+        return price
+    
+    # ================= SIGNAL VALIDATION =================
+def signal_levels_valid(entry, tp, sl, direction):
+    try:
+        entry = float(entry)
+        tp = float(tp)
+        sl = float(sl)
+
+        if entry <= 0 or tp <= 0 or sl <= 0:
+            return False
+
+        if direction == "LONG":
+            if not (tp > entry and sl < entry):
+                return False
+
+            reward = tp - entry
+            risk = entry - sl
+
+        elif direction == "SHORT":
+            if not (tp < entry and sl > entry):
+                return False
+
+            reward = entry - tp
+            risk = sl - entry
+        else:
+            return False
+
+        if reward <= 0 or risk <= 0:
+            return False
+
+        # أقل حركة مطلوبة = 0.15%
+        min_distance = entry * 0.0015
+        if reward < min_distance or risk < min_distance:
+            return False
+
+        # لازم الـ RR يبقى معقول
+        rr = reward / risk
+        if rr < 1.2:
+            return False
+
+        return True
+    except:
+        return False
+    
+    # ================= STRONG SIGNAL FILTER =================
+def strong_signal_filter(df, trend, trend_power, direction):
+    try:
+        if df is None or len(df) < 50:
+            return False
+
+        # ❌ لو السوق عرضي → ارفض
+        if is_choppy(df):
+            return False
+
+        # ❌ لازم الاتجاه يكون واضح
+        if trend_power == "MIXED":
+            return False
+
+        # ❌ منع عكس الترند القوي
+        if trend_power == "STRONG_BULL" and direction == "SHORT":
+            return False
+
+        if trend_power == "STRONG_BEAR" and direction == "LONG":
+            return False
+
+        # ✅ لازم في حركة (Momentum)
+        last = df["close"].iloc[-1]
+        prev = df["close"].iloc[-4]
+
+        if prev <= 0:
+            return False
+
+        move = abs(last - prev) / prev
+
+        if move < 0.0025:  # 0.25%
+            return False
+
+        return True
+
+    except:
+        return False
 
 
 # ================= GENERATE PAID SIGNAL =================
@@ -548,6 +662,9 @@ def generate_signal(symbol, interval="5m"):
     momentum_ok = strong_momentum(df)
     confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
+    if not signal_levels_valid(entry, tp, sl, direction):
+      return None
+
     if confidence < MIN_CONFIDENCE:
         return None
 
@@ -561,9 +678,9 @@ def generate_signal(symbol, interval="5m"):
         "timeframe": interval,
         "type": trade_type,
         "direction": direction,
-        "entry": round(entry, 4),
-        "tp": round(tp, 4),
-        "sl": round(sl, 4),
+        "entry": format_price(entry),
+        "tp": format_price(tp),
+        "sl": format_price(sl),
         "confidence": confidence,
         "trend": trend,
         "volume": volume,
@@ -649,6 +766,10 @@ def generate_free_signal(symbol, interval="5m"):
     momentum_ok = strong_momentum(df)
     confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
+
+    if not signal_levels_valid(entry, tp, sl, direction):
+       return None
+
     if confidence < 60:
         return None
 
@@ -662,9 +783,9 @@ def generate_free_signal(symbol, interval="5m"):
         "timeframe": interval,
         "type": trade_type,
         "direction": direction,
-        "entry": round(entry, 4),
-        "tp": round(tp, 4),
-        "sl": round(sl, 4),
+        "entry": format_price(entry),
+        "tp": format_price(tp),
+        "sl": format_price(sl),
         "confidence": confidence,
         "trend": trend,
         "volume": volume,
