@@ -641,19 +641,20 @@ def run():
                         continue
 
                     # ===== ACCESS CHECK =====
+                    # ===== ACCESS CHECK =====
                     if plan == "trial":
-                        if not is_trial_allowed(trades):
-                            continue
+                       if not is_trial_allowed(trades):
+                          continue
+                    else:
+                       if not is_paid_plan_active(plan, expiry, is_paid):
+                           continue
 
-                    if not is_paid_plan_active(plan, expiry, is_paid):
-                        continue
+                 # ===== PLAN FILTER =====
+                       if plan == "basic" and signal["confidence"] < 60:
+                          continue
 
-                    # ===== PLAN FILTER =====
-                    if plan == "basic" and signal["confidence"] < 80:
-                        continue
-
-                    if plan == "pro" and signal["confidence"] < 75:
-                        continue
+                       if plan == "pro" and signal["confidence"] < 55:
+                           continue
 
                     # ===== SEND SIGNAL =====
                     sent_ok = send(chat_id, format_signal(signal))

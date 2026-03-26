@@ -4,60 +4,60 @@ import numpy as np
 from ai_model import predict_trade
 
 # ================= SETTINGS =================
-SYMBOLS = [
+REQUEST_TIMEOUT = 10
+MIN_SCORE_TO_TRADE = 1
+MIN_CONFIDENCE = 50
+
+TIMEFRAMES = ["5m", "15m"]
+
+DEFAULT_SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
     "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
     "DOTUSDT", "LTCUSDT", "TRXUSDT", "NEARUSDT", "APTUSDT"
 ]
 
-TIMEFRAMES = ["5m", "15m"]
-
-REQUEST_TIMEOUT = 10
-MIN_SCORE_TO_TRADE = 3
-MIN_CONFIDENCE = 52
-
-
 # ================= DYNAMIC SYMBOLS =================
 def get_dynamic_symbols(limit=20):
     try:
-        url = "https://api.coingecko.com/api/v3/coins/markets"
-        params = {
-            "vs_currency": "usd",
-            "order": "volume_desc",
-            "per_page": limit,
-            "page": 1,
-            "sparkline": False
-        }
+        url = "https://api.binance.com/api/v3/ticker/24hr"
+        data = requests.get(url, timeout=REQUEST_TIMEOUT).json()
 
-        r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
-        data = r.json()
+        if not isinstance(data, list):
+            return DEFAULT_SYMBOLS
 
-        symbols = []
+        filtered = []
 
-        for coin in data:
-            sym = coin.get("symbol", "").upper()
-            if not sym:
+        for item in data:
+            symbol = item.get("symbol", "")
+
+            if not symbol.endswith("USDT"):
                 continue
 
-            pair = f"{sym}USDT"
+            # استبعاد العملات الغريبة / الرافعة / الستيبل الزايد
+            banned = ["UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT", "FDUSD", "TUSD"]
+            if any(x in symbol for x in banned):
+                continue
 
-            # فلترة بسيطة ضد الرموز الغريبة جدًا
-            if len(sym) <= 10:
-                symbols.append(pair)
+            try:
+                quote_volume = float(item.get("quoteVolume", 0))
+                price_change = abs(float(item.get("priceChangePercent", 0)))
+            except:
+                continue
 
-        # إزالة التكرار
-        symbols = list(dict.fromkeys(symbols))
+            # فلترة سيولة + حركة
+            if quote_volume > 5_000_000 and price_change > 1:
+                filtered.append((symbol, quote_volume))
 
-        # لو CoinGecko رجع قليل جدًا نرجع للثابت
-        if len(symbols) < 5:
-            return SYMBOLS
+        filtered = sorted(filtered, key=lambda x: x[1], reverse=True)
+        symbols = [x[0] for x in filtered[:limit]]
+
+        if not symbols:
+            return DEFAULT_SYMBOLS
 
         return symbols
 
-    except Exception as e:
-        print(f"Dynamic symbols error: {e}", flush=True)
-        return SYMBOLS
-
+    except:
+        return DEFAULT_SYMBOLS
 
 # ================= MARKET DATA =================
 def get_market_data(symbol, interval="5m", limit=250):
@@ -86,7 +86,6 @@ def get_market_data(symbol, interval="5m", limit=250):
     except:
         return None
 
-
 # ================= RSI =================
 def rsi(df, period=14):
     delta = df["close"].diff()
@@ -99,7 +98,6 @@ def rsi(df, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-
 # ================= MACD =================
 def macd(df):
     ema12 = df["close"].ewm(span=12, adjust=False).mean()
@@ -110,11 +108,9 @@ def macd(df):
 
     return macd_line, signal_line
 
-
 # ================= EMA =================
 def ema(df, period):
     return df["close"].ewm(span=period, adjust=False).mean()
-
 
 # ================= ATR =================
 def atr(df, period=14):
@@ -124,7 +120,6 @@ def atr(df, period=14):
 
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period).mean()
-
 
 # ================= TREND =================
 def detect_trend(df):
@@ -137,7 +132,6 @@ def detect_trend(df):
     if ema20.iloc[-1] > ema50.iloc[-1]:
         return "UP"
     return "DOWN"
-
 
 def trend_strength(df):
     if len(df) < 50:
@@ -153,7 +147,6 @@ def trend_strength(df):
         return "STRONG_BEAR"
     return "MIXED"
 
-
 # ================= VOLUME =================
 def volume_strength(df):
     avg_volume = df["volume"].rolling(20).mean()
@@ -162,7 +155,6 @@ def volume_strength(df):
         return "STRONG"
 
     return "WEAK"
-
 
 # ================= SMART MONEY =================
 def detect_smc(df):
@@ -178,7 +170,6 @@ def detect_smc(df):
         return "LIQUIDITY_BREAK_DOWN"
 
     return "RANGE"
-
 
 # ================= STRUCTURE =================
 def market_structure(df):
@@ -196,7 +187,6 @@ def market_structure(df):
 
     return "MID_RANGE"
 
-
 # ================= VOLATILITY FILTER =================
 def volatility_ok(df):
     try:
@@ -210,7 +200,6 @@ def volatility_ok(df):
         return 0.0005 <= ratio <= 0.08
     except:
         return True
-
 
 # ================= NEWS FILTER =================
 def news_filter():
@@ -234,12 +223,10 @@ def news_filter():
     except:
         return True
 
-
 # ================= AI SCORE =================
 def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, structure):
     score = 0
 
-    # RSI
     if rsi_val < 35:
         score += 2
     elif rsi_val > 65:
@@ -247,42 +234,35 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
     elif 42 <= rsi_val <= 60:
         score += 1
 
-    # MACD
     if macd_val > signal_val:
         score += 2
     else:
         score -= 2
 
-    # TREND
     if trend == "UP":
         score += 1
     elif trend == "DOWN":
         score -= 1
 
-    # VOLUME
     if volume == "STRONG":
         score += 1
 
-    # SMC
     if smc == "LIQUIDITY_BREAK_UP":
         score += 2
     elif smc == "LIQUIDITY_BREAK_DOWN":
         score -= 2
 
-    # TREND POWER
     if trend_power == "STRONG_BULL":
         score += 1
     elif trend_power == "STRONG_BEAR":
         score -= 1
 
-    # STRUCTURE
     if structure == "NEAR_BREAKOUT_HIGH":
         score += 1
     elif structure == "NEAR_BREAKOUT_LOW":
         score -= 1
 
     return score
-
 
 # ================= TP / SL =================
 def dynamic_targets(entry, direction, atr_value):
@@ -301,7 +281,6 @@ def dynamic_targets(entry, direction, atr_value):
 
     return tp, sl
 
-
 # ================= CONFIDENCE =================
 def calculate_confidence(score, volume, smc, trend_power, structure):
     confidence = 60 + abs(score) * 5
@@ -319,7 +298,6 @@ def calculate_confidence(score, volume, smc, trend_power, structure):
         confidence += 2
 
     return min(90, max(52, int(confidence)))
-
 
 # ================= GENERATE PAID SIGNAL =================
 def generate_signal(symbol, interval="5m"):
@@ -408,7 +386,6 @@ def generate_signal(symbol, interval="5m"):
 
     return signal
 
-
 # ================= GENERATE FREE SIGNAL =================
 def generate_free_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
@@ -444,7 +421,7 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # فتحنا السوق فعليًا
+    # يطلع اتجاه دايمًا
     if score >= 0:
         direction = "LONG"
     else:
@@ -453,9 +430,6 @@ def generate_free_signal(symbol, interval="5m"):
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val)
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
-
-    if confidence < 52:
-        return None
 
     if direction == "LONG" and confidence < 80:
         trade_type = "SPOT"
@@ -481,16 +455,14 @@ def generate_free_signal(symbol, interval="5m"):
 
     return signal
 
-
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     candidates = []
+    symbols = get_dynamic_symbols(limit=20)
 
-    dynamic_symbols = get_dynamic_symbols(limit=20)
+    print(f"Dynamic symbols loaded: {symbols}", flush=True)
 
-    print(f"Dynamic symbols loaded: {dynamic_symbols}", flush=True)
-
-    for symbol in dynamic_symbols:
+    for symbol in symbols:
         for tf in TIMEFRAMES:
             try:
                 signal = generate_free_signal(symbol, tf)
@@ -498,8 +470,20 @@ def get_top_free_signals(limit=2):
                     signal["ranking_score"] = signal["confidence"] + abs(signal["score"])
                     candidates.append(signal)
             except Exception as e:
-                print(f"Signal generation error for {symbol} {tf}: {e}", flush=True)
+                print(f"Error analyzing {symbol} {tf}: {e}", flush=True)
                 continue
+
+    # fallback أخير لو السوق كله هادي
+    if not candidates:
+        for symbol in DEFAULT_SYMBOLS[:8]:
+            for tf in TIMEFRAMES:
+                try:
+                    signal = generate_free_signal(symbol, tf)
+                    if signal:
+                        signal["ranking_score"] = signal["confidence"] + abs(signal["score"])
+                        candidates.append(signal)
+                except:
+                    continue
 
     candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
 
