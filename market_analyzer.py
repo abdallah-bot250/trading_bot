@@ -4,8 +4,13 @@ import numpy as np
 from ai_model import predict_trade
 
 # ================= SETTINGS =================
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
-TIMEFRAMES = ["5m", "15m", "1h"]
+SYMBOLS = [
+    "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT",
+    "ADAUSDT","DOGEUSDT","AVAXUSDT","LINKUSDT","MATICUSDT",
+    "DOTUSDT","LTCUSDT","TRXUSDT","NEARUSDT","APTUSDT"
+]
+
+TIMEFRAMES = ["5m", "15m"]
 
 REQUEST_TIMEOUT = 10
 MIN_SCORE_TO_TRADE = 5
@@ -354,12 +359,13 @@ def generate_signal(symbol, interval="5m"):
 
 
 # ================= GENERATE FREE SIGNAL =================
+# ================= FREE SIGNAL GENERATOR =================
 def generate_free_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 200:
         return None
 
-    # للمجاني: نخلي الفلتر أخف شوية
+    # ❌ هنا مش هنفلتر volatility للمجاني
     df["rsi"] = rsi(df)
     macd_line, signal_line = macd(df)
     df["atr"] = atr(df)
@@ -389,12 +395,10 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # أخف من المدفوع
-    relaxed_score = max(MIN_SCORE_TO_TRADE - 4, 1)
-
-    if score >= relaxed_score:
+    # ✅ أخف من المدفوع
+    if score >= 2:
         direction = "LONG"
-    elif score <= -relaxed_score:
+    elif score <= -2:
         direction = "SHORT"
     else:
         return None
@@ -411,8 +415,8 @@ def generate_free_signal(symbol, interval="5m"):
 
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
 
-    # أخف بوضوح للمجاني
-    if confidence < 45:
+    # ✅ أخف بوضوح للمجاني
+    if confidence < 35:
         return None
 
     if direction == "LONG" and confidence < 82:
@@ -437,10 +441,10 @@ def generate_free_signal(symbol, interval="5m"):
         "score": score
     }
 
-    # AI FILTER أخف للمجاني
+    # ✅ AI FILTER أخف للمجاني
     try:
         ai_result = predict_trade(signal)
-        if ai_result is False and confidence < 70:
+        if ai_result is False and confidence < 65:
             return None
     except:
         pass
@@ -449,9 +453,11 @@ def generate_free_signal(symbol, interval="5m"):
 
 
 # ================= FREE SIGNALS ONLY =================
+# ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     signals = []
 
+    # ================= المحاولة الأساسية =================
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
             try:
@@ -470,6 +476,69 @@ def get_top_free_signals(limit=2):
     used_pairs = set()
 
     for signal in signals:
+        if signal["pair"] not in used_pairs:
+            unique_signals.append(signal)
+            used_pairs.add(signal["pair"])
+
+        if len(unique_signals) >= limit:
+            break
+
+    # ✅ لو لقينا إشارات خلاص
+    if len(unique_signals) >= limit:
+        return unique_signals[:limit]
+
+    # ================= FALLBACK (يجيب أي فرص مقبولة) =================
+    fallback_signals = []
+
+    for symbol in SYMBOLS:
+        try:
+            df = get_market_data(symbol, "5m")
+            if df is None or len(df) < 50:
+                continue
+
+            entry = df["close"].iloc[-1]
+
+            # نحاول نحدد اتجاه بسيط
+            recent_change = ((df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6]) * 100
+
+            if recent_change >= 0:
+                direction = "LONG"
+                tp = entry * 1.015
+                sl = entry * 0.99
+                trade_type = "SPOT"
+            else:
+                direction = "SHORT"
+                tp = entry * 0.985
+                sl = entry * 1.01
+                trade_type = "FUTURES"
+
+            signal = {
+                "pair": symbol,
+                "timeframe": "5m",
+                "type": trade_type,
+                "direction": direction,
+                "entry": round(entry, 4),
+                "tp": round(tp, 4),
+                "sl": round(sl, 4),
+                "confidence": 55,
+                "trend": "UNKNOWN",
+                "volume": "UNKNOWN",
+                "smc": "UNKNOWN",
+                "trend_power": "UNKNOWN",
+                "structure": "UNKNOWN",
+                "score": 1,
+                "ranking_score": 55
+            }
+
+            fallback_signals.append(signal)
+
+        except:
+            continue
+
+    # ترتيب الـ fallback
+    fallback_signals = sorted(fallback_signals, key=lambda x: x["ranking_score"], reverse=True)
+
+    for signal in fallback_signals:
         if signal["pair"] not in used_pairs:
             unique_signals.append(signal)
             used_pairs.add(signal["pair"])
