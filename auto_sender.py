@@ -605,7 +605,7 @@ def run():
 
             signals = get_top_free_signals(limit=1)
             signal = signals[0] if signals else None
-            
+
             log(f"Signal fetched: {signal}")
 
             if not valid_signal(signal):
@@ -644,12 +644,13 @@ def run():
                     continue
 
                 # ===== ACCESS CHECK =====
+                # المجاني ياخد فقط من /start
                 if plan == "trial":
-                    if not is_trial_allowed(trades):
-                        continue
-                else:
-                    if not is_paid_plan_active(plan, expiry, is_paid):
-                        continue
+                    continue
+
+                # فقط المدفوعين
+                if not is_paid_plan_active(plan, expiry, is_paid):
+                    continue
 
                 # ===== PLAN FILTER =====
                 if plan == "basic" and signal["confidence"] < 80:
@@ -660,21 +661,20 @@ def run():
 
                 # ===== SEND SIGNAL =====
                 send(chat_id, format_signal(signal))
-                increment_trade(chat_id)
                 log(f"Signal sent to {chat_id}")
 
                 # ===== AUTO TRADE FOR VIP =====
                 if plan == "vip" and bot_active == 1 and api_key and api_secret:
                     try:
                         execute_trade(
-                        api_key=api_key,
-                        api_secret=api_secret,
-                        signal=signal,
-                        trade_type=trade_type,
-                        risk_percent=adjust_risk(profit),
-                        chat_id=chat_id
-            )
-                    
+                            api_key=api_key,
+                            api_secret=api_secret,
+                            signal=signal,
+                            trade_type=trade_type,
+                            risk_percent=adjust_risk(profit),
+                            chat_id=chat_id
+                        )
+
                         log(f"Auto trade executed for {chat_id}")
                     except Exception as e:
                         log(f"Auto trade failed for {chat_id}: {e}")
