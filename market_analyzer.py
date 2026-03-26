@@ -254,7 +254,7 @@ def calculate_confidence(score, volume, smc, trend_power, structure):
 
     return min(97, max(50, int(confidence)))
 
-# ================= GENERATE SIGNAL =================
+# ================= GENERATE PAID SIGNAL =================
 def generate_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 200:
@@ -316,11 +316,11 @@ def generate_signal(symbol, interval="5m"):
 
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
 
-    # ✅ المدفوع يفضل قوي
+    # المدفوع يفضل قوي
     if confidence < MIN_CONFIDENCE:
         return None
 
-    # ================= TYPE =================
+    # نوع الصفقة
     if direction == "LONG" and confidence < 82:
         trade_type = "SPOT"
     else:
@@ -343,7 +343,7 @@ def generate_signal(symbol, interval="5m"):
         "score": score
     }
 
-    # 🔥 AI FILTER (صارم للمدفوع)
+    # AI FILTER صارم للمدفوع
     try:
         if not predict_trade(signal):
             return None
@@ -353,15 +353,13 @@ def generate_signal(symbol, interval="5m"):
     return signal
 
 
-# ================= FREE SIGNALS ONLY =================
-def generate_signal(symbol, interval="5m"):
+# ================= GENERATE FREE SIGNAL =================
+def generate_free_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 200:
         return None
 
-    if not volatility_ok(df):
-        return None
-
+    # للمجاني: نخلي الفلتر أخف شوية
     df["rsi"] = rsi(df)
     macd_line, signal_line = macd(df)
     df["atr"] = atr(df)
@@ -371,8 +369,6 @@ def generate_signal(symbol, interval="5m"):
     volume = volume_strength(df)
     smc = detect_smc(df)
     structure = market_structure(df)
-
-    news_ok = news_filter()
 
     rsi_val = df["rsi"].iloc[-1]
     macd_val = macd_line.iloc[-1]
@@ -393,12 +389,12 @@ def generate_signal(symbol, interval="5m"):
         structure
     )
 
-    if not news_ok:
-        return None
+    # أخف من المدفوع
+    relaxed_score = max(MIN_SCORE_TO_TRADE - 4, 1)
 
-    if score >= MIN_SCORE_TO_TRADE:
+    if score >= relaxed_score:
         direction = "LONG"
-    elif score <= -MIN_SCORE_TO_TRADE:
+    elif score <= -relaxed_score:
         direction = "SHORT"
     else:
         return None
@@ -415,11 +411,10 @@ def generate_signal(symbol, interval="5m"):
 
     confidence = calculate_confidence(score, volume, smc, trend_power, structure)
 
-    # ✅ المدفوع يفضل قوي
-    if confidence < MIN_CONFIDENCE:
+    # أخف بوضوح للمجاني
+    if confidence < 45:
         return None
 
-    # ================= TYPE =================
     if direction == "LONG" and confidence < 82:
         trade_type = "SPOT"
     else:
@@ -442,12 +437,13 @@ def generate_signal(symbol, interval="5m"):
         "score": score
     }
 
-    # 🔥 AI FILTER (صارم للمدفوع)
+    # AI FILTER أخف للمجاني
     try:
-        if not predict_trade(signal):
+        ai_result = predict_trade(signal)
+        if ai_result is False and confidence < 70:
             return None
     except:
-        return None
+        pass
 
     return signal
 
@@ -456,11 +452,10 @@ def generate_signal(symbol, interval="5m"):
 def get_top_free_signals(limit=2):
     signals = []
 
-    # 1) الأول نحاول نجيب إشارات قوية عادي
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
             try:
-                s = generate_signal(symbol, tf)
+                s = generate_free_signal(symbol, tf)
 
                 if s:
                     ranking_score = float(s.get("confidence", 0)) + abs(float(s.get("score", 0)))
@@ -469,119 +464,12 @@ def get_top_free_signals(limit=2):
             except:
                 continue
 
-    # ترتيب من الأقوى للأضعف
     signals = sorted(signals, key=lambda x: x["ranking_score"], reverse=True)
 
     unique_signals = []
     used_pairs = set()
 
     for signal in signals:
-        if signal["pair"] not in used_pairs:
-            unique_signals.append(signal)
-            used_pairs.add(signal["pair"])
-
-        if len(unique_signals) >= limit:
-            break
-
-    # لو لقينا 2 خلاص نرجعهم
-    if len(unique_signals) >= limit:
-        return unique_signals[:limit]
-
-    # ================= FALLBACK للمجاني فقط =================
-    fallback_signals = []
-
-    for symbol in SYMBOLS:
-        for tf in TIMEFRAMES:
-            try:
-                df = get_market_data(symbol, tf)
-                if df is None or len(df) < 200:
-                    continue
-
-                # نخلي المجاني أخف شوية
-                # مش هنوقفه بسبب volatility
-                df["rsi"] = rsi(df)
-                macd_line, signal_line = macd(df)
-                df["atr"] = atr(df)
-
-                trend = detect_trend(df)
-                trend_power = trend_strength(df)
-                volume = volume_strength(df)
-                smc = detect_smc(df)
-                structure = market_structure(df)
-
-                rsi_val = df["rsi"].iloc[-1]
-                macd_val = macd_line.iloc[-1]
-                signal_val = signal_line.iloc[-1]
-                atr_val = df["atr"].iloc[-1]
-
-                if pd.isna(rsi_val) or pd.isna(macd_val) or pd.isna(signal_val):
-                    continue
-
-                score = ai_score(
-                    rsi_val,
-                    macd_val,
-                    signal_val,
-                    trend,
-                    volume,
-                    smc,
-                    trend_power,
-                    structure
-                )
-
-                # أخف من المدفوع
-                relaxed_score = max(MIN_SCORE_TO_TRADE - 3, 1)
-
-                if score >= relaxed_score:
-                    direction = "LONG"
-                elif score <= -relaxed_score:
-                    direction = "SHORT"
-                else:
-                    continue
-
-                # فلترة ضد الترند القوي
-                if direction == "LONG" and trend_power == "STRONG_BEAR":
-                    continue
-
-                if direction == "SHORT" and trend_power == "STRONG_BULL":
-                    continue
-
-                entry = df["close"].iloc[-1]
-                tp, sl = dynamic_targets(entry, direction, atr_val)
-
-                confidence = calculate_confidence(score, volume, smc, trend_power, structure)
-
-                # أخف من المدفوع
-                if confidence < 50:
-                    continue
-
-                trade_type = "SPOT" if direction == "LONG" and confidence < 82 else "FUTURES"
-
-                signal = {
-                    "pair": symbol,
-                    "timeframe": tf,
-                    "type": trade_type,
-                    "direction": direction,
-                    "entry": round(entry, 4),
-                    "tp": round(tp, 4),
-                    "sl": round(sl, 4),
-                    "confidence": confidence,
-                    "trend": trend,
-                    "volume": volume,
-                    "smc": smc,
-                    "trend_power": trend_power,
-                    "structure": structure,
-                    "score": score,
-                    "ranking_score": confidence + abs(score)
-                }
-
-                fallback_signals.append(signal)
-
-            except:
-                continue
-
-    fallback_signals = sorted(fallback_signals, key=lambda x: x["ranking_score"], reverse=True)
-
-    for signal in fallback_signals:
         if signal["pair"] not in used_pairs:
             unique_signals.append(signal)
             used_pairs.add(signal["pair"])
