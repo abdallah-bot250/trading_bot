@@ -17,8 +17,8 @@ MAX_CONSECUTIVE_LOSSES = 3
 MAX_DAILY_LOSS_PERCENT = 5
 PAIR_COOLDOWN_MINUTES = 30
 GLOBAL_LOOP_SLEEP = 60
-MIN_CONFIDENCE = 55
-DUPLICATE_WINDOW_SECONDS = 300  # 5 دقائق بدل 15
+MIN_CONFIDENCE = 50
+DUPLICATE_WINDOW_SECONDS = 180  # 3 دقائق
 
 # ================= DUPLICATE SIGNAL CACHE =================
 LAST_SIGNAL_CACHE = {
@@ -682,11 +682,13 @@ def run():
                                 log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
                                 continue
 
+                            signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
+
                             execute_trade(
                                 api_key=api_key,
                                 api_secret=api_secret,
                                 signal=signal,
-                                trade_type=trade_type,
+                                trade_type=signal_trade_type,
                                 risk_percent=adjust_risk(profit),
                                 chat_id=chat_id
                             )

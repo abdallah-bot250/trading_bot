@@ -17,6 +17,48 @@ MIN_SCORE_TO_TRADE = 3
 MIN_CONFIDENCE = 52
 
 
+# ================= DYNAMIC SYMBOLS =================
+def get_dynamic_symbols(limit=20):
+    try:
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {
+            "vs_currency": "usd",
+            "order": "volume_desc",
+            "per_page": limit,
+            "page": 1,
+            "sparkline": False
+        }
+
+        r = requests.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        data = r.json()
+
+        symbols = []
+
+        for coin in data:
+            sym = coin.get("symbol", "").upper()
+            if not sym:
+                continue
+
+            pair = f"{sym}USDT"
+
+            # فلترة بسيطة ضد الرموز الغريبة جدًا
+            if len(sym) <= 10:
+                symbols.append(pair)
+
+        # إزالة التكرار
+        symbols = list(dict.fromkeys(symbols))
+
+        # لو CoinGecko رجع قليل جدًا نرجع للثابت
+        if len(symbols) < 5:
+            return SYMBOLS
+
+        return symbols
+
+    except Exception as e:
+        print(f"Dynamic symbols error: {e}", flush=True)
+        return SYMBOLS
+
+
 # ================= MARKET DATA =================
 def get_market_data(symbol, interval="5m", limit=250):
     try:
@@ -402,7 +444,7 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # 👇 هنا فتحنا السوق فعليًا
+    # فتحنا السوق فعليًا
     if score >= 0:
         direction = "LONG"
     else:
@@ -444,14 +486,19 @@ def generate_free_signal(symbol, interval="5m"):
 def get_top_free_signals(limit=2):
     candidates = []
 
-    for symbol in SYMBOLS:
+    dynamic_symbols = get_dynamic_symbols(limit=20)
+
+    print(f"Dynamic symbols loaded: {dynamic_symbols}", flush=True)
+
+    for symbol in dynamic_symbols:
         for tf in TIMEFRAMES:
             try:
                 signal = generate_free_signal(symbol, tf)
                 if signal:
                     signal["ranking_score"] = signal["confidence"] + abs(signal["score"])
                     candidates.append(signal)
-            except:
+            except Exception as e:
+                print(f"Signal generation error for {symbol} {tf}: {e}", flush=True)
                 continue
 
     candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
@@ -467,4 +514,5 @@ def get_top_free_signals(limit=2):
         if len(best) >= limit:
             break
 
+    print(f"Top signals selected: {best}", flush=True)
     return best
