@@ -1,7 +1,7 @@
 import time
 import requests
 from datetime import datetime, timedelta
-from market_analyzer import get_top_free_signals
+from market_analyzer import get_top_free_signals, generate_signal
 import ccxt
 import os
 import psycopg2
@@ -20,6 +20,12 @@ GLOBAL_LOOP_SLEEP = 60
 MIN_CONFIDENCE = 50
 DUPLICATE_WINDOW_SECONDS = 180  # 3 دقائق
 
+# ===== NEW MONSTER FILTERS =====
+MAX_ENTRY_DEVIATION_PERCENT = 0.35   # لو السعر الحالي بعد عن الدخول أكتر من 0.35% نرفض
+SIGNAL_FRESHNESS_SECONDS = 180       # الإشارة لازم تكون لسه فريش
+MAX_OPEN_TRADES_PER_USER = 2         # VIP مايفتحش صفقات كتير مرة واحدة
+FREE_SIGNALS_LIMIT = 2               # المجاني صفقتين فقط
+
 # ================= DUPLICATE SIGNAL CACHE =================
 LAST_SIGNAL_CACHE = {
     "pair": None,
@@ -27,6 +33,9 @@ LAST_SIGNAL_CACHE = {
     "entry": None,
     "time": None
 }
+
+# ================= SIGNAL MEMORY =================
+RECENT_SIGNAL_MEMORY = {}
 
 # ================= LOG =================
 def log(msg):
@@ -98,6 +107,62 @@ def normalize_symbol_for_rest(symbol):
         return symbol.replace("/", "")
     except:
         return symbol
+
+# ================= MARKET PRICE HELPERS =================
+def get_live_price(symbol):
+    try:
+        rest_symbol = normalize_symbol_for_rest(symbol)
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
+        r = requests.get(url, timeout=10).json()
+
+        if "price" not in r:
+            return None
+
+        return float(r["price"])
+    except Exception as e:
+        log(f"get_live_price error for {symbol}: {e}")
+        return None
+
+def signal_is_fresh(signal):
+    try:
+        pair = signal.get("pair")
+        entry = float(signal.get("entry", 0))
+        if not pair or entry <= 0:
+            return False
+
+        current_price = get_live_price(pair)
+        if current_price is None or current_price <= 0:
+            return False
+
+        deviation = abs(current_price - entry) / entry * 100
+
+        if deviation > MAX_ENTRY_DEVIATION_PERCENT:
+            log(f"Signal rejected (stale price): {pair} | entry={entry} current={current_price} deviation={round(deviation,4)}%")
+            return False
+
+        return True
+    except Exception as e:
+        log(f"signal_is_fresh error: {e}")
+        return False
+
+def attach_signal_timestamp(signal):
+    try:
+        signal["generated_at"] = datetime.now().isoformat()
+        return signal
+    except:
+        return signal
+
+def signal_not_expired(signal):
+    try:
+        generated_at = signal.get("generated_at")
+        if not generated_at:
+            return True
+
+        ts = datetime.fromisoformat(generated_at)
+        age = (datetime.now() - ts).total_seconds()
+        return age <= SIGNAL_FRESHNESS_SECONDS
+    except:
+        return True
 
 # ================= INIT TABLES =================
 def init_trade_tables():
@@ -181,6 +246,21 @@ def valid_signal(signal):
     except:
         return False
 
+def logical_signal(signal):
+    try:
+        entry = float(signal["entry"])
+        tp = float(signal["tp"])
+        sl = float(signal["sl"])
+        direction = signal["direction"]
+
+        if direction == "LONG":
+            return tp > entry and sl < entry
+        elif direction == "SHORT":
+            return tp < entry and sl > entry
+        return False
+    except:
+        return False
+
 # ================= FORMAT =================
 def format_signal(signal):
     return f"""🔥 {signal['pair']}
@@ -222,6 +302,28 @@ def is_paid_plan_active(plan, expiry, is_paid):
     except:
         return False
 
+# ================= PLAN FILTER =================
+def signal_allowed_for_plan(plan, signal):
+    try:
+        confidence = float(signal.get("confidence", 0))
+        score = abs(float(signal.get("score", 0)))
+
+        if plan == "trial":
+            return confidence >= 60 and score >= 3
+
+        if plan == "basic":
+            return confidence >= 65 and score >= 4
+
+        if plan == "pro":
+            return confidence >= 72 and score >= 5
+
+        if plan == "vip":
+            return confidence >= 75 and score >= 5
+
+        return False
+    except:
+        return False
+
 # ================= EXCHANGE =================
 def get_exchange(api_key, api_secret, trade_type):
     default_type = "future" if trade_type == "futures" else "spot"
@@ -253,6 +355,20 @@ def get_daily_trade_count(chat_id):
     AND created_at >= %s
     AND created_at < %s
     """, (chat_id, start, end))
+
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+def get_open_trade_count(chat_id):
+    conn = db()
+    c = conn.cursor()
+
+    c.execute("""
+    SELECT COUNT(*) FROM trades_log
+    WHERE chat_id = %s
+    AND status = 'OPEN'
+    """, (chat_id,))
 
     count = c.fetchone()[0]
     conn.close()
@@ -342,6 +458,9 @@ def can_trade_user(chat_id, trade_amount):
     if get_daily_trade_count(chat_id) >= MAX_DAILY_TRADES:
         return False, "🚫 تم الوصول للحد الأقصى للصفقات اليوم"
 
+    if get_open_trade_count(chat_id) >= MAX_OPEN_TRADES_PER_USER:
+        return False, "🚫 لديك الحد الأقصى من الصفقات المفتوحة"
+
     if get_consecutive_losses(chat_id) >= MAX_CONSECUTIVE_LOSSES:
         return False, "🚫 تم إيقاف التداول بسبب خسائر متتالية"
 
@@ -424,6 +543,15 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         tp = float(signal["tp"])
         sl = float(signal["sl"])
 
+        # تأكيد حي قبل التنفيذ
+        live_price = get_live_price(raw_symbol)
+        if live_price is None:
+            return None, "فشل سحب السعر الحالي"
+
+        deviation = abs(live_price - entry) / entry * 100
+        if deviation > MAX_ENTRY_DEVIATION_PERCENT:
+            return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
+
         amount = calculate_amount(usdt_balance, risk_percent, entry)
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
@@ -487,15 +615,11 @@ def update_closed_trades():
             trade_id, chat_id, pair, direction, entry, tp, sl, amount = trade
 
             try:
-                rest_symbol = normalize_symbol_for_rest(pair)
-                url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
-                r = requests.get(url, timeout=10).json()
+                current_price = get_live_price(pair)
 
-                if "price" not in r:
-                    write_log(chat_id, "ERROR", f"Price fetch failed for {pair}: {r}")
+                if current_price is None:
+                    write_log(chat_id, "ERROR", f"Price fetch failed for {pair}")
                     continue
-
-                current_price = float(r["price"])
 
                 pnl = 0
                 should_close = False
@@ -592,14 +716,81 @@ def is_duplicate_signal(signal):
     except:
         return False
 
+def is_recent_memory_duplicate(signal):
+    try:
+        pair = signal.get("pair")
+        direction = signal.get("direction")
+        entry = float(signal.get("entry", 0))
+
+        if not pair or not direction or entry <= 0:
+            return False
+
+        key = f"{pair}_{direction}"
+        now = datetime.now()
+
+        if key in RECENT_SIGNAL_MEMORY:
+            old_entry, old_time = RECENT_SIGNAL_MEMORY[key]
+            age = (now - old_time).total_seconds()
+
+            if age < 1800:  # 30 دقيقة
+                diff = abs(entry - old_entry) / old_entry * 100
+                if diff < 0.15:
+                    return True
+
+        RECENT_SIGNAL_MEMORY[key] = (entry, now)
+        return False
+    except:
+        return False
+
+# ================= SIGNAL FETCHER =================
+def get_monster_signals():
+    """
+    المجاني: أفضل صفقتين من الفلتر المجاني
+    VIP: يقدر ياخد كمان من paid signal لو حبيت توسع بعدين
+    """
+    try:
+        signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
+        final_signals = []
+
+        for s in signals:
+            s = attach_signal_timestamp(s)
+
+            if not valid_signal(s):
+                continue
+
+            if not logical_signal(s):
+                log(f"Logical invalid signal skipped: {s}")
+                continue
+
+            if not signal_not_expired(s):
+                log(f"Expired signal skipped: {s.get('pair')}")
+                continue
+
+            if not signal_is_fresh(s):
+                log(f"Freshness check failed: {s.get('pair')}")
+                continue
+
+            if is_duplicate_signal(s):
+                log(f"Duplicate signal skipped: {s.get('pair')}")
+                continue
+
+            if is_recent_memory_duplicate(s):
+                log(f"Recent memory duplicate skipped: {s.get('pair')}")
+                continue
+
+            final_signals.append(s)
+
+        return final_signals
+    except Exception as e:
+        log(f"get_monster_signals error: {e}")
+        return []
+
 # ================= MAIN =================
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
-    log("🚀 BOT STARTED - SAFE MODE")
+    log("🚀 BOT STARTED - MONSTER MODE")
 
-    users = get_users()
-    log(f"Users found: {len(users)}")
     log("Entering main bot loop...")
 
     while True:
@@ -609,7 +800,7 @@ def run():
             update_closed_trades()
             log("Closed trades updated")
 
-            signals = get_top_free_signals(limit=2)
+            signals = get_monster_signals()
             log(f"Signals fetched: {signals}")
 
             if not signals:
@@ -617,21 +808,10 @@ def run():
                 time.sleep(30)
                 continue
 
-            valid_signals = [s for s in signals if valid_signal(s)]
-
-            if not valid_signals:
-                log("No valid signals after validation")
-                time.sleep(30)
-                continue
-
             users = get_users()
-            log(f"Users loaded again: {len(users)}")
+            log(f"Users loaded: {len(users)}")
 
-            for signal in valid_signals:
-                if is_duplicate_signal(signal):
-                    log(f"Duplicate signal skipped: {signal.get('pair')}")
-                    continue
-
+            for signal in signals:
                 log(f"Processing signal: {signal}")
 
                 for user in users:
@@ -641,26 +821,29 @@ def run():
                         continue
 
                     # ===== ACCESS CHECK =====
-                    # ===== ACCESS CHECK =====
                     if plan == "trial":
-                       if not is_trial_allowed(trades):
-                          continue
+                        if not is_trial_allowed(trades):
+                            continue
                     else:
-                       if not is_paid_plan_active(plan, expiry, is_paid):
-                           continue
+                        if not is_paid_plan_active(plan, expiry, is_paid):
+                            continue
 
-                 # ===== PLAN FILTER =====
-                       if plan == "basic" and signal["confidence"] < 60:
-                          continue
+                    # ===== PLAN FILTER =====
+                    if not signal_allowed_for_plan(plan, signal):
+                        log(f"Signal filtered for plan {plan} -> {signal['pair']}")
+                        continue
 
-                       if plan == "pro" and signal["confidence"] < 55:
-                           continue
+                    # ===== RE-CHECK FRESHNESS BEFORE SEND =====
+                    if not signal_is_fresh(signal):
+                        log(f"Signal skipped before send (price moved): {signal['pair']}")
+                        continue
 
                     # ===== SEND SIGNAL =====
                     sent_ok = send(chat_id, format_signal(signal))
 
                     if sent_ok:
                         log(f"Signal sent to {chat_id} -> {signal['pair']}")
+                        write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
 
                         if plan == "trial":
                             increment_trade(chat_id)
@@ -685,16 +868,30 @@ def run():
 
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
 
-                            execute_trade(
-                               api_key=api_key,
-                               api_secret=api_secret,
-                               signal=signal,
-                               trade_type=signal_trade_type,
-                               risk_percent=adjust_risk(profit),
-                               chat_id=chat_id
-)
+                            order, result_msg = execute_trade(
+                                api_key=api_key,
+                                api_secret=api_secret,
+                                signal=signal,
+                                trade_type=signal_trade_type,
+                                risk_percent=adjust_risk(profit),
+                                chat_id=chat_id
+                            )
 
-                            log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
+                            if order:
+                                log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
+                                send(chat_id, f"""🤖 تم تنفيذ صفقة VIP تلقائيًا
+
+🔥 {signal['pair']}
+📈 الاتجاه: {signal['direction']}
+💰 الدخول: {signal['entry']}
+🎯 الهدف: {signal['tp']}
+🛑 الوقف: {signal['sl']}
+📦 النوع: {signal.get('type', 'FUTURES')}
+""")
+                            else:
+                                log(f"Auto trade rejected for {chat_id}: {result_msg}")
+                                write_log(chat_id, "ERROR", f"Auto trade rejected: {result_msg}")
+
                         except Exception as e:
                             log(f"Auto trade failed for {chat_id}: {e}")
 

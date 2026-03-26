@@ -434,7 +434,6 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
 
 
 # ================= TP / SL =================
-# ================= TP / SL =================
 def dynamic_targets(entry, direction, atr_value):
     try:
         entry = float(entry)
@@ -486,6 +485,7 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
 
     return min(96, max(50, int(confidence)))
 
+
 # ================= PRICE FORMAT =================
 def format_price(price):
     try:
@@ -507,8 +507,9 @@ def format_price(price):
             return round(price, 8)
     except:
         return price
-    
-    # ================= SIGNAL VALIDATION =================
+
+
+# ================= SIGNAL VALIDATION =================
 def signal_levels_valid(entry, tp, sl, direction):
     try:
         entry = float(entry)
@@ -550,29 +551,26 @@ def signal_levels_valid(entry, tp, sl, direction):
         return True
     except:
         return False
-    
-    # ================= STRONG SIGNAL FILTER =================
+
+
+# ================= STRONG SIGNAL FILTER =================
 def strong_signal_filter(df, trend, trend_power, direction):
     try:
         if df is None or len(df) < 50:
             return False
 
-        # ❌ لو السوق عرضي → ارفض
         if is_choppy(df):
             return False
 
-        # ❌ لازم الاتجاه يكون واضح
         if trend_power == "MIXED":
             return False
 
-        # ❌ منع عكس الترند القوي
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
         if trend_power == "STRONG_BEAR" and direction == "LONG":
             return False
 
-        # ✅ لازم في حركة (Momentum)
         last = df["close"].iloc[-1]
         prev = df["close"].iloc[-4]
 
@@ -581,7 +579,7 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
         move = abs(last - prev) / prev
 
-        if move < 0.0025:  # 0.25%
+        if move < 0.0025:
             return False
 
         return True
@@ -646,11 +644,13 @@ def generate_signal(symbol, interval="5m"):
     else:
         return None
 
+    if not strong_signal_filter(df, trend, trend_power, direction):
+        return None
+
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
     if not htf_ok:
         return None
 
-    # فلترة ضد الاتجاه القوي المعاكس
     if direction == "LONG" and trend_power == "STRONG_BEAR":
         return None
 
@@ -663,7 +663,7 @@ def generate_signal(symbol, interval="5m"):
     confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
     if not signal_levels_valid(entry, tp, sl, direction):
-      return None
+        return None
 
     if confidence < MIN_CONFIDENCE:
         return None
@@ -706,11 +706,13 @@ def generate_free_signal(symbol, interval="5m"):
     if df is None or len(df) < 50:
         return None
 
-    # فلترة أخف للمجاني
     if is_choppy(df):
         return None
 
     if not strong_momentum(df):
+        return None
+
+    if not volatility_ok(df):
         return None
 
     df["rsi"] = rsi(df)
@@ -742,7 +744,7 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # المجاني مش مفتوح على البحري — لازم score محترم
+    # المجاني مش مفتوح على البحري
     if score >= 3:
         direction = "LONG"
     elif score <= -3:
@@ -750,7 +752,9 @@ def generate_free_signal(symbol, interval="5m"):
     else:
         return None
 
-    # تأكيد من فريم أعلى لكن أخف
+    if not strong_signal_filter(df, trend, trend_power, direction):
+        return None
+
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
     if not htf_ok and abs(score) < 6:
         return None
@@ -766,9 +770,8 @@ def generate_free_signal(symbol, interval="5m"):
     momentum_ok = strong_momentum(df)
     confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
-
     if not signal_levels_valid(entry, tp, sl, direction):
-       return None
+        return None
 
     if confidence < 60:
         return None
