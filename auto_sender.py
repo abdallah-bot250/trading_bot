@@ -686,13 +686,13 @@ def run():
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
 
                             execute_trade(
-                                api_key=api_key,
-                                api_secret=api_secret,
-                                signal=signal,
-                                trade_type=signal_trade_type,
-                                risk_percent=adjust_risk(profit),
-                                chat_id=chat_id
-                            )
+                               api_key=api_key,
+                               api_secret=api_secret,
+                               signal=signal,
+                               trade_type=signal_trade_type,
+                               risk_percent=adjust_risk(profit),
+                               chat_id=chat_id
+)
 
                             log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
                         except Exception as e:

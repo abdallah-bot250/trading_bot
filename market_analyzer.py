@@ -13,8 +13,8 @@ SYMBOLS = [
 TIMEFRAMES = ["5m", "15m"]
 
 REQUEST_TIMEOUT = 12
-MIN_SCORE_TO_TRADE = 3
-MIN_CONFIDENCE = 52
+MIN_SCORE_TO_TRADE = 5
+MIN_CONFIDENCE = 70
 
 # ================= MARKET DATA HELPERS =================
 def interval_to_seconds(interval):
@@ -34,6 +34,18 @@ def interval_to_seconds(interval):
     }
     return mapping.get(interval, 300)
 
+
+def get_higher_tf(interval):
+    mapping = {
+        "5m": "15m",
+        "15m": "1h",
+        "30m": "4h",
+        "1h": "4h",
+        "4h": "1d"
+    }
+    return mapping.get(interval, "15m")
+
+
 def parse_kucoin_klines_to_df(rows):
     try:
         if not rows or not isinstance(rows, list):
@@ -41,7 +53,7 @@ def parse_kucoin_klines_to_df(rows):
 
         parsed = []
         for row in rows:
-            # KuCoin kline format:
+            # KuCoin format:
             # [time, open, close, high, low, volume, turnover]
             if not isinstance(row, list) or len(row) < 6:
                 continue
@@ -63,6 +75,7 @@ def parse_kucoin_klines_to_df(rows):
     except Exception as e:
         print(f"parse_kucoin_klines_to_df error: {e}")
         return None
+
 
 def parse_binance_klines_to_df(data):
     try:
@@ -87,6 +100,7 @@ def parse_binance_klines_to_df(data):
         print(f"parse_binance_klines_to_df error: {e}")
         return None
 
+
 # ================= MARKET DATA =================
 def get_market_data(symbol, interval="5m", limit=250):
     """
@@ -100,7 +114,6 @@ def get_market_data(symbol, interval="5m", limit=250):
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
-    # ---------- Try Binance endpoints ----------
     for source_name, url in endpoints:
         try:
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
@@ -232,7 +245,7 @@ def trend_strength(df):
 def volume_strength(df):
     avg_volume = df["volume"].rolling(20).mean()
 
-    if pd.notna(avg_volume.iloc[-1]) and df["volume"].iloc[-1] > avg_volume.iloc[-1] * 1.05:
+    if pd.notna(avg_volume.iloc[-1]) and df["volume"].iloc[-1] > avg_volume.iloc[-1] * 1.08:
         return "STRONG"
 
     return "WEAK"
@@ -271,6 +284,68 @@ def market_structure(df):
     return "MID_RANGE"
 
 
+# ================= CHOPPY MARKET FILTER =================
+def is_choppy(df):
+    try:
+        if df is None or len(df) < 50:
+            return True
+
+        ema20 = ema(df, 20)
+        ema50 = ema(df, 50)
+
+        diff = abs(ema20.iloc[-1] - ema50.iloc[-1])
+        price = df["close"].iloc[-1]
+
+        if price <= 0:
+            return True
+
+        return (diff / price) < 0.0015
+    except:
+        return True
+
+
+# ================= MOMENTUM FILTER =================
+def strong_momentum(df):
+    try:
+        if df is None or len(df) < 5:
+            return False
+
+        last = df["close"].iloc[-1]
+        prev = df["close"].iloc[-3]
+
+        if prev <= 0:
+            return False
+
+        change = abs(last - prev) / prev
+
+        return change > 0.002
+    except:
+        return False
+
+
+# ================= HIGHER TF CONFIRMATION =================
+def higher_timeframe_confirmation(symbol, direction, current_interval):
+    try:
+        higher_tf = get_higher_tf(current_interval)
+        df_htf = get_market_data(symbol, higher_tf, limit=200)
+
+        if df_htf is None or len(df_htf) < 50:
+            return False
+
+        trend_htf = detect_trend(df_htf)
+        trend_power_htf = trend_strength(df_htf)
+
+        if direction == "LONG":
+            return trend_htf == "UP" or trend_power_htf == "STRONG_BULL"
+        elif direction == "SHORT":
+            return trend_htf == "DOWN" or trend_power_htf == "STRONG_BEAR"
+
+        return False
+    except Exception as e:
+        print(f"higher_timeframe_confirmation error for {symbol} {current_interval}: {e}")
+        return False
+
+
 # ================= VOLATILITY FILTER =================
 def volatility_ok(df):
     try:
@@ -281,7 +356,7 @@ def volatility_ok(df):
             return True
 
         ratio = atr_val / close_val
-        return 0.0005 <= ratio <= 0.08
+        return 0.0007 <= ratio <= 0.06
     except:
         return True
 
@@ -314,11 +389,11 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
     score = 0
 
     # RSI
-    if rsi_val < 35:
+    if rsi_val < 32:
         score += 2
-    elif rsi_val > 65:
+    elif rsi_val > 68:
         score -= 2
-    elif 42 <= rsi_val <= 60:
+    elif 45 <= rsi_val <= 58:
         score += 1
 
     # MACD
@@ -329,13 +404,13 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
 
     # TREND
     if trend == "UP":
-        score += 1
+        score += 2
     elif trend == "DOWN":
-        score -= 1
+        score -= 2
 
     # VOLUME
     if volume == "STRONG":
-        score += 1
+        score += 2
 
     # SMC
     if smc == "LIQUIDITY_BREAK_UP":
@@ -345,9 +420,9 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
 
     # TREND POWER
     if trend_power == "STRONG_BULL":
-        score += 1
+        score += 2
     elif trend_power == "STRONG_BEAR":
-        score -= 1
+        score -= 2
 
     # STRUCTURE
     if structure == "NEAR_BREAKOUT_HIGH":
@@ -362,43 +437,55 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
 def dynamic_targets(entry, direction, atr_value):
     if pd.isna(atr_value) or atr_value <= 0:
         if direction == "LONG":
-            return entry * 1.015, entry * 0.992
+            return entry * 1.018, entry * 0.992
         else:
-            return entry * 0.985, entry * 1.008
+            return entry * 0.982, entry * 1.008
 
     if direction == "LONG":
-        tp = entry + (atr_value * 1.6)
-        sl = entry - (atr_value * 0.9)
+        tp = entry + (atr_value * 2.0)
+        sl = entry - (atr_value * 1.0)
     else:
-        tp = entry - (atr_value * 1.6)
-        sl = entry + (atr_value * 0.9)
+        tp = entry - (atr_value * 2.0)
+        sl = entry + (atr_value * 1.0)
 
     return tp, sl
 
 
 # ================= CONFIDENCE =================
-def calculate_confidence(score, volume, smc, trend_power, structure):
-    confidence = 60 + abs(score) * 5
+def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok=False, htf_ok=False):
+    confidence = 58 + abs(score) * 4
 
     if volume == "STRONG":
-        confidence += 3
+        confidence += 4
 
     if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
-        confidence += 3
+        confidence += 4
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        confidence += 2
+        confidence += 5
 
     if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
-        confidence += 2
+        confidence += 3
 
-    return min(90, max(52, int(confidence)))
+    if momentum_ok:
+        confidence += 5
+
+    if htf_ok:
+        confidence += 7
+
+    return min(96, max(50, int(confidence)))
 
 
 # ================= GENERATE PAID SIGNAL =================
 def generate_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 100:
+        return None
+
+    if is_choppy(df):
+        return None
+
+    if not strong_momentum(df):
         return None
 
     if not volatility_ok(df):
@@ -445,14 +532,26 @@ def generate_signal(symbol, interval="5m"):
     else:
         return None
 
+    htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
+    if not htf_ok:
+        return None
+
+    # فلترة ضد الاتجاه القوي المعاكس
+    if direction == "LONG" and trend_power == "STRONG_BEAR":
+        return None
+
+    if direction == "SHORT" and trend_power == "STRONG_BULL":
+        return None
+
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val)
-    confidence = calculate_confidence(score, volume, smc, trend_power, structure)
+    momentum_ok = strong_momentum(df)
+    confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
     if confidence < MIN_CONFIDENCE:
         return None
 
-    if direction == "LONG" and confidence < 80:
+    if direction == "LONG" and confidence < 82:
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -490,6 +589,13 @@ def generate_free_signal(symbol, interval="5m"):
     if df is None or len(df) < 50:
         return None
 
+    # فلترة أخف للمجاني
+    if is_choppy(df):
+        return None
+
+    if not strong_momentum(df):
+        return None
+
     df["rsi"] = rsi(df)
     macd_line, signal_line = macd(df)
     df["atr"] = atr(df)
@@ -519,17 +625,31 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # 👇 نفس منطقك الحالي
-    if score >= 0:
+    # المجاني مش مفتوح على البحري — لازم score محترم
+    if score >= 3:
         direction = "LONG"
-    else:
+    elif score <= -3:
         direction = "SHORT"
+    else:
+        return None
+
+    # تأكيد من فريم أعلى لكن أخف
+    htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
+    if not htf_ok and abs(score) < 6:
+        return None
+
+    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 7:
+        return None
+
+    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 7:
+        return None
 
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val)
-    confidence = calculate_confidence(score, volume, smc, trend_power, structure)
+    momentum_ok = strong_momentum(df)
+    confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
 
-    if confidence < 52:
+    if confidence < 60:
         return None
 
     if direction == "LONG" and confidence < 80:
@@ -568,9 +688,18 @@ def get_top_free_signals(limit=2):
             try:
                 signal = generate_free_signal(symbol, tf)
                 if signal:
-                    signal["ranking_score"] = signal["confidence"] + abs(signal["score"])
+                    signal["ranking_score"] = (
+                        signal["confidence"]
+                        + abs(signal["score"] * 2)
+                        + (5 if signal["volume"] == "STRONG" else 0)
+                        + (5 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
+                    )
+
                     candidates.append(signal)
-                    print(f"✅ Candidate: {signal['pair']} {signal['timeframe']} {signal['direction']} conf={signal['confidence']} score={signal['score']}")
+                    print(
+                        f"✅ Candidate: {signal['pair']} {signal['timeframe']} "
+                        f"{signal['direction']} conf={signal['confidence']} score={signal['score']}"
+                    )
             except Exception as e:
                 print(f"Signal generation error for {symbol} {tf}: {e}")
                 continue
