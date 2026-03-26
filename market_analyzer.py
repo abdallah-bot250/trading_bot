@@ -352,9 +352,8 @@ def generate_signal(symbol, interval="5m"):
     return signal
 
 # ================= BEST SIGNAL =================
-def get_best_signal():
-    best = None
-    best_score = -999
+def get_top_free_signals(limit=2):
+    signals = []
 
     for symbol in SYMBOLS:
         for tf in TIMEFRAMES:
@@ -363,10 +362,24 @@ def get_best_signal():
 
                 if s:
                     ranking_score = s["confidence"] + abs(s.get("score", 0))
-                    if ranking_score > best_score:
-                        best = s
-                        best_score = ranking_score
+                    s["ranking_score"] = ranking_score
+                    signals.append(s)
             except:
                 continue
 
-    return best
+    # ترتيب الإشارات من الأقوى للأضعف
+    signals = sorted(signals, key=lambda x: x["ranking_score"], reverse=True)
+
+    # منع تكرار نفس العملة
+    unique_signals = []
+    used_pairs = set()
+
+    for signal in signals:
+        if signal["pair"] not in used_pairs:
+            unique_signals.append(signal)
+            used_pairs.add(signal["pair"])
+
+        if len(unique_signals) >= limit:
+            break
+
+    return unique_signals

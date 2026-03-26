@@ -8,6 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import hashlib
 import hmac
 import json
+from market_analyzer import get_top_free_signals
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret")
@@ -618,6 +619,7 @@ def create_payment():
 
 
 # ================= TELEGRAM WEBHOOK =================
+# ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -641,61 +643,66 @@ def webhook():
 
             try:
                 c.execute("""
-                    SELECT email, free_signals_used, is_paid
+                    SELECT id, email, trades, is_paid
                     FROM users
                     WHERE chat_id = %s
+                    ORDER BY id ASC
+                    LIMIT 1
                 """, (chat_id,))
                 user = c.fetchone()
 
                 if user:
-                    email = user[0]
-                    free_signals_used = int(user[1] or 0)
-                    is_paid = bool(user[2])
+                    user_id = user[0]
+                    email = user[1]
+                    trades = int(user[2] or 0)
+                    is_paid = bool(user[3])
 
                     send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
 
-                    # لو المستخدم مدفوع
+                    # ================= لو المستخدم مدفوع =================
                     if is_paid:
                         send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
                         return "ok", 200
 
-                    # لو لسه ماخدش الإشارتين المجانيين
-                    if free_signals_used < 2:
-                        free_signals = [
-                            {
-                                "pair": "BTC/USDT",
-                                "entry": "64000",
-                                "tp": "64850",
-                                "sl": "63550",
-                                "side": "LONG"
-                            },
-                            {
-                                "pair": "ETH/USDT",
-                                "entry": "3450",
-                                "tp": "3510",
-                                "sl": "3410",
-                                "side": "LONG"
-                            }
-                        ]
+                    # ================= الإشارتين المجانيين =================
+                    if trades < 2:
+                        free_signals = get_top_free_signals(limit=2)
 
-                        for i, signal in enumerate(free_signals, 1):
-                            send(chat_id, f"""🔥 إشارة مجانية #{i}
+                        if not free_signals:
+                            send(chat_id, "❌ لا توجد فرص قوية مجانية حاليًا، حاول لاحقًا.")
+                        else:
+                            sent_count = 0
+
+                            for i, signal in enumerate(free_signals, 1):
+                                success = send(chat_id, f"""🔥 إشارة مجانية #{i}
 
 📊 الزوج: {signal['pair']}
+📌 النوع: {signal.get('type', 'FUTURES')}
+📈 الاتجاه: {signal['direction']}
+
 📍 الدخول: {signal['entry']}
 🎯 الهدف: {signal['tp']}
 🛑 وقف الخسارة: {signal['sl']}
-📈 الاتجاه: {signal['side']}
+
+📊 الثقة: {signal['confidence']}%
+⏱ الفريم: {signal.get('timeframe', 'N/A')}
 """)
 
-                        c.execute("""
-                            UPDATE users
-                            SET free_signals_used = 2
-                            WHERE chat_id = %s
-                        """, (chat_id,))
-                        conn.commit()
+                                if success:
+                                    sent_count += 1
 
-                        send(chat_id, "🎁 تم إرسال الإشارتين المجانيين بنجاح.")
+                            # نزود العداد فقط لو الرسائل اتبعت فعلاً
+                            if sent_count > 0:
+                                c.execute("""
+                                    UPDATE users
+                                    SET trades = LEAST(COALESCE(trades, 0) + %s, 2)
+                                    WHERE id = %s
+                                """, (sent_count, user_id))
+                                conn.commit()
+
+                                send(chat_id, f"🎁 تم إرسال {sent_count} إشارة مجانية حقيقية من البوت.")
+                            else:
+                                send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
                     else:
                         send(chat_id, "📌 أنت استلمت الإشارتين المجانيين بالفعل.")
 
@@ -706,7 +713,7 @@ def webhook():
 اربط حسابك من هنا:
 {register_link}
 
-🚀 بعد التسجيل هتقدر تستقبل الإشارات تلقائي
+🚀 بعد التسجيل ابعت /start علشان تستقبل الإشارات المجانية.
 """)
 
             except Exception as db_err:
