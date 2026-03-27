@@ -8,7 +8,7 @@ from ai_model import predict_trade
 SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
     "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
-    "DOTUSDT", "LTCUSDT", "TRXUSDT", "NEARUSDT", "APTUSDT"
+    "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT"
 ]
 
 TIMEFRAMES = ["5m", "15m"]
@@ -474,52 +474,71 @@ def smart_target_multiplier(interval, trend_power, volume, structure, direction)
 
 
 # ================= TP / SL =================
-def dynamic_targets(entry, direction, atr_value, interval="5m", trend_power="MIXED", volume="WEAK", structure="MID_RANGE"):
+def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WEAK", timeframe="5m"):
     try:
         entry = float(entry)
         atr_value = float(atr_value) if atr_value is not None else 0
     except:
         atr_value = 0
 
-    # fallback لو ATR بايظ
-    if pd.isna(atr_value) or atr_value <= 0:
-        atr_value = entry * 0.004
+    if entry <= 0:
+        return None, None
 
-    # ===== أقل هدف حسب سعر العملة =====
-    if entry < 0.1:
-        min_tp_percent = 0.014   # 1.4%
-        min_sl_percent = 0.0075
-    elif entry < 1:
-        min_tp_percent = 0.012   # 1.2%
-        min_sl_percent = 0.0065
-    elif entry < 10:
+    # ================= BASE MIN TARGETS =================
+    # هدف ووقف حسب الفريم
+    if timeframe == "15m":
         min_tp_percent = 0.010   # 1.0%
-        min_sl_percent = 0.0055
-    elif entry < 100:
+        min_sl_percent = 0.0045  # 0.45%
+        atr_tp_multiplier = 2.8
+        atr_sl_multiplier = 1.2
+    elif timeframe == "1h":
+        min_tp_percent = 0.014   # 1.4%
+        min_sl_percent = 0.006
+        atr_tp_multiplier = 3.2
+        atr_sl_multiplier = 1.3
+    else:  # 5m
         min_tp_percent = 0.008   # 0.8%
-        min_sl_percent = 0.0048
+        min_sl_percent = 0.0038
+        atr_tp_multiplier = 2.4
+        atr_sl_multiplier = 1.0
+
+    # ================= BOOSTS =================
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+        min_tp_percent += 0.002
+        atr_tp_multiplier += 0.4
+
+    if volume == "STRONG":
+        min_tp_percent += 0.0015
+        atr_tp_multiplier += 0.3
+
+    # ================= LOW PRICE COIN PROTECTION =================
+    # العملات الرخيصة زي TRX / DOGE / ADA محتاجة هدف أكبر شوية
+    if entry < 1:
+        min_tp_percent += 0.003   # +0.3%
+        min_sl_percent += 0.001
+
+    if entry < 0.1:
+        min_tp_percent += 0.003   # +0.3% إضافية
+        min_sl_percent += 0.001
+
+    # ================= ATR MOVE =================
+    if pd.isna(atr_value) or atr_value <= 0:
+        atr_based_tp = entry * min_tp_percent
+        atr_based_sl = entry * min_sl_percent
     else:
-        min_tp_percent = 0.0065
-        min_sl_percent = 0.0042
+        atr_based_tp = atr_value * atr_tp_multiplier
+        atr_based_sl = atr_value * atr_sl_multiplier
 
-    # ===== Smart target boost =====
-    tp_boost, sl_boost = smart_target_multiplier(interval, trend_power, volume, structure, direction)
+    # ================= FINAL ENFORCED DISTANCE =================
+    tp_move = max(atr_based_tp, entry * min_tp_percent)
+    sl_move = max(atr_based_sl, entry * min_sl_percent)
 
-    # ===== ATR-based move =====
-    atr_tp_move = atr_value * 4.2 * tp_boost
-    atr_sl_move = atr_value * 2.2 * sl_boost
+    # ================= RR ENFORCEMENT =================
+    # نخلي الهدف دائمًا أكبر من الوقف بشكل محترم
+    min_rr_tp = sl_move * 1.9
+    tp_move = max(tp_move, min_rr_tp)
 
-    # ===== Minimum protected move =====
-    min_tp_move = entry * min_tp_percent
-    min_sl_move = entry * min_sl_percent
-
-    tp_move = max(atr_tp_move, min_tp_move)
-    sl_move = max(atr_sl_move, min_sl_move)
-
-    # ===== Reward / Risk =====
-    if tp_move < sl_move * 2:
-        tp_move = sl_move * 2
-
+    # ================= FINAL LEVELS =================
     if direction == "LONG":
         tp = entry + tp_move
         sl = entry - sl_move
@@ -741,15 +760,7 @@ def generate_signal(symbol, interval="5m"):
         return None
 
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(
-        entry,
-        direction,
-        atr_val,
-        interval,
-        trend_power,
-        volume,
-        structure
-    )
+    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
 
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
@@ -770,7 +781,7 @@ def generate_signal(symbol, interval="5m"):
     if confidence < MIN_CONFIDENCE:
         return None
 
-    if direction == "LONG" and confidence < 82:
+    if direction == "LONG" and confidence < 88:
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -847,9 +858,9 @@ def generate_free_signal(symbol, interval="5m"):
     )
 
     # المجاني لازم يبقى محترم
-    if score >= 4:
+    if score >= 6:
         direction = "LONG"
-    elif score <= -4:
+    elif score <= -6:
         direction = "SHORT"
     else:
         return None
@@ -868,15 +879,7 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(
-        entry,
-        direction,
-        atr_val,
-        interval,
-        trend_power,
-        volume,
-        structure
-    )
+    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
 
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
