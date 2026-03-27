@@ -182,14 +182,14 @@ def predict_trade(signal):
         ):
             return False
 
-        if confidence < 80 and tp_distance < 0.01:
+        if confidence < 70 and tp_distance < 0.01:
             return False
 
         if rr < 1.5 and tf == "5m":
             return False
 
         # ================= FINAL DECISION =================
-        return score >= 6   # 🔥 أقوى شوية من النسخة القديمة
+        return score >= 5   # 🔥 أقوى شوية من النسخة القديمة
 
     except Exception as e:
         print(f"AI ERROR: {e}")

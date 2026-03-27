@@ -112,14 +112,14 @@ def parse_binance_klines_to_df(data):
 def get_market_data(symbol, interval="5m", limit=250):
     """
     Priority:
-    1) Binance
-    2) Binance US
-    3) KuCoin
+    1) KuCoin
+    2) Binance
+    3) Binance US
+
     """
     endpoints = [
-        ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-        ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
-    ]
+      ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+]
 
     for source_name, url in endpoints:
         try:
@@ -880,9 +880,9 @@ def generate_free_signal(symbol, interval="5m"):
     )
 
     # المجاني لازم يبقى محترم
-    if score >= 6:
+    if score >= 5:
         direction = "LONG"
-    elif score <= -6:
+    elif score <= -5:
         direction = "SHORT"
     else:
         return None
@@ -891,7 +891,7 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-    if not htf_ok and abs(score) < 6:
+    if not htf_ok and abs(score) < 5:
         return None
 
     if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 7:
@@ -922,10 +922,10 @@ def generate_free_signal(symbol, interval="5m"):
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    if confidence < 62:
+    if confidence < 58:
         return None
 
-    if direction == "LONG" and confidence < 80:
+    if direction == "LONG" and confidence < 70:
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
