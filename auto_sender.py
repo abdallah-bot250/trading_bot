@@ -1,7 +1,8 @@
 import time
 import requests
 from datetime import datetime, timedelta
-from market_analyzer import get_top_free_signals, generate_signal
+from market_analyzer import get_top_free_signals, generate_signal, SYMBOLS
+from ai_model import predict_trade
 import ccxt
 import os
 import psycopg2
@@ -20,11 +21,15 @@ GLOBAL_LOOP_SLEEP = 60
 MIN_CONFIDENCE = 50
 DUPLICATE_WINDOW_SECONDS = 180  # 3 دقائق
 
-# ===== NEW MONSTER FILTERS =====
-MAX_ENTRY_DEVIATION_PERCENT = 0.35   # لو السعر الحالي بعد عن الدخول أكتر من 0.35% نرفض
-SIGNAL_FRESHNESS_SECONDS = 180       # الإشارة لازم تكون لسه فريش
-MAX_OPEN_TRADES_PER_USER = 2         # VIP مايفتحش صفقات كتير مرة واحدة
-FREE_SIGNALS_LIMIT = 2               # المجاني صفقتين فقط
+# ===== MONSTER FILTERS =====
+MAX_ENTRY_DEVIATION_PERCENT = 0.8    # كان 0.35 وخانق الدنيا
+SIGNAL_FRESHNESS_SECONDS = 180
+MAX_OPEN_TRADES_PER_USER = 2
+FREE_SIGNALS_LIMIT = 2
+
+# ===== QUALITY CONTROL =====
+MAX_SIGNALS_PER_CYCLE = 2
+ULTRA_MODE = True
 
 # ================= DUPLICATE SIGNAL CACHE =================
 LAST_SIGNAL_CACHE = {
@@ -112,13 +117,20 @@ def normalize_symbol_for_rest(symbol):
 def get_live_price(symbol):
     try:
         rest_symbol = normalize_symbol_for_rest(symbol)
+
+        # الأول Binance
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
         r = requests.get(url, timeout=10).json()
+        if "price" in r:
+            return float(r["price"])
 
-        if "price" not in r:
-            return None
+        # fallback Binance US
+        url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={rest_symbol}"
+        r2 = requests.get(url_us, timeout=10).json()
+        if "price" in r2:
+            return float(r2["price"])
 
-        return float(r["price"])
+        return None
     except Exception as e:
         log(f"get_live_price error for {symbol}: {e}")
         return None
@@ -163,6 +175,43 @@ def signal_not_expired(signal):
         return age <= SIGNAL_FRESHNESS_SECONDS
     except:
         return True
+
+# ================= ELITE FILTER =================
+def elite_trade_filter(signal):
+    try:
+        confidence = float(signal.get("confidence", 0))
+        score = abs(float(signal.get("score", 0)))
+        trend_power = signal.get("trend_power")
+        volume = signal.get("volume")
+        structure = signal.get("structure")
+        timeframe = signal.get("timeframe")
+
+        # أعلى مستوى
+        if confidence >= 90 and score >= 6:
+            return True
+
+        # احترافي جدًا
+        if (
+            confidence >= 85
+            and score >= 5
+            and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
+            and volume == "STRONG"
+            and structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW", "MID_RANGE"]
+            and timeframe in ["15m", "1h", "5m"]
+        ):
+            return True
+
+        # جيد جدًا
+        if (
+            confidence >= 82
+            and score >= 5
+            and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
+        ):
+            return True
+
+        return False
+    except:
+        return False
 
 # ================= INIT TABLES =================
 def init_trade_tables():
@@ -277,6 +326,8 @@ def format_signal(signal):
 📉 Trend: {signal.get('trend', 'N/A')}
 📦 Volume: {signal.get('volume', 'N/A')}
 🧠 SMC: {signal.get('smc', 'N/A')}
+🏗 Structure: {signal.get('structure', 'N/A')}
+🎯 Score: {signal.get('score', 'N/A')}
 """
 
 # ================= ACCESS HELPERS =================
@@ -312,10 +363,10 @@ def signal_allowed_for_plan(plan, signal):
             return confidence >= 60 and score >= 3
 
         if plan == "basic":
-            return confidence >= 65 and score >= 4
+            return confidence >= 60 and score >= 3
 
         if plan == "pro":
-            return confidence >= 72 and score >= 5
+            return confidence >= 68 and score >= 4
 
         if plan == "vip":
             return confidence >= 75 and score >= 5
@@ -745,11 +796,23 @@ def is_recent_memory_duplicate(signal):
 # ================= SIGNAL FETCHER =================
 def get_monster_signals():
     """
-    المجاني: أفضل صفقتين من الفلتر المجاني
-    VIP: يقدر ياخد كمان من paid signal لو حبيت توسع بعدين
+    المجاني: أفضل صفقتين
+    المدفوع: نضيف paid 15m القوية
     """
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
+
+        # 🔥 إضافة إشارات مدفوعة قوية
+        for symbol in SYMBOLS:
+            try:
+                paid_signal = generate_signal(symbol, "15m")
+                if paid_signal:
+                    paid_signal = attach_signal_timestamp(paid_signal)
+                    signals.append(paid_signal)
+                    log(f"💎 Paid signal added: {symbol}")
+            except Exception as e:
+                log(f"Paid signal error for {symbol}: {e}")
+
         final_signals = []
 
         for s in signals:
@@ -778,7 +841,26 @@ def get_monster_signals():
                 log(f"Recent memory duplicate skipped: {s.get('pair')}")
                 continue
 
+            # 🔥 Ultra mode
+            if ULTRA_MODE:
+                try:
+                    if float(s.get("confidence", 0)) < 75:
+                        log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                        continue
+                except:
+                    continue
+
             final_signals.append(s)
+
+        # ترتيب الأقوى أولًا
+        final_signals = sorted(
+            final_signals,
+            key=lambda x: (
+                float(x.get("confidence", 0)),
+                abs(float(x.get("score", 0)))
+            ),
+            reverse=True
+        )
 
         return final_signals
     except Exception as e:
@@ -790,7 +872,6 @@ def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
     log("🚀 BOT STARTED - MONSTER MODE")
-
     log("Entering main bot loop...")
 
     while True:
@@ -801,6 +882,12 @@ def run():
             log("Closed trades updated")
 
             signals = get_monster_signals()
+
+            # 🔥 LIMIT SIGNALS (QUALITY OVER QUANTITY)
+            if len(signals) > MAX_SIGNALS_PER_CYCLE:
+                signals = sorted(signals, key=lambda x: x["confidence"], reverse=True)
+                signals = signals[:MAX_SIGNALS_PER_CYCLE]
+
             log(f"Signals fetched: {signals}")
 
             if not signals:
@@ -833,10 +920,16 @@ def run():
                         log(f"Signal filtered for plan {plan} -> {signal['pair']}")
                         continue
 
+                    # ===== ELITE FILTER (VIP ONLY) =====
+                    if plan == "vip":
+                        if not elite_trade_filter(signal):
+                            log(f"Elite filter rejected for VIP: {signal['pair']}")
+                            continue
+
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
+                    # بدل ما نرفضها نهائيًا، نديها فرصة طالما لسه كويسة
                     if not signal_is_fresh(signal):
-                        log(f"Signal skipped before send (price moved): {signal['pair']}")
-                        continue
+                        log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
 
                     # ===== SEND SIGNAL =====
                     sent_ok = send(chat_id, format_signal(signal))
