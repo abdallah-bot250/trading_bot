@@ -112,14 +112,12 @@ def parse_binance_klines_to_df(data):
 def get_market_data(symbol, interval="5m", limit=250):
     """
     Priority:
-    1) KuCoin
-    2) Binance
-    3) Binance US
-
+    1) Binance US
+    2) KuCoin
     """
     endpoints = [
-      ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
-]
+        ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+    ]
 
     for source_name, url in endpoints:
         try:
@@ -758,6 +756,7 @@ def generate_signal(symbol, interval="5m"):
     if not news_ok:
         return None
 
+    # صارم لكن عملي
     if score >= MIN_SCORE_TO_TRADE:
         direction = "LONG"
     elif score <= -MIN_SCORE_TO_TRADE:
@@ -768,14 +767,14 @@ def generate_signal(symbol, interval="5m"):
     if not strong_signal_filter(df, trend, trend_power, direction):
         return None
 
+    # بدل ما HTF يقتل الصفقة نهائيًا، نستخدمه داخل الثقة كمان
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-    if not htf_ok:
+
+    # منع العكس القوي جدًا فقط
+    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
         return None
 
-    if direction == "LONG" and trend_power == "STRONG_BEAR":
-        return None
-
-    if direction == "SHORT" and trend_power == "STRONG_BULL":
+    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
         return None
 
     entry = df["close"].iloc[-1]
@@ -788,22 +787,28 @@ def generate_signal(symbol, interval="5m"):
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    if tp_distance < 0.009:
+    # خففناها سنة بسيطة جدًا فقط
+    if tp_distance < 0.0075:
         return None
 
-    if sl_distance < 0.0035:
+    if sl_distance < 0.003:
         return None
 
     momentum_ok = strong_momentum(df)
-    confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
+    confidence = calculate_confidence(
+        score, volume, smc, trend_power, structure, momentum_ok, htf_ok
+    )
 
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    if confidence < MIN_CONFIDENCE:
+    # لو HTF مش مؤكد، ما نرميش الصفقة فورًا — لكن نطلب ثقة أعلى
+    min_paid_conf = MIN_CONFIDENCE + (4 if not htf_ok else 0)
+
+    if confidence < min_paid_conf:
         return None
 
-    if direction == "LONG" and confidence < 88:
+    if direction == "LONG" and confidence < 86:
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -879,10 +884,12 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # المجاني لازم يبقى محترم
-    if score >= 5:
+    # ===============================
+    # FREE: صارم لكن يبعت فعلًا
+    # ===============================
+    if score >= 4:
         direction = "LONG"
-    elif score <= -5:
+    elif score <= -4:
         direction = "SHORT"
     else:
         return None
@@ -891,13 +898,16 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-    if not htf_ok and abs(score) < 5:
+
+    # HTF مش لازم يقتل الصفقة إلا لو الإشارة ضعيفة
+    if not htf_ok and abs(score) < 6:
         return None
 
-    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 7:
+    # رفض الاتجاه العكسي فقط لو الإشارة مش قوية كفاية
+    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 6:
         return None
 
-    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 7:
+    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 6:
         return None
 
     entry = df["close"].iloc[-1]
@@ -910,22 +920,28 @@ def generate_free_signal(symbol, interval="5m"):
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    if tp_distance < 0.009:
+    # أخف شوية للمجاني
+    if tp_distance < 0.0065:
         return None
 
-    if sl_distance < 0.0035:
+    if sl_distance < 0.0028:
         return None
 
     momentum_ok = strong_momentum(df)
-    confidence = calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok, htf_ok)
+    confidence = calculate_confidence(
+        score, volume, smc, trend_power, structure, momentum_ok, htf_ok
+    )
 
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    if confidence < 58:
+    # بدل 58 نخليها أعلى شوية من العشوائي وأقل من الخنق
+    min_free_conf = 56 + (3 if not htf_ok else 0)
+
+    if confidence < min_free_conf:
         return None
 
-    if direction == "LONG" and confidence < 70:
+    if direction == "LONG" and confidence < 68:
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -977,6 +993,7 @@ def get_top_free_signals(limit=2):
                         + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
                         + (5 if signal["timeframe"] == "15m" else 0)
                         + (4 if signal["structure"] in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"] else 0)
+                        + (3 if signal["smc"] in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"] else 0)
                     )
 
                     candidates.append(signal)
@@ -995,9 +1012,12 @@ def get_top_free_signals(limit=2):
     # ترتيب قوي
     candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
 
-    # تنويع عشان نفس الزوج ما يفضلش دايمًا ظاهر
-    top_pool = candidates[:8] if len(candidates) >= 8 else candidates[:]
-    random.shuffle(top_pool)
+    # ناخد الأفضل فقط من فوق
+    top_pool = candidates[:6] if len(candidates) >= 6 else candidates[:]
+
+    # تنويع بسيط بدون تدمير الجودة
+    if len(top_pool) > 2:
+        random.shuffle(top_pool[1:])
 
     remaining = [x for x in candidates if x not in top_pool]
     candidates = top_pool + remaining
