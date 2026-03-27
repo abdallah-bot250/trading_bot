@@ -1,127 +1,332 @@
-}
 <!DOCTYPE html>
 <html>
 <head>
 <title>Admin Dashboard</title>
+<meta charset="UTF-8">
 
 <style>
 body {
     margin:0;
-    font-family:Segoe UI;
+    font-family:Segoe UI, sans-serif;
     background:#020617;
     color:white;
 }
 
-/* HEADER /
 .header {
     padding:20px;
     text-align:center;
     border-bottom:1px solid #1e293b;
+    background: rgba(15,23,42,0.95);
+    position: sticky;
+    top: 0;
+    z-index: 999;
 }
 
-/ STATS /
+.header h1 {
+    margin: 0;
+    color: #22c55e;
+}
+
+.top-actions {
+    margin-top: 15px;
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
 .stats {
     display:flex;
     justify-content:center;
     gap:20px;
     margin:20px;
+    flex-wrap: wrap;
 }
 
 .card {
     background:#1e293b;
     padding:20px;
     border-radius:12px;
-    width:200px;
+    width:220px;
     text-align:center;
+    box-shadow: 0 0 15px rgba(0,0,0,0.25);
 }
 
-/ TABLE /
+.section {
+    width: 95%;
+    margin: 25px auto;
+    background:#0f172a;
+    border-radius:15px;
+    padding:20px;
+    overflow-x:auto;
+    box-shadow: 0 0 20px rgba(0,0,0,0.25);
+}
+
+.section h2 {
+    margin-top:0;
+    color:#38bdf8;
+}
+
 table {
-    width:90%;
-    margin:auto;
+    width:100%;
     border-collapse:collapse;
+    margin-top:15px;
+    min-width: 950px;
 }
 
 th, td {
-    padding:10px;
+    padding:12px 10px;
     border-bottom:1px solid #1e293b;
+    text-align:center;
+    font-size:14px;
 }
 
 th {
     background:#22c55e;
+    color:#020617;
+    position: sticky;
+    top: 0;
 }
 
-/ BUTTONS */
+tr:hover {
+    background: rgba(255,255,255,0.03);
+}
+
 .btn {
-    padding:6px 10px;
+    padding:8px 12px;
     border:none;
-    border-radius:6px;
+    border-radius:8px;
     cursor:pointer;
+    color:white;
+    font-weight:bold;
+    margin:2px;
 }
 
 .activate { background:#22c55e; }
-.delete { background:red; }
+.pro { background:#f59e0b; }
+.vip { background:#8b5cf6; }
+.life { background:#06b6d4; }
+.delete { background:#ef4444; }
+.paid { background:#10b981; }
+.back { background:#334155; }
 
+.badge {
+    display:inline-block;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:bold;
+}
+
+.badge-paid {
+    background:#14532d;
+    color:#86efac;
+}
+
+.badge-free {
+    background:#3f3f46;
+    color:#d4d4d8;
+}
+
+.badge-vip {
+    background:#4c1d95;
+    color:#ddd6fe;
+}
+
+.badge-basic {
+    background:#064e3b;
+    color:#6ee7b7;
+}
+
+.badge-pro {
+    background:#78350f;
+    color:#fde68a;
+}
+
+.badge-pending {
+    background:#78350f;
+    color:#fde68a;
+}
+
+.badge-done {
+    background:#14532d;
+    color:#86efac;
+}
+
+small {
+    color:#94a3b8;
+}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-<h1>👑 Admin Dashboard</h1>
+    <h1>👑 Admin Dashboard</h1>
+
+    <div class="top-actions">
+        <a href="/dashboard">
+            <button class="btn back">⬅ رجوع للداشبورد</button>
+        </a>
+
+        <a href="/owner-free-upgrade">
+            <button class="btn vip">💎 تفعيل VIP مدى الحياة لي</button>
+        </a>
+    </div>
 </div>
 
 <div class="stats">
-<div class="card">
-<h3>Total Users</h3>
-<p>{{total_users}}</p>
+    <div class="card">
+        <h3>Total Users</h3>
+        <p>{{total_users}}</p>
+    </div>
+
+    <div class="card">
+        <h3>Paid Users</h3>
+        <p>{{paid_users}}</p>
+    </div>
+
+    <div class="card">
+        <h3>Revenue</h3>
+        <p>${{revenue}}</p>
+    </div>
 </div>
 
-<div class="card">
-<h3>Paid Users</h3>
-<p>{{paid_users}}</p>
+<!-- USERS TABLE -->
+<div class="section">
+    <h2>👥 Users Management</h2>
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Email</th>
+            <th>Plan</th>
+            <th>Paid</th>
+            <th>Expiry</th>
+            <th>Chat ID</th>
+            <th>Affiliate Balance</th>
+            <th>Total Referrals</th>
+            <th>Actions</th>
+        </tr>
+
+        {% for u in users %}
+        <tr>
+            <td>{{u[0]}}</td>
+            <td>{{u[1]}}</td>
+
+            <td>
+                {% if u[2] == 'vip' %}
+                    <span class="badge badge-vip">VIP</span>
+                {% elif u[2] == 'pro' %}
+                    <span class="badge badge-pro">PRO</span>
+                {% elif u[2] == 'basic' %}
+                    <span class="badge badge-basic">BASIC</span>
+                {% else %}
+                    <span class="badge badge-free">{{u[2]}}</span>
+                {% endif %}
+            </td>
+
+            <td>
+                {% if u[3] == 1 %}
+                    <span class="badge badge-paid">PAID</span>
+                {% else %}
+                    <span class="badge badge-free">FREE</span>
+                {% endif %}
+            </td>
+
+            <td>{{u[4]}}</td>
+            <td>{{u[5]}}</td>
+            <td>${{u[6]}}</td>
+            <td>{{u[7]}}</td>
+
+            <td>
+                <!-- Activate Basic -->
+                <form action="/activate-user" method="POST" style="display:inline;">
+                    <input type="hidden" name="id" value="{{u[0]}}">
+                    <input type="hidden" name="plan" value="basic">
+                    <button class="btn activate">Basic</button>
+                </form>
+
+                <!-- Activate Pro -->
+                <form action="/activate-user" method="POST" style="display:inline;">
+                    <input type="hidden" name="id" value="{{u[0]}}">
+                    <input type="hidden" name="plan" value="pro">
+                    <button class="btn pro">Pro</button>
+                </form>
+
+                <!-- Activate VIP -->
+                <form action="/activate-user" method="POST" style="display:inline;">
+                    <input type="hidden" name="id" value="{{u[0]}}">
+                    <input type="hidden" name="plan" value="vip">
+                    <button class="btn vip">VIP</button>
+                </form>
+
+                <!-- Lifetime VIP -->
+                <form action="/activate-user" method="POST" style="display:inline;">
+                    <input type="hidden" name="id" value="{{u[0]}}">
+                    <input type="hidden" name="plan" value="vip">
+                    <input type="hidden" name="lifetime" value="1">
+                    <button class="btn life">Lifetime</button>
+                </form>
+
+                <!-- Delete -->
+                <form action="/delete-user" method="POST" style="display:inline;" onsubmit="return confirm('هل أنت متأكد من حذف المستخدم؟');">
+                    <input type="hidden" name="id" value="{{u[0]}}">
+                    <button class="btn delete">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
 
-<div class="card">
-<h3>Revenue</h3>
-<p>${{revenue}}</p>
+<!-- WITHDRAWALS TABLE -->
+<div class="section">
+    <h2>💸 Affiliate Withdrawals</h2>
+    <small>طلبات السحب المعلقة والمدفوعة</small>
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Chat ID</th>
+            <th>Wallet Address</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Created At</th>
+            <th>Action</th>
+        </tr>
+
+        {% for w in withdrawals %}
+        <tr>
+            <td>{{w[0]}}</td>
+            <td>{{w[1]}}</td>
+            <td style="max-width:250px; word-break:break-all;">{{w[2]}}</td>
+            <td>${{w[3]}}</td>
+
+            <td>
+                {% if w[4] == 'paid' %}
+                    <span class="badge badge-done">PAID</span>
+                {% else %}
+                    <span class="badge badge-pending">PENDING</span>
+                {% endif %}
+            </td>
+
+            <td>{{w[5]}}</td>
+
+            <td>
+                {% if w[4] != 'paid' %}
+                <form action="/mark-withdrawal-paid" method="POST" style="display:inline;">
+                    <input type="hidden" name="id" value="{{w[0]}}">
+                    <button class="btn paid">Mark Paid</button>
+                </form>
+                {% else %}
+                    ✅ Done
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
 </div>
-</div>
-
-<table>
-<tr>
-<th>ID</th>
-<th>Email</th>
-<th>Plan</th>
-<th>Paid</th>
-<th>Expiry</th>
-<th>Actions</th>
-</tr>
-
-{% for u in users %}
-<tr>
-<td>{{u[0]}}</td>
-<td>{{u[1]}}</td>
-<td>{{u[2]}}</td>
-<td>{{u[3]}}</td>
-<td>{{u[4]}}</td>
-
-<td>
-<form action="/activate-user" method="POST" style="display:inline;">
-<input type="hidden" name="id" value="{{u[0]}}">
-<button class="btn activate">Activate</button>
-</form>
-
-<form action="/delete-user" method="POST" style="display:inline;">
-<input type="hidden" name="id" value="{{u[0]}}">
-<button class="btn delete">Delete</button>
-</form>
-</td>
-
-</tr>
-{% endfor %}
-
-</table>
 
 </body>
-</html
+</html>
