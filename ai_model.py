@@ -124,7 +124,7 @@ def predict_trade(signal):
             score += 3
 
         # ================= FINAL DECISION =================
-        return score >= 8  # 🔥 كان 3 بقى 8 = فلترة قوية جدًا
+        return score >= 8 # 🔥 كان 3 بقى 8 = فلترة قوية جدًا
 
     except Exception as e:
         print(f"AI ERROR: {e}")

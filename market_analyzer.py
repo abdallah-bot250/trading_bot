@@ -10,11 +10,12 @@ SYMBOLS = [
     "DOTUSDT", "LTCUSDT", "TRXUSDT", "NEARUSDT", "APTUSDT"
 ]
 
-TIMEFRAMES = ["5m", "15m"]
+TIMEFRAMES = ["5m", "15m", "30m"]
 
 REQUEST_TIMEOUT = 12
 MIN_SCORE_TO_TRADE = 5
-MIN_CONFIDENCE = 70
+MIN_CONFIDENCE = 65
+
 
 # ================= MARKET DATA HELPERS =================
 def interval_to_seconds(interval):
@@ -46,6 +47,7 @@ def get_higher_tf(interval):
     return mapping.get(interval, "15m")
 
 
+# ================= DATA PARSING =================
 def parse_kucoin_klines_to_df(rows):
     try:
         if not rows or not isinstance(rows, list):
@@ -105,15 +107,15 @@ def parse_binance_klines_to_df(data):
 def get_market_data(symbol, interval="5m", limit=250):
     """
     Priority:
-    1) Binance
-    2) Binance US
-    3) KuCoin
+    1) Binance US
+    2) KuCoin
+    السبب: Binance main بيطلع 451 على Railway غالبًا
     """
     endpoints = [
-        ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
+    # ---------- Try Binance US ----------
     for source_name, url in endpoints:
         try:
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
@@ -176,112 +178,145 @@ def get_market_data(symbol, interval="5m", limit=250):
 
 # ================= RSI =================
 def rsi(df, period=14):
-    delta = df["close"].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    try:
+        delta = df["close"].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
 
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean().replace(0, np.nan)
+        avg_gain = gain.rolling(period).mean()
+        avg_loss = loss.rolling(period).mean().replace(0, np.nan)
 
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
+    except:
+        return pd.Series([np.nan] * len(df))
 
 
 # ================= MACD =================
 def macd(df):
-    ema12 = df["close"].ewm(span=12, adjust=False).mean()
-    ema26 = df["close"].ewm(span=26, adjust=False).mean()
+    try:
+        ema12 = df["close"].ewm(span=12, adjust=False).mean()
+        ema26 = df["close"].ewm(span=26, adjust=False).mean()
 
-    macd_line = ema12 - ema26
-    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9, adjust=False).mean()
 
-    return macd_line, signal_line
+        return macd_line, signal_line
+    except:
+        return pd.Series([np.nan] * len(df)), pd.Series([np.nan] * len(df))
 
 
 # ================= EMA =================
 def ema(df, period):
-    return df["close"].ewm(span=period, adjust=False).mean()
+    try:
+        return df["close"].ewm(span=period, adjust=False).mean()
+    except:
+        return pd.Series([np.nan] * len(df))
 
 
 # ================= ATR =================
 def atr(df, period=14):
-    high_low = df["high"] - df["low"]
-    high_close = (df["high"] - df["close"].shift()).abs()
-    low_close = (df["low"] - df["close"].shift()).abs()
+    try:
+        high_low = df["high"] - df["low"]
+        high_close = (df["high"] - df["close"].shift()).abs()
+        low_close = (df["low"] - df["close"].shift()).abs()
 
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        return tr.rolling(period).mean()
+    except:
+        return pd.Series([np.nan] * len(df))
 
 
 # ================= TREND =================
 def detect_trend(df):
-    if len(df) < 50:
+    try:
+        if len(df) < 50:
+            return "UNKNOWN"
+
+        ema20 = ema(df, 20)
+        ema50 = ema(df, 50)
+
+        if pd.isna(ema20.iloc[-1]) or pd.isna(ema50.iloc[-1]):
+            return "UNKNOWN"
+
+        if ema20.iloc[-1] > ema50.iloc[-1]:
+            return "UP"
+        return "DOWN"
+    except:
         return "UNKNOWN"
-
-    ema20 = ema(df, 20)
-    ema50 = ema(df, 50)
-
-    if ema20.iloc[-1] > ema50.iloc[-1]:
-        return "UP"
-    return "DOWN"
 
 
 def trend_strength(df):
-    if len(df) < 50:
+    try:
+        if len(df) < 100:
+            return "WEAK"
+
+        ema20 = ema(df, 20)
+        ema50 = ema(df, 50)
+        ema100 = ema(df, 100)
+
+        if pd.isna(ema20.iloc[-1]) or pd.isna(ema50.iloc[-1]) or pd.isna(ema100.iloc[-1]):
+            return "WEAK"
+
+        if ema20.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
+            return "STRONG_BULL"
+        elif ema20.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
+            return "STRONG_BEAR"
+        return "MIXED"
+    except:
         return "WEAK"
-
-    ema20 = ema(df, 20)
-    ema50 = ema(df, 50)
-    ema100 = ema(df, 100)
-
-    if ema20.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
-        return "STRONG_BULL"
-    elif ema20.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
-        return "STRONG_BEAR"
-    return "MIXED"
 
 
 # ================= VOLUME =================
 def volume_strength(df):
-    avg_volume = df["volume"].rolling(20).mean()
+    try:
+        avg_volume = df["volume"].rolling(20).mean()
 
-    if pd.notna(avg_volume.iloc[-1]) and df["volume"].iloc[-1] > avg_volume.iloc[-1] * 1.08:
-        return "STRONG"
+        if pd.notna(avg_volume.iloc[-1]) and df["volume"].iloc[-1] > avg_volume.iloc[-1] * 1.05:
+            return "STRONG"
 
-    return "WEAK"
+        return "WEAK"
+    except:
+        return "WEAK"
 
 
 # ================= SMART MONEY =================
 def detect_smc(df):
-    highs = df["high"].rolling(10).max()
-    lows = df["low"].rolling(10).min()
+    try:
+        highs = df["high"].rolling(10).max()
+        lows = df["low"].rolling(10).min()
 
-    if len(df) < 12:
+        if len(df) < 12:
+            return "RANGE"
+
+        if pd.notna(highs.iloc[-2]) and df["close"].iloc[-1] > highs.iloc[-2]:
+            return "LIQUIDITY_BREAK_UP"
+        elif pd.notna(lows.iloc[-2]) and df["close"].iloc[-1] < lows.iloc[-2]:
+            return "LIQUIDITY_BREAK_DOWN"
+
         return "RANGE"
-
-    if pd.notna(highs.iloc[-2]) and df["close"].iloc[-1] > highs.iloc[-2]:
-        return "LIQUIDITY_BREAK_UP"
-    elif pd.notna(lows.iloc[-2]) and df["close"].iloc[-1] < lows.iloc[-2]:
-        return "LIQUIDITY_BREAK_DOWN"
-
-    return "RANGE"
+    except:
+        return "RANGE"
 
 
 # ================= STRUCTURE =================
 def market_structure(df):
-    if len(df) < 20:
+    try:
+        if len(df) < 20:
+            return "UNKNOWN"
+
+        recent_high = df["high"].tail(20).max()
+        recent_low = df["low"].tail(20).min()
+        current = df["close"].iloc[-1]
+
+        if current >= recent_high * 0.997:
+            return "NEAR_BREAKOUT_HIGH"
+        elif current <= recent_low * 1.003:
+            return "NEAR_BREAKOUT_LOW"
+
+        return "MID_RANGE"
+    except:
         return "UNKNOWN"
-
-    recent_high = df["high"].tail(20).max()
-    recent_low = df["low"].tail(20).min()
-    current = df["close"].iloc[-1]
-
-    if current >= recent_high * 0.997:
-        return "NEAR_BREAKOUT_HIGH"
-    elif current <= recent_low * 1.003:
-        return "NEAR_BREAKOUT_LOW"
-
-    return "MID_RANGE"
 
 
 # ================= CHOPPY MARKET FILTER =================
@@ -293,13 +328,17 @@ def is_choppy(df):
         ema20 = ema(df, 20)
         ema50 = ema(df, 50)
 
+        if pd.isna(ema20.iloc[-1]) or pd.isna(ema50.iloc[-1]):
+            return True
+
         diff = abs(ema20.iloc[-1] - ema50.iloc[-1])
         price = df["close"].iloc[-1]
 
         if price <= 0:
             return True
 
-        return (diff / price) < 0.0015
+        # أخف شوية علشان الصفقات ترجع تطلع
+        return (diff / price) < 0.0010
     except:
         return True
 
@@ -318,7 +357,8 @@ def strong_momentum(df):
 
         change = abs(last - prev) / prev
 
-        return change > 0.002
+        # أخف من الأول
+        return change > 0.0012
     except:
         return False
 
@@ -330,20 +370,29 @@ def higher_timeframe_confirmation(symbol, direction, current_interval):
         df_htf = get_market_data(symbol, higher_tf, limit=200)
 
         if df_htf is None or len(df_htf) < 50:
-            return False
+            return True  # بدل ما نرفض الصفقة كلها
 
         trend_htf = detect_trend(df_htf)
         trend_power_htf = trend_strength(df_htf)
 
         if direction == "LONG":
-            return trend_htf == "UP" or trend_power_htf == "STRONG_BULL"
+            return (
+                trend_htf == "UP"
+                or trend_power_htf == "STRONG_BULL"
+                or trend_power_htf == "MIXED"
+            )
+
         elif direction == "SHORT":
-            return trend_htf == "DOWN" or trend_power_htf == "STRONG_BEAR"
+            return (
+                trend_htf == "DOWN"
+                or trend_power_htf == "STRONG_BEAR"
+                or trend_power_htf == "MIXED"
+            )
 
         return False
     except Exception as e:
         print(f"higher_timeframe_confirmation error for {symbol} {current_interval}: {e}")
-        return False
+        return True
 
 
 # ================= VOLATILITY FILTER =================
@@ -356,7 +405,9 @@ def volatility_ok(df):
             return True
 
         ratio = atr_val / close_val
-        return 0.0007 <= ratio <= 0.06
+
+        # متوازن: لا ميت ولا مجنون
+        return 0.0004 <= ratio <= 0.08
     except:
         return True
 
@@ -443,13 +494,13 @@ def dynamic_targets(entry, direction, atr_value):
 
     if pd.isna(atr_value) or atr_value <= 0:
         if direction == "LONG":
-            return entry * 1.02, entry * 0.99
+            return entry * 1.025, entry * 0.99
         else:
-            return entry * 0.98, entry * 1.01
+            return entry * 0.975, entry * 1.01
 
-    # Minimum move protection
-    min_move = entry * 0.003   # 0.3%
-    real_move = max(atr_value * 1.8, min_move)
+    # هدف أوسع شوية من الأول
+    min_move = entry * 0.004   # 0.4%
+    real_move = max(atr_value * 2.0, min_move)
 
     if direction == "LONG":
         tp = entry + real_move
@@ -481,7 +532,7 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
         confidence += 5
 
     if htf_ok:
-        confidence += 7
+        confidence += 6
 
     return min(96, max(50, int(confidence)))
 
@@ -543,7 +594,7 @@ def signal_levels_valid(entry, tp, sl, direction):
         if reward < min_distance or risk < min_distance:
             return False
 
-        # لازم الـ RR يبقى معقول
+        # RR معقول
         rr = reward / risk
         if rr < 1.2:
             return False
@@ -559,12 +610,11 @@ def strong_signal_filter(df, trend, trend_power, direction):
         if df is None or len(df) < 50:
             return False
 
+        # رفض السوق الميت فقط
         if is_choppy(df):
             return False
 
-        if trend_power == "MIXED":
-            return False
-
+        # منع عكس الترند القوي فقط
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
@@ -579,7 +629,8 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
         move = abs(last - prev) / prev
 
-        if move < 0.0025:
+        # أخف شوية علشان الإشارات ترجع
+        if move < 0.0013:
             return False
 
         return True
@@ -744,10 +795,10 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # المجاني مش مفتوح على البحري
-    if score >= 3:
+    # أخف من الأول علشان المجاني يطلع فعلاً
+    if score >= 2:
         direction = "LONG"
-    elif score <= -3:
+    elif score <= -2:
         direction = "SHORT"
     else:
         return None
@@ -756,13 +807,13 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-    if not htf_ok and abs(score) < 6:
+    if not htf_ok and abs(score) < 4:
         return None
 
-    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 7:
+    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 5:
         return None
 
-    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 7:
+    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 5:
         return None
 
     entry = df["close"].iloc[-1]
@@ -773,7 +824,7 @@ def generate_free_signal(symbol, interval="5m"):
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    if confidence < 60:
+    if confidence < 57:
         return None
 
     if direction == "LONG" and confidence < 80:
@@ -814,9 +865,10 @@ def get_top_free_signals(limit=2):
                 if signal:
                     signal["ranking_score"] = (
                         signal["confidence"]
-                        + abs(signal["score"] * 2)
-                        + (5 if signal["volume"] == "STRONG" else 0)
-                        + (5 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
+                        + abs(signal["score"] * 2.5)
+                        + (6 if signal["volume"] == "STRONG" else 0)
+                        + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
+                        + (4 if signal["smc"] in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"] else 0)
                     )
 
                     candidates.append(signal)
