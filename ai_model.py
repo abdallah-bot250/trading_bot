@@ -11,7 +11,25 @@ def predict_trade(signal):
         sl = float(signal.get("sl", 0))
         direction = signal.get("direction")
 
+        confidence = float(signal.get("confidence", 0))
+        trend = signal.get("trend")
+        trend_power = signal.get("trend_power")
+        volume = signal.get("volume")
+        smc = signal.get("smc")
+        structure = signal.get("structure")
+        tf = signal.get("timeframe")
+
         if entry <= 0 or tp <= 0 or sl <= 0:
+            return False
+
+        # ================= BASIC LEVEL CHECK =================
+        if direction == "LONG":
+            if not (tp > entry and sl < entry):
+                return False
+        elif direction == "SHORT":
+            if not (tp < entry and sl > entry):
+                return False
+        else:
             return False
 
         # ================= RISK REWARD =================
@@ -30,7 +48,9 @@ def predict_trade(signal):
         rr = reward / risk
 
         # 🔥 فلتر RR
-        if rr >= 2:
+        if rr >= 2.5:
+            score += 4
+        elif rr >= 2:
             score += 3
         elif rr >= 1.5:
             score += 2
@@ -39,10 +59,29 @@ def predict_trade(signal):
         else:
             return False  # ❌ صفقة ضعيفة
 
-        # ================= CONFIDENCE =================
-        confidence = signal.get("confidence", 0)
+        # ================= DISTANCE CHECK =================
+        tp_distance = abs(tp - entry) / entry
+        sl_distance = abs(sl - entry) / entry
 
-        if confidence >= 90:
+        # ❌ هدف قريب جدًا (زي مشكلتك القديمة)
+        if tp_distance < 0.007:
+            return False
+
+        # ❌ وقف خسارة قريب جدًا = صفقة ملهاش لازمة
+        if sl_distance < 0.003:
+            return False
+
+        if tp_distance >= 0.015:
+            score += 3
+        elif tp_distance >= 0.01:
+            score += 2
+        elif tp_distance >= 0.007:
+            score += 1
+
+        # ================= CONFIDENCE =================
+        if confidence >= 92:
+            score += 5
+        elif confidence >= 88:
             score += 4
         elif confidence >= 80:
             score += 3
@@ -52,79 +91,106 @@ def predict_trade(signal):
             return False  # ❌ استبعد الضعيف
 
         # ================= TREND =================
-        trend = signal.get("trend")
-        trend_power = signal.get("trend_power")
-
         if trend == "UP" and direction == "LONG":
             score += 2
         elif trend == "DOWN" and direction == "SHORT":
             score += 2
         else:
-            score -= 2
+            score -= 3
 
         # 🔥 قوة الترند
         if trend_power == "STRONG_BULL" and direction == "LONG":
-            score += 3
+            score += 4
         elif trend_power == "STRONG_BEAR" and direction == "SHORT":
-            score += 3
+            score += 4
         elif trend_power == "MIXED":
-            score -= 2
+            score -= 3
+
+        # ❌ منع عكس الترند القوي
+        if trend_power == "STRONG_BULL" and direction == "SHORT":
+            return False
+
+        if trend_power == "STRONG_BEAR" and direction == "LONG":
+            return False
 
         # ================= VOLUME =================
-        if signal.get("volume") == "STRONG":
-            score += 2
+        if volume == "STRONG":
+            score += 3
         else:
             score -= 1
 
         # ================= SMART MONEY =================
-        smc = signal.get("smc")
-
         if smc == "LIQUIDITY_BREAK_UP" and direction == "LONG":
-            score += 3
+            score += 4
         elif smc == "LIQUIDITY_BREAK_DOWN" and direction == "SHORT":
-            score += 3
-        else:
+            score += 4
+        elif smc == "RANGE":
             score -= 2
+        else:
+            score -= 1
 
         # ================= STRUCTURE =================
-        structure = signal.get("structure")
-
         if structure == "NEAR_BREAKOUT_HIGH" and direction == "LONG":
-            score += 2
+            score += 3
         elif structure == "NEAR_BREAKOUT_LOW" and direction == "SHORT":
-            score += 2
+            score += 3
         elif structure == "MID_RANGE":
-            score -= 2  # ❌ سوق عرضي
+            score -= 3  # ❌ سوق عرضي
+        elif structure == "UNKNOWN":
+            score -= 2
 
         # ================= TIMEFRAME =================
-        tf = signal.get("timeframe")
-
         if tf == "1h":
-            score += 3
+            score += 4
         elif tf == "15m":
-            score += 2
+            score += 3
         elif tf == "5m":
-            score += 1
+            score += 2
+        else:
+            score += 0
 
-        # ================= TP DISTANCE =================
-        tp_distance = abs(tp - entry) / entry
-
-        if tp_distance < 0.002:
-            return False  # ❌ هدف قريب جدًا (زي مشكلتك القديمة)
-
-        if tp_distance > 0.01:
+        # ================= TREND + STRUCTURE BOOST =================
+        if (
+            direction == "LONG"
+            and trend == "UP"
+            and structure == "NEAR_BREAKOUT_HIGH"
+        ):
             score += 2
 
-        # ================= FINAL BOOST =================
         if (
-            signal.get("volume") == "STRONG"
+            direction == "SHORT"
+            and trend == "DOWN"
+            and structure == "NEAR_BREAKOUT_LOW"
+        ):
+            score += 2
+
+        # ================= POWER BOOST =================
+        if (
+            volume == "STRONG"
             and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
             and smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]
         ):
-            score += 3
+            score += 4
+
+        # ================= MONSTER FILTER =================
+        # لو السوق عرضي ومفيش فوليوم ومفيش SMC -> ارفض
+        if (
+            trend_power == "MIXED"
+            and volume != "STRONG"
+            and smc == "RANGE"
+        ):
+            return False
+
+        # لو الثقة قليلة نسبيًا والهدف مش بعيد -> ارفض
+        if confidence < 80 and tp_distance < 0.01:
+            return False
+
+        # لو RR ضعيف نسبيًا والفريم صغير -> ارفض
+        if rr < 1.5 and tf == "5m":
+            return False
 
         # ================= FINAL DECISION =================
-        return score >= 8 # 🔥 كان 3 بقى 8 = فلترة قوية جدًا
+        return score >= 8   # 🔥 فلترة قوية جدًا
 
     except Exception as e:
         print(f"AI ERROR: {e}")
