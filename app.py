@@ -11,6 +11,8 @@ import json
 from market_analyzer import get_top_free_signals
 import random
 import string
+from datetime import datetime, timedelta
+from flask import session, redirect, request, render_template
 
 # ================= APP =================
 app = Flask(__name__)
@@ -976,12 +978,49 @@ def request_withdrawal():
 
 
 # ================= ADMIN =================
+
+# =========================
+# HELPER: تحقق الأدمن الحقيقي
+# =========================
+def current_admin_email():
+    return (session.get("user") or "").strip().lower()
+
+def is_current_admin():
+    email = current_admin_email()
+    if not email:
+        return False
+
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT is_admin
+            FROM users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+        """, (email,))
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return False
+
+        return bool(row[0]) or is_admin_email(email)
+
+    except Exception as e:
+        log(f"is_current_admin error: {e}")
+        return False
+
+
+# =========================
+# ADMIN DASHBOARD
+# =========================
 @app.route("/admin")
 def admin_dashboard():
     if not session.get("user"):
         return redirect("/login")
 
-    if not admin_required():
+    if not is_current_admin():
         return "❌ غير مصرح"
 
     try:
@@ -1030,12 +1069,15 @@ def admin_dashboard():
         return f"❌ Error: {str(e)}"
 
 
+# =========================
+# ACTIVATE USER
+# =========================
 @app.route("/activate-user", methods=["POST"])
 def activate_user():
     if not session.get("user"):
         return redirect("/login")
 
-    if not admin_required():
+    if not is_current_admin():
         return "❌ غير مصرح"
 
     try:
@@ -1059,6 +1101,7 @@ def activate_user():
         conn.commit()
         conn.close()
 
+        log(f"✅ User {user_id} activated with plan {plan}")
         return redirect("/admin")
 
     except Exception as e:
@@ -1066,12 +1109,15 @@ def activate_user():
         return f"❌ Error: {str(e)}"
 
 
+# =========================
+# DELETE USER
+# =========================
 @app.route("/delete-user", methods=["POST"])
 def delete_user():
     if not session.get("user"):
         return redirect("/login")
 
-    if not admin_required():
+    if not is_current_admin():
         return "❌ غير مصرح"
 
     try:
@@ -1079,10 +1125,21 @@ def delete_user():
 
         conn = db()
         c = conn.cursor()
+
+        # حماية: ممنوع تمسح نفسك كأدمن
+        current_email = current_admin_email()
+        c.execute("SELECT email FROM users WHERE id = %s LIMIT 1", (user_id,))
+        row = c.fetchone()
+
+        if row and row[0].strip().lower() == current_email:
+            conn.close()
+            return "❌ لا يمكن حذف حساب الأدمن الحالي"
+
         c.execute("DELETE FROM users WHERE id = %s", (user_id,))
         conn.commit()
         conn.close()
 
+        log(f"🗑️ Deleted user {user_id}")
         return redirect("/admin")
 
     except Exception as e:
@@ -1090,12 +1147,15 @@ def delete_user():
         return f"❌ Error: {str(e)}"
 
 
+# =========================
+# MARK WITHDRAWAL PAID
+# =========================
 @app.route("/mark-withdrawal-paid", methods=["POST"])
 def mark_withdrawal_paid():
     if not session.get("user"):
         return redirect("/login")
 
-    if not admin_required():
+    if not is_current_admin():
         return "❌ غير مصرح"
 
     try:
@@ -1111,6 +1171,7 @@ def mark_withdrawal_paid():
         conn.commit()
         conn.close()
 
+        log(f"💸 Withdrawal {withdrawal_id} marked as paid")
         return redirect("/admin")
 
     except Exception as e:
