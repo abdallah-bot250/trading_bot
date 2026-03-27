@@ -485,41 +485,47 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         return None, None
 
     # ================= BASE MIN TARGETS =================
-    # هدف ووقف حسب الفريم
     if timeframe == "15m":
-        min_tp_percent = 0.010   # 1.0%
-        min_sl_percent = 0.0045  # 0.45%
-        atr_tp_multiplier = 2.8
+        min_tp_percent = 0.012   # 1.2%
+        min_sl_percent = 0.0050  # 0.50%
+        atr_tp_multiplier = 3.0
         atr_sl_multiplier = 1.2
     elif timeframe == "1h":
-        min_tp_percent = 0.014   # 1.4%
-        min_sl_percent = 0.006
-        atr_tp_multiplier = 3.2
+        min_tp_percent = 0.016   # 1.6%
+        min_sl_percent = 0.0065
+        atr_tp_multiplier = 3.4
         atr_sl_multiplier = 1.3
     else:  # 5m
-        min_tp_percent = 0.008   # 0.8%
-        min_sl_percent = 0.0038
-        atr_tp_multiplier = 2.4
+        min_tp_percent = 0.009   # 0.9%
+        min_sl_percent = 0.0040
+        atr_tp_multiplier = 2.6
         atr_sl_multiplier = 1.0
 
     # ================= BOOSTS =================
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+        min_tp_percent += 0.0025
+        atr_tp_multiplier += 0.5
+
+    if volume == "STRONG":
         min_tp_percent += 0.002
         atr_tp_multiplier += 0.4
 
-    if volume == "STRONG":
-        min_tp_percent += 0.0015
-        atr_tp_multiplier += 0.3
-
     # ================= LOW PRICE COIN PROTECTION =================
-    # العملات الرخيصة زي TRX / DOGE / ADA محتاجة هدف أكبر شوية
     if entry < 1:
-        min_tp_percent += 0.003   # +0.3%
-        min_sl_percent += 0.001
+        min_tp_percent += 0.004
+        min_sl_percent += 0.0012
 
     if entry < 0.1:
-        min_tp_percent += 0.003   # +0.3% إضافية
-        min_sl_percent += 0.001
+        min_tp_percent += 0.004
+        min_sl_percent += 0.0012
+
+    # ================= SMART TARGET SYSTEM =================
+    extra_tp_mult, extra_sl_mult = smart_target_multiplier(
+        timeframe, trend_power, volume, "MID_RANGE", direction
+    )
+
+    atr_tp_multiplier *= extra_tp_mult
+    atr_sl_multiplier *= extra_sl_mult
 
     # ================= ATR MOVE =================
     if pd.isna(atr_value) or atr_value <= 0:
@@ -534,9 +540,22 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     sl_move = max(atr_based_sl, entry * min_sl_percent)
 
     # ================= RR ENFORCEMENT =================
-    # نخلي الهدف دائمًا أكبر من الوقف بشكل محترم
-    min_rr_tp = sl_move * 1.9
+    min_rr_tp = sl_move * 2.0
     tp_move = max(tp_move, min_rr_tp)
+
+    # ================= ANTI-TINY TARGETS =================
+    if entry < 0.1:
+        tp_move = max(tp_move, entry * 0.015)   # 1.5%
+        sl_move = max(sl_move, entry * 0.006)
+    elif entry < 1:
+        tp_move = max(tp_move, entry * 0.012)   # 1.2%
+        sl_move = max(sl_move, entry * 0.005)
+    elif entry < 100:
+        tp_move = max(tp_move, entry * 0.009)   # 0.9%
+        sl_move = max(sl_move, entry * 0.004)
+    else:
+        tp_move = max(tp_move, entry * 0.007)   # 0.7%
+        sl_move = max(sl_move, entry * 0.0035)
 
     # ================= FINAL LEVELS =================
     if direction == "LONG":
@@ -628,26 +647,26 @@ def signal_levels_valid(entry, tp, sl, direction):
 
         # ===== Minimum distance حسب نوع العملة =====
         if entry < 0.1:
+            min_reward = entry * 0.015
+            min_risk = entry * 0.006
+        elif entry < 1:
+            min_reward = entry * 0.012
+            min_risk = entry * 0.005
+        elif entry < 10:
             min_reward = entry * 0.010
             min_risk = entry * 0.0045
-        elif entry < 1:
-            min_reward = entry * 0.008
-            min_risk = entry * 0.004
-        elif entry < 10:
-            min_reward = entry * 0.007
-            min_risk = entry * 0.0035
         elif entry < 100:
-            min_reward = entry * 0.006
-            min_risk = entry * 0.003
+            min_reward = entry * 0.008
+            min_risk = entry * 0.0038
         else:
-            min_reward = entry * 0.005
-            min_risk = entry * 0.0025
+            min_reward = entry * 0.007
+            min_risk = entry * 0.0032
 
         if reward < min_reward or risk < min_risk:
             return False
 
         rr = reward / risk
-        if rr < 1.5:
+        if rr < 1.7:
             return False
 
         return True
@@ -762,14 +781,17 @@ def generate_signal(symbol, interval="5m"):
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
 
+    if tp is None or sl is None:
+        return None
+
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    if tp_distance < 0.007:
+    if tp_distance < 0.009:
         return None
 
-    if sl_distance < 0.003:
+    if sl_distance < 0.0035:
         return None
 
     momentum_ok = strong_momentum(df)
@@ -881,14 +903,17 @@ def generate_free_signal(symbol, interval="5m"):
     entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
 
+    if tp is None or sl is None:
+        return None
+
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    if tp_distance < 0.007:
+    if tp_distance < 0.009:
         return None
 
-    if sl_distance < 0.003:
+    if sl_distance < 0.0035:
         return None
 
     momentum_ok = strong_momentum(df)
@@ -921,6 +946,13 @@ def generate_free_signal(symbol, interval="5m"):
         "structure": structure,
         "score": score
     }
+
+    try:
+        if not predict_trade(signal):
+            return None
+    except Exception as e:
+        print(f"AI model error in generate_free_signal {symbol} {interval}: {e}")
+        return None
 
     return signal
 

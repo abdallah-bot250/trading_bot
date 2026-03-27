@@ -36,18 +36,16 @@ def predict_trade(signal):
         if direction == "LONG":
             reward = tp - entry
             risk = entry - sl
-        elif direction == "SHORT":
+        else:
             reward = entry - tp
             risk = sl - entry
-        else:
-            return False
 
         if reward <= 0 or risk <= 0:
             return False
 
         rr = reward / risk
 
-        # 🔥 فلتر RR
+        # 🔥 RR FILTER
         if rr >= 2.5:
             score += 4
         elif rr >= 2:
@@ -57,25 +55,31 @@ def predict_trade(signal):
         elif rr >= 1.2:
             score += 1
         else:
-            return False  # ❌ صفقة ضعيفة
+            return False
 
         # ================= DISTANCE CHECK =================
         tp_distance = abs(tp - entry) / entry
         sl_distance = abs(sl - entry) / entry
 
-        # ❌ هدف قريب جدًا (زي مشكلتك القديمة)
-        if tp_distance < 0.007:
-            return False
+        # 🔥 عملات رخيصة لازم مسافة أكبر
+        if entry < 1:
+            if tp_distance < 0.012:
+                return False
+        else:
+            if tp_distance < 0.008:
+                return False
 
-        # ❌ وقف خسارة قريب جدًا = صفقة ملهاش لازمة
         if sl_distance < 0.003:
             return False
 
-        if tp_distance >= 0.015:
+        # Boost على حسب بعد الهدف
+        if tp_distance >= 0.02:
+            score += 4
+        elif tp_distance >= 0.015:
             score += 3
         elif tp_distance >= 0.01:
             score += 2
-        elif tp_distance >= 0.007:
+        else:
             score += 1
 
         # ================= CONFIDENCE =================
@@ -88,7 +92,7 @@ def predict_trade(signal):
         elif confidence >= 70:
             score += 2
         else:
-            return False  # ❌ استبعد الضعيف
+            return False
 
         # ================= TREND =================
         if trend == "UP" and direction == "LONG":
@@ -98,7 +102,7 @@ def predict_trade(signal):
         else:
             score -= 3
 
-        # 🔥 قوة الترند
+        # ================= TREND POWER =================
         if trend_power == "STRONG_BULL" and direction == "LONG":
             score += 4
         elif trend_power == "STRONG_BEAR" and direction == "SHORT":
@@ -106,7 +110,7 @@ def predict_trade(signal):
         elif trend_power == "MIXED":
             score -= 3
 
-        # ❌ منع عكس الترند القوي
+        # ❌ عكس الترند القوي = رفض مباشر
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
@@ -135,7 +139,7 @@ def predict_trade(signal):
         elif structure == "NEAR_BREAKOUT_LOW" and direction == "SHORT":
             score += 3
         elif structure == "MID_RANGE":
-            score -= 3  # ❌ سوق عرضي
+            score -= 3
         elif structure == "UNKNOWN":
             score -= 2
 
@@ -146,10 +150,8 @@ def predict_trade(signal):
             score += 3
         elif tf == "5m":
             score += 2
-        else:
-            score += 0
 
-        # ================= TREND + STRUCTURE BOOST =================
+        # ================= SMART BOOST =================
         if (
             direction == "LONG"
             and trend == "UP"
@@ -173,7 +175,6 @@ def predict_trade(signal):
             score += 4
 
         # ================= MONSTER FILTER =================
-        # لو السوق عرضي ومفيش فوليوم ومفيش SMC -> ارفض
         if (
             trend_power == "MIXED"
             and volume != "STRONG"
@@ -181,16 +182,14 @@ def predict_trade(signal):
         ):
             return False
 
-        # لو الثقة قليلة نسبيًا والهدف مش بعيد -> ارفض
         if confidence < 80 and tp_distance < 0.01:
             return False
 
-        # لو RR ضعيف نسبيًا والفريم صغير -> ارفض
         if rr < 1.5 and tf == "5m":
             return False
 
         # ================= FINAL DECISION =================
-        return score >= 8   # 🔥 فلترة قوية جدًا
+        return score >= 6   # 🔥 أقوى شوية من النسخة القديمة
 
     except Exception as e:
         print(f"AI ERROR: {e}")
