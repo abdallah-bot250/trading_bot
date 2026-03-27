@@ -382,7 +382,7 @@ def test_telegram():
 # ================= REGISTER =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    chat_id = request.args.get("chat_id") or ""
+    chat_id = (request.args.get("chat_id") or "").strip()
     ref = request.args.get("ref", "").strip()
 
     if request.method == "POST":
@@ -393,18 +393,64 @@ def register():
             if not email or not password_raw:
                 return "❌ لازم تكتب الإيميل والباسورد"
 
-            password = generate_password_hash(password_raw)
-
             conn = db()
             c = conn.cursor()
 
-            # منع التكرار
-            c.execute("SELECT id FROM users WHERE email = %s", (email,))
+            # ندور على الإيميل الأول
+            c.execute("""
+                SELECT id, email, password, chat_id, is_admin, plan, is_paid
+                FROM users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+            """, (email,))
             existing = c.fetchone()
 
+            # -----------------------------------
+            # لو الإيميل موجود بالفعل
+            # -----------------------------------
             if existing:
+                user_id = existing[0]
+                stored_password = existing[2]
+                existing_chat_id = str(existing[3] or "").strip()
+
+                # تحقق من كلمة السر
+                if not check_password_hash(stored_password, password_raw):
+                    conn.close()
+                    return "❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة"
+
+                # لو دخل من تيليجرام ومفيش chat_id محفوظ، اربطه
+                if chat_id and not existing_chat_id:
+                    c.execute("""
+                        UPDATE users
+                        SET chat_id = %s
+                        WHERE id = %s
+                    """, (chat_id, user_id))
+                    conn.commit()
+
+                    # نضمن كود الإحالة
+                    ensure_user_has_referral_code(chat_id, conn)
+
+                # لو الإيميل ده هو الأدمن، نضمن إنه متسجل أدمن
+                if is_admin_email(email):
+                    c.execute("""
+                        UPDATE users
+                        SET is_admin = 1
+                        WHERE id = %s
+                    """, (user_id,))
+                    conn.commit()
+
                 conn.close()
-                return "❌ الإيميل مسجل بالفعل"
+
+                session["user"] = email
+                session["is_admin"] = True if is_admin_email(email) else False
+
+                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={ref}")
+                return redirect("/dashboard")
+
+            # -----------------------------------
+            # لو الإيميل جديد => نعمل حساب جديد
+            # -----------------------------------
+            password = generate_password_hash(password_raw)
 
             referred_by = None
             if ref:
@@ -420,6 +466,7 @@ def register():
                 bot_active, referred_by, is_admin, lifetime_owner
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
             """, (
                 email,
                 password,
@@ -440,6 +487,7 @@ def register():
                 0
             ))
 
+            new_user = c.fetchone()
             conn.commit()
 
             if chat_id:
@@ -448,6 +496,8 @@ def register():
             conn.close()
 
             session["user"] = email
+            session["is_admin"] = True if is_admin_email(email) else False
+
             log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={ref}")
             return redirect("/dashboard")
 
