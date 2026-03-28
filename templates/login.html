@@ -31,6 +31,7 @@ input {
     margin: 10px 0;
     border-radius: 8px;
     border: 1px solid #ccc;
+    box-sizing: border-box;
 }
 
 button {
@@ -52,6 +53,24 @@ a {
     margin-top: 10px;
     color: #2c5364;
 }
+
+.password-wrap {
+    position: relative;
+}
+
+.toggle-pass {
+    position: absolute;
+    right: 10px;
+    top: 18px;
+    background: transparent;
+    border: none;
+    color: #2c5364;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    width: auto;
+    padding: 0;
+}
 </style>
 </head>
 
@@ -61,13 +80,29 @@ a {
 <h2>Login</h2>
 
 <form method="POST">
-<input name="email" placeholder="Email" required>
-<input name="password" type="password" placeholder="Password" required>
+<input name="email" type="email" placeholder="Email" required autocomplete="email">
+
+<div class="password-wrap">
+    <input id="password" name="password" type="password" placeholder="Password" required autocomplete="current-password">
+    <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
+</div>
+
 <button>Login</button>
 </form>
 
 <a href="/register">Create new account</a>
 </div>
+
+<script>
+function togglePassword() {
+    const pass = document.getElementById("password");
+    if (pass.type === "password") {
+        pass.type = "text";
+    } else {
+        pass.type = "password";
+    }
+}
+</script>
 
 </body>
 </html>

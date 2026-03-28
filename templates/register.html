@@ -31,6 +31,7 @@ input {
     margin: 10px 0;
     border-radius: 8px;
     border: 1px solid #ccc;
+    box-sizing: border-box;
 }
 
 button {
@@ -51,6 +52,24 @@ a {
     display: block;
     margin-top: 10px;
     color: #2a5298;
+}
+
+.password-wrap {
+    position: relative;
+}
+
+.toggle-pass {
+    position: absolute;
+    right: 10px;
+    top: 18px;
+    background: transparent;
+    border: none;
+    color: #2a5298;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    width: auto;
+    padding: 0;
 }
 </style>
 </head>
@@ -80,16 +99,31 @@ a {
 </div>
 
 <form method="POST">
-<form method="POST">
-<input name="name" placeholder="Full Name" required>
-<input name="email" placeholder="Email" required>
-<input name="password" type="password" placeholder="Password" required>
+<input name="name" placeholder="Full Name" required autocomplete="name">
+<input name="email" type="email" placeholder="Email" required autocomplete="email">
+
+<div class="password-wrap">
+    <input id="password" name="password" type="password" placeholder="Password" required minlength="6" autocomplete="new-password">
+    <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
+</div>
+
 <input type="hidden" name="chat_id" value="{{chat_id}}">
 <button>Register</button>
 </form>
 
 <a href="{{ url_for('login') }}">Already have an account?</a>
 </div>
+
+<script>
+function togglePassword() {
+    const pass = document.getElementById("password");
+    if (pass.type === "password") {
+        pass.type = "text";
+    } else {
+        pass.type = "password";
+    }
+}
+</script>
 
 </body>
 </html>

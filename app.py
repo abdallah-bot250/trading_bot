@@ -13,6 +13,7 @@ import random
 import string
 from datetime import datetime, timedelta
 from flask import session, redirect, request, render_template
+import re
 
 # ================= APP =================
 app = Flask(__name__)
@@ -400,8 +401,18 @@ def register():
             email = request.form["email"].strip().lower()
             password_raw = request.form["password"].strip()
 
+            # ✅ NEW: تحقق أساسي
             if not email or not password_raw:
                 return "❌ لازم تكتب الإيميل والباسورد"
+
+            # ✅ NEW: تحقق الإيميل
+            email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+            if not re.match(email_pattern, email):
+                return "❌ لازم تدخل إيميل صحيح"
+
+            # ✅ NEW: تحقق الباسورد
+            if len(password_raw) < 6:
+                return "❌ الباسورد لازم يكون 6 أحرف أو أكثر"
 
             conn = db()
             c = conn.cursor()
@@ -571,6 +582,15 @@ def login():
         try:
             email = request.form["email"].strip().lower()
             password = request.form["password"]
+
+            # ✅ NEW: تحقق أساسي
+            if not email or not password:
+                return "❌ لازم تكتب الإيميل والباسورد"
+
+            # ✅ NEW: تحقق الإيميل
+            email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+            if not re.match(email_pattern, email):
+                return "❌ لازم تدخل إيميل صحيح"
 
             conn = db()
             c = conn.cursor()
