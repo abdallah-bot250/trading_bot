@@ -13,16 +13,17 @@ load_dotenv()
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
 # ================= CONFIG =================
-MAX_DAILY_TRADES = 5
-MAX_CONSECUTIVE_LOSSES = 3
-MAX_DAILY_LOSS_PERCENT = 5
-PAIR_COOLDOWN_MINUTES = 30
-GLOBAL_LOOP_SLEEP = 60
-MIN_CONFIDENCE = 50
-DUPLICATE_WINDOW_SECONDS = 180  # 3 دقائق
+MAX_DAILY_TRADES = 4
+MAX_CONSECUTIVE_LOSSES = 2
+MAX_DAILY_LOSS_PERCENT = 4
+PAIR_COOLDOWN_MINUTES = 45
+GLOBAL_LOOP_SLEEP = 80
+MIN_CONFIDENCE = 66
+DUPLICATE_WINDOW_SECONDS = 300
+NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
-MAX_ENTRY_DEVIATION_PERCENT = 0.8    # كان 0.35 وخانق الدنيا
+MAX_ENTRY_DEVIATION_PERCENT = 0.75    # كان 0.35 وخانق الدنيا
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -41,6 +42,7 @@ LAST_SIGNAL_CACHE = {
 
 # ================= SIGNAL MEMORY =================
 RECENT_SIGNAL_MEMORY = {}
+LAST_NO_SIGNAL_NOTIFY = {}
 
 # ================= LOG =================
 def log(msg):
@@ -321,13 +323,13 @@ def format_signal(signal):
 🎯 TP: {signal['tp']}
 🛑 SL: {signal['sl']}
 
-📊 Confidence: {signal['confidence']}%
+🎯 Signal Strength: {signal['confidence']}%
 ⏱ Timeframe: {signal.get('timeframe', 'N/A')}
 📉 Trend: {signal.get('trend', 'N/A')}
 📦 Volume: {signal.get('volume', 'N/A')}
 🧠 SMC: {signal.get('smc', 'N/A')}
-🏗 Structure: {signal.get('structure', 'N/A')}
-🎯 Score: {signal.get('score', 'N/A')}
+
+⚠️ Risk-managed signal. Wait for proper entry.
 """
 
 # ================= ACCESS HELPERS =================
@@ -358,18 +360,37 @@ def signal_allowed_for_plan(plan, signal):
     try:
         confidence = float(signal.get("confidence", 0))
         score = abs(float(signal.get("score", 0)))
+        timeframe = signal.get("timeframe", "5m")
+        volume = signal.get("volume", "WEAK")
+        trend_power = signal.get("trend_power", "MIXED")
 
         if plan == "trial":
-            return confidence >= 60 and score >= 3
+            return (
+                confidence >= 68
+                and score >= 5
+                and timeframe in ["5m", "15m"]
+            )
 
         if plan == "basic":
-            return confidence >= 60 and score >= 3
+            return (
+                confidence >= 72
+                and score >= 5
+                and volume == "STRONG"
+            )
 
         if plan == "pro":
-            return confidence >= 68 and score >= 4
+            return (
+                confidence >= 76
+                and score >= 6
+                and volume == "STRONG"
+                and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
+            )
 
         if plan == "vip":
-            return confidence >= 75 and score >= 5
+            return (
+                confidence >= 78
+                and score >= 6
+            )
 
         return False
     except:
@@ -772,6 +793,7 @@ def is_recent_memory_duplicate(signal):
         pair = signal.get("pair")
         direction = signal.get("direction")
         entry = float(signal.get("entry", 0))
+        timeframe = signal.get("timeframe", "5m")
 
         if not pair or not direction or entry <= 0:
             return False
@@ -779,13 +801,22 @@ def is_recent_memory_duplicate(signal):
         key = f"{pair}_{direction}"
         now = datetime.now()
 
+        # مدة منع التكرار حسب الفريم
+        cooldown_seconds = 3600  # ساعة كاملة افتراضي
+        if timeframe == "15m":
+            cooldown_seconds = 7200   # ساعتين
+        elif timeframe == "1h":
+            cooldown_seconds = 14400  # 4 ساعات
+
         if key in RECENT_SIGNAL_MEMORY:
             old_entry, old_time = RECENT_SIGNAL_MEMORY[key]
             age = (now - old_time).total_seconds()
 
-            if age < 1800:  # 30 دقيقة
+            if age < cooldown_seconds:
                 diff = abs(entry - old_entry) / old_entry * 100
-                if diff < 0.15:
+
+                # لو نفس العملة ونفس الاتجاه والسعر قريب = تجاهل
+                if diff < 0.8:
                     return True
 
         RECENT_SIGNAL_MEMORY[key] = (entry, now)
@@ -802,16 +833,33 @@ def get_monster_signals():
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
 
-        # 🔥 إضافة إشارات مدفوعة قوية
-        for symbol in SYMBOLS:
+        # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
+        if not signals:
+            fallback_candidates = []
+
             try:
-                paid_signal = generate_signal(symbol, "15m")
-                if paid_signal:
-                    paid_signal = attach_signal_timestamp(paid_signal)
-                    signals.append(paid_signal)
-                    log(f"💎 Paid signal added: {symbol}")
+                from market_analyzer import SYMBOLS, TIMEFRAMES
+
+                for symbol in SYMBOLS:
+                    for tf in TIMEFRAMES:
+                        try:
+                            s = generate_signal(symbol, tf)
+                            if s:
+                                fallback_candidates.append(s)
+                        except:
+                            continue
+
+                fallback_candidates = sorted(
+                    fallback_candidates,
+                    key=lambda x: (x.get("confidence", 0), abs(x.get("score", 0))),
+                    reverse=True
+                )
+
+                if fallback_candidates:
+                    signals = fallback_candidates[:1]
+
             except Exception as e:
-                log(f"Paid signal error for {symbol}: {e}")
+                log(f"Fallback paid signal error: {e}")
 
         final_signals = []
 
@@ -866,6 +914,74 @@ def get_monster_signals():
     except Exception as e:
         log(f"get_monster_signals error: {e}")
         return []
+    
+def should_notify_no_signal(chat_id):
+    try:
+        now = datetime.now()
+
+        if chat_id not in LAST_NO_SIGNAL_NOTIFY:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        last_time = LAST_NO_SIGNAL_NOTIFY.get(chat_id)
+        if not last_time:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        diff_minutes = (now - last_time).total_seconds() / 60
+
+        if diff_minutes >= NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        return False
+    except:
+        return False
+
+
+def notify_users_no_signal(users):
+    try:
+        for user in users:
+            try:
+                chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
+
+                if not chat_id:
+                    continue
+
+                # ===== ACCESS CHECK =====
+                if plan == "trial":
+                    if not is_trial_allowed(trades):
+                        continue
+                else:
+                    if not is_paid_plan_active(plan, expiry, is_paid):
+                        continue
+
+                if not should_notify_no_signal(chat_id):
+                    continue
+
+                msg = """⚠️ تنبيه مهم من البوت
+
+نظرًا لسوء تقلبات الأسواق الحالية وعدم وجود فرصة واضحة وقوية بما يكفي الآن،
+لن يتم إرسال صفقات في الوقت الحالي.
+
+📌 الرجاء الانتظار حتى تظهر فرصة مناسبة
+وذلك حفاظًا على سلامة أموالكم وتقليل احتمالية الخسارة.
+
+🤖 البوت لن يرسل صفقة إلا إذا كانت مطابقة للشروط المطلوبة بأفضل شكل ممكن."""
+
+                sent_ok = send(chat_id, msg)
+
+                if sent_ok:
+                    log(f"No-signal notice sent to {chat_id}")
+                    write_log(chat_id, "INFO", "No-signal market warning sent")
+                else:
+                    log(f"Failed sending no-signal notice to {chat_id}")
+
+            except Exception as inner_e:
+                log(f"notify_users_no_signal inner error: {inner_e}")
+
+    except Exception as e:
+        log(f"notify_users_no_signal error: {e}")    
 
 # ================= MAIN =================
 def run():
@@ -882,21 +998,19 @@ def run():
             log("Closed trades updated")
 
             signals = get_monster_signals()
-
-            # 🔥 LIMIT SIGNALS (QUALITY OVER QUANTITY)
-            if len(signals) > MAX_SIGNALS_PER_CYCLE:
-                signals = sorted(signals, key=lambda x: x["confidence"], reverse=True)
-                signals = signals[:MAX_SIGNALS_PER_CYCLE]
-
             log(f"Signals fetched: {signals}")
-
-            if not signals:
-                log("No signals found")
-                time.sleep(30)
-                continue
 
             users = get_users()
             log(f"Users loaded: {len(users)}")
+
+            if not signals:
+                log("No signals found")
+
+    # ===== Notify users market is not safe now =====
+                notify_users_no_signal(users)
+
+                time.sleep(30)
+                continue
 
             for signal in signals:
                 log(f"Processing signal: {signal}")

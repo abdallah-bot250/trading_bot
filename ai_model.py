@@ -44,54 +44,32 @@ def predict_trade(signal):
 
         rr = reward / risk
 
-        # فلتر أساسي صارم
-        if rr < 1.7:
-            return False
-
-        if rr >= 2.8:
+        if rr >= 2.5:
             score += 5
-        elif rr >= 2.3:
+        elif rr >= 2.1:
             score += 4
-        elif rr >= 2.0:
-            score += 3
         elif rr >= 1.8:
+            score += 3
+        elif rr >= 1.6:
             score += 2
         else:
-            score += 1
+            return False
 
         # ================= DISTANCE CHECK =================
         tp_distance = abs(tp - entry) / entry
         sl_distance = abs(sl - entry) / entry
 
-        # 🔥 حماية حسب سعر العملة
-        if entry < 0.1:
-            if tp_distance < 0.015:
-                return False
-            if sl_distance < 0.0055:
-                return False
-
-        elif entry < 1:
+        if entry < 1:
             if tp_distance < 0.012:
                 return False
-            if sl_distance < 0.0045:
-                return False
-
-        elif entry < 100:
+        else:
             if tp_distance < 0.008:
                 return False
-            if sl_distance < 0.0035:
-                return False
 
-        else:
-            if tp_distance < 0.007:
-                return False
-            if sl_distance < 0.003:
-                return False
+        if sl_distance < 0.0032:
+            return False
 
-        # Boost على حسب بعد الهدف
-        if tp_distance >= 0.025:
-            score += 5
-        elif tp_distance >= 0.02:
+        if tp_distance >= 0.02:
             score += 4
         elif tp_distance >= 0.015:
             score += 3
@@ -101,41 +79,33 @@ def predict_trade(signal):
             score += 1
 
         # ================= CONFIDENCE =================
-        if confidence < 68:
-            return False
-
-        if confidence >= 93:
-            score += 6
-        elif confidence >= 89:
+        if confidence >= 86:
             score += 5
-        elif confidence >= 84:
+        elif confidence >= 80:
             score += 4
-        elif confidence >= 78:
+        elif confidence >= 74:
             score += 3
-        elif confidence >= 72:
+        elif confidence >= 68:
             score += 2
         else:
-            score += 1
+            return False
 
         # ================= TREND =================
         if trend == "UP" and direction == "LONG":
-            score += 3
+            score += 2
         elif trend == "DOWN" and direction == "SHORT":
-            score += 3
+            score += 2
         else:
-            score -= 4
+            score -= 2
 
         # ================= TREND POWER =================
         if trend_power == "STRONG_BULL" and direction == "LONG":
-            score += 5
+            score += 4
         elif trend_power == "STRONG_BEAR" and direction == "SHORT":
-            score += 5
+            score += 4
         elif trend_power == "MIXED":
             score -= 4
-        else:
-            score -= 1
 
-        # ❌ عكس الترند القوي = رفض مباشر
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
@@ -144,39 +114,37 @@ def predict_trade(signal):
 
         # ================= VOLUME =================
         if volume == "STRONG":
-            score += 4
+            score += 3
         else:
             score -= 2
 
         # ================= SMART MONEY =================
         if smc == "LIQUIDITY_BREAK_UP" and direction == "LONG":
-            score += 5
+            score += 4
         elif smc == "LIQUIDITY_BREAK_DOWN" and direction == "SHORT":
-            score += 5
+            score += 4
         elif smc == "RANGE":
             score -= 3
         else:
-            score -= 2
+            score -= 1
 
         # ================= STRUCTURE =================
         if structure == "NEAR_BREAKOUT_HIGH" and direction == "LONG":
-            score += 4
+            score += 3
         elif structure == "NEAR_BREAKOUT_LOW" and direction == "SHORT":
-            score += 4
+            score += 3
         elif structure == "MID_RANGE":
-            score -= 4
-        elif structure == "UNKNOWN":
             score -= 3
+        elif structure == "UNKNOWN":
+            score -= 2
 
         # ================= TIMEFRAME =================
         if tf == "1h":
-            score += 5
-        elif tf == "15m":
             score += 4
+        elif tf == "15m":
+            score += 3
         elif tf == "5m":
             score += 2
-        else:
-            score += 0
 
         # ================= SMART BOOST =================
         if (
@@ -184,14 +152,14 @@ def predict_trade(signal):
             and trend == "UP"
             and structure == "NEAR_BREAKOUT_HIGH"
         ):
-            score += 3
+            score += 2
 
         if (
             direction == "SHORT"
             and trend == "DOWN"
             and structure == "NEAR_BREAKOUT_LOW"
         ):
-            score += 3
+            score += 2
 
         # ================= POWER BOOST =================
         if (
@@ -199,7 +167,7 @@ def predict_trade(signal):
             and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
             and smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]
         ):
-            score += 5
+            score += 4
 
         # ================= MONSTER FILTER =================
         if (
@@ -209,35 +177,14 @@ def predict_trade(signal):
         ):
             return False
 
-        if confidence < 72 and tp_distance < 0.01:
+        if confidence < 70 and tp_distance < 0.01:
             return False
 
-        if rr < 1.8 and tf == "5m":
-            return False
-
-        # رفض الصفقات اللي جودتها شكلية فقط
-        weak_factors = 0
-
-        if volume != "STRONG":
-            weak_factors += 1
-
-        if smc == "RANGE":
-            weak_factors += 1
-
-        if structure in ["MID_RANGE", "UNKNOWN"]:
-            weak_factors += 1
-
-        if trend_power == "MIXED":
-            weak_factors += 1
-
-        if confidence < 75:
-            weak_factors += 1
-
-        if weak_factors >= 3:
+        if rr < 1.7 and tf == "5m":
             return False
 
         # ================= FINAL DECISION =================
-        return score >= 12
+        return score >= 8
 
     except Exception as e:
         print(f"AI ERROR: {e}")

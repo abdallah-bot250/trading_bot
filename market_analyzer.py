@@ -8,10 +8,15 @@ from ai_model import predict_trade
 SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
     "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
-    "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT"
+    "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
+    "ATOMUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT",
+    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT", "TRXUSDT",
+    "ETCUSDT", "ALGOUSDT", "ICPUSDT", "APTUSDT", "HBARUSDT",
+    "FTMUSDT", "RUNEUSDT", "XLMUSDT", "EGLDUSDT", "THETAUSDT",
+    "AXSUSDT", "SANDUSDT", "MANAUSDT", "GALAUSDT", "APEUSDT"
 ]
 
-TIMEFRAMES = ["5m", "15m"]
+TIMEFRAMES = ["5m", "15m", "1h"]
 
 REQUEST_TIMEOUT = 12
 MIN_SCORE_TO_TRADE = 5
@@ -112,10 +117,12 @@ def parse_binance_klines_to_df(data):
 def get_market_data(symbol, interval="5m", limit=250):
     """
     Priority:
-    1) Binance US
-    2) KuCoin
+    1) Binance
+    2) Binance US
+    3) KuCoin
     """
     endpoints = [
+        ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
@@ -223,25 +230,25 @@ def detect_trend(df):
     if len(df) < 50:
         return "UNKNOWN"
 
-    ema20 = ema(df, 20)
-    ema50 = ema(df, 50)
+    ema20v = ema(df, 20)
+    ema50v = ema(df, 50)
 
-    if ema20.iloc[-1] > ema50.iloc[-1]:
+    if ema20v.iloc[-1] > ema50v.iloc[-1]:
         return "UP"
     return "DOWN"
 
 
 def trend_strength(df):
-    if len(df) < 50:
+    if len(df) < 100:
         return "WEAK"
 
-    ema20 = ema(df, 20)
-    ema50 = ema(df, 50)
-    ema100 = ema(df, 100)
+    ema20v = ema(df, 20)
+    ema50v = ema(df, 50)
+    ema100v = ema(df, 100)
 
-    if ema20.iloc[-1] > ema50.iloc[-1] > ema100.iloc[-1]:
+    if ema20v.iloc[-1] > ema50v.iloc[-1] > ema100v.iloc[-1]:
         return "STRONG_BULL"
-    elif ema20.iloc[-1] < ema50.iloc[-1] < ema100.iloc[-1]:
+    elif ema20v.iloc[-1] < ema50v.iloc[-1] < ema100v.iloc[-1]:
         return "STRONG_BEAR"
     return "MIXED"
 
@@ -295,10 +302,10 @@ def is_choppy(df):
         if df is None or len(df) < 50:
             return True
 
-        ema20 = ema(df, 20)
-        ema50 = ema(df, 50)
+        ema20v = ema(df, 20)
+        ema50v = ema(df, 50)
 
-        diff = abs(ema20.iloc[-1] - ema50.iloc[-1])
+        diff = abs(ema20v.iloc[-1] - ema50v.iloc[-1])
         price = df["close"].iloc[-1]
 
         if price <= 0:
@@ -323,7 +330,7 @@ def strong_momentum(df):
 
         change = abs(last - prev) / prev
 
-        return change > 0.002
+        return change > 0.0018
     except:
         return False
 
@@ -472,7 +479,7 @@ def smart_target_multiplier(interval, trend_power, volume, structure, direction)
 
 
 # ================= TP / SL =================
-def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WEAK", timeframe="5m"):
+def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WEAK", timeframe="5m", structure="MID_RANGE"):
     try:
         entry = float(entry)
         atr_value = float(atr_value) if atr_value is not None else 0
@@ -484,20 +491,20 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
     # ================= BASE MIN TARGETS =================
     if timeframe == "15m":
-        min_tp_percent = 0.012   # 1.2%
-        min_sl_percent = 0.0050  # 0.50%
-        atr_tp_multiplier = 3.0
-        atr_sl_multiplier = 1.2
+        min_tp_percent = 0.0115
+        min_sl_percent = 0.0048
+        atr_tp_multiplier = 2.9
+        atr_sl_multiplier = 1.15
     elif timeframe == "1h":
-        min_tp_percent = 0.016   # 1.6%
+        min_tp_percent = 0.016
         min_sl_percent = 0.0065
         atr_tp_multiplier = 3.4
         atr_sl_multiplier = 1.3
     else:  # 5m
-        min_tp_percent = 0.009   # 0.9%
-        min_sl_percent = 0.0040
-        atr_tp_multiplier = 2.6
-        atr_sl_multiplier = 1.0
+        min_tp_percent = 0.0085
+        min_sl_percent = 0.0038
+        atr_tp_multiplier = 2.4
+        atr_sl_multiplier = 0.95
 
     # ================= BOOSTS =================
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
@@ -519,7 +526,7 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
     # ================= SMART TARGET SYSTEM =================
     extra_tp_mult, extra_sl_mult = smart_target_multiplier(
-        timeframe, trend_power, volume, "MID_RANGE", direction
+        timeframe, trend_power, volume, structure, direction
     )
 
     atr_tp_multiplier *= extra_tp_mult
@@ -543,17 +550,17 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
     # ================= ANTI-TINY TARGETS =================
     if entry < 0.1:
-        tp_move = max(tp_move, entry * 0.015)   # 1.5%
+        tp_move = max(tp_move, entry * 0.015)
         sl_move = max(sl_move, entry * 0.006)
     elif entry < 1:
-        tp_move = max(tp_move, entry * 0.012)   # 1.2%
+        tp_move = max(tp_move, entry * 0.012)
         sl_move = max(sl_move, entry * 0.005)
     elif entry < 100:
-        tp_move = max(tp_move, entry * 0.009)   # 0.9%
-        sl_move = max(sl_move, entry * 0.004)
+        tp_move = max(tp_move, entry * 0.0085)
+        sl_move = max(sl_move, entry * 0.0038)
     else:
-        tp_move = max(tp_move, entry * 0.007)   # 0.7%
-        sl_move = max(sl_move, entry * 0.0035)
+        tp_move = max(tp_move, entry * 0.007)
+        sl_move = max(sl_move, entry * 0.0033)
 
     # ================= FINAL LEVELS =================
     if direction == "LONG":
@@ -568,27 +575,69 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
 # ================= CONFIDENCE =================
 def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok=False, htf_ok=False):
-    confidence = 58 + abs(score) * 4
+    """
+    Confidence واقعي:
+    - المتوسط يبقى 60~72
+    - القوي 73~82
+    - النادر جدًا 83~88
+    - بدون أرقام مبالغ فيها
+    """
 
+    confidence = 52
+
+    # ================= SCORE CORE =================
+    confidence += abs(score) * 2.2
+
+    # ================= VOLUME =================
     if volume == "STRONG":
-        confidence += 4
-
-    if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
-        confidence += 4
-
-    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         confidence += 5
+    else:
+        confidence -= 4
 
+    # ================= SMART MONEY =================
+    if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
+        confidence += 6
+    elif smc == "RANGE":
+        confidence -= 6
+    else:
+        confidence -= 2
+
+    # ================= TREND POWER =================
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+        confidence += 6
+    elif trend_power == "MIXED":
+        confidence -= 7
+
+    # ================= STRUCTURE =================
     if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
-        confidence += 3
+        confidence += 5
+    elif structure == "MID_RANGE":
+        confidence -= 5
+    elif structure == "UNKNOWN":
+        confidence -= 3
 
+    # ================= MOMENTUM =================
     if momentum_ok:
         confidence += 5
+    else:
+        confidence -= 5
 
+    # ================= HTF =================
     if htf_ok:
-        confidence += 7
+        confidence += 6
+    else:
+        confidence -= 6
 
-    return min(96, max(50, int(confidence)))
+    confidence = int(round(confidence))
+
+    # ================= HARD REALISTIC CAP =================
+    if confidence >= 89:
+        confidence = 88
+
+    if confidence < 48:
+        confidence = 48
+
+    return confidence
 
 
 # ================= PRICE FORMAT =================
@@ -651,14 +700,14 @@ def signal_levels_valid(entry, tp, sl, direction):
             min_reward = entry * 0.012
             min_risk = entry * 0.005
         elif entry < 10:
-            min_reward = entry * 0.010
-            min_risk = entry * 0.0045
+            min_reward = entry * 0.009
+            min_risk = entry * 0.0042
         elif entry < 100:
             min_reward = entry * 0.008
-            min_risk = entry * 0.0038
+            min_risk = entry * 0.0036
         else:
             min_reward = entry * 0.007
-            min_risk = entry * 0.0032
+            min_risk = entry * 0.003
 
         if reward < min_reward or risk < min_risk:
             return False
@@ -675,15 +724,17 @@ def signal_levels_valid(entry, tp, sl, direction):
 # ================= STRONG SIGNAL FILTER =================
 def strong_signal_filter(df, trend, trend_power, direction):
     try:
-        if df is None or len(df) < 50:
+        if df is None or len(df) < 60:
             return False
 
         if is_choppy(df):
             return False
 
+        # منع السوق المكسّر
         if trend_power == "MIXED":
             return False
 
+        # منع عكس الترند القوي
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
@@ -698,7 +749,21 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
         move = abs(last - prev) / prev
 
-        if move < 0.0025:
+        # لازم حركة محترمة
+        if move < 0.003:
+            return False
+
+        # لازم آخر 3 شموع مايبقوش ضعاف
+        recent_range = (df["high"].tail(3) - df["low"].tail(3)).mean()
+        if recent_range <= 0:
+            return False
+
+        # ATR لازم يبقى محترم
+        atr_val = atr(df).iloc[-1]
+        if pd.isna(atr_val) or atr_val <= 0:
+            return False
+
+        if (atr_val / last) < 0.001:
             return False
 
         return True
@@ -767,7 +832,6 @@ def generate_signal(symbol, interval="5m"):
     if not strong_signal_filter(df, trend, trend_power, direction):
         return None
 
-    # بدل ما HTF يقتل الصفقة نهائيًا، نستخدمه داخل الثقة كمان
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
     # منع العكس القوي جدًا فقط
@@ -787,11 +851,10 @@ def generate_signal(symbol, interval="5m"):
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    # خففناها سنة بسيطة جدًا فقط
-    if tp_distance < 0.0075:
+    if tp_distance < 0.0085:
         return None
 
-    if sl_distance < 0.003:
+    if sl_distance < 0.0035:
         return None
 
     momentum_ok = strong_momentum(df)
@@ -802,13 +865,21 @@ def generate_signal(symbol, interval="5m"):
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    # لو HTF مش مؤكد، ما نرميش الصفقة فورًا — لكن نطلب ثقة أعلى
-    min_paid_conf = MIN_CONFIDENCE + (4 if not htf_ok else 0)
+    # مدفوع = لازم يكون نضيف
+    min_paid_conf = 74 + (5 if not htf_ok else 0)
 
     if confidence < min_paid_conf:
         return None
 
-    if direction == "LONG" and confidence < 86:
+    # ================= TRADE TYPE SMART DECISION =================
+    if (
+        direction == "LONG"
+        and trend == "UP"
+        and trend_power == "STRONG_BULL"
+        and htf_ok
+        and confidence >= 78
+        and structure in ["NEAR_BREAKOUT_HIGH", "MID_RANGE"]
+    ):
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -843,7 +914,7 @@ def generate_signal(symbol, interval="5m"):
 # ================= GENERATE FREE SIGNAL =================
 def generate_free_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 60:
         return None
 
     if is_choppy(df):
@@ -884,12 +955,9 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    # ===============================
-    # FREE: صارم لكن يبعت فعلًا
-    # ===============================
-    if score >= 4:
+    if score >= 5:
         direction = "LONG"
-    elif score <= -4:
+    elif score <= -5:
         direction = "SHORT"
     else:
         return None
@@ -899,11 +967,9 @@ def generate_free_signal(symbol, interval="5m"):
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
-    # HTF مش لازم يقتل الصفقة إلا لو الإشارة ضعيفة
     if not htf_ok and abs(score) < 6:
         return None
 
-    # رفض الاتجاه العكسي فقط لو الإشارة مش قوية كفاية
     if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 6:
         return None
 
@@ -916,15 +982,13 @@ def generate_free_signal(symbol, interval="5m"):
     if tp is None or sl is None:
         return None
 
-    # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    # أخف شوية للمجاني
-    if tp_distance < 0.0065:
+    if tp_distance < 0.0075:
         return None
 
-    if sl_distance < 0.0028:
+    if sl_distance < 0.003:
         return None
 
     momentum_ok = strong_momentum(df)
@@ -935,13 +999,20 @@ def generate_free_signal(symbol, interval="5m"):
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    # بدل 58 نخليها أعلى شوية من العشوائي وأقل من الخنق
-    min_free_conf = 56 + (3 if not htf_ok else 0)
+    min_free_conf = 66 + (5 if not htf_ok else 0)
 
     if confidence < min_free_conf:
         return None
 
-    if direction == "LONG" and confidence < 68:
+    # ================= TRADE TYPE SMART DECISION =================
+    if (
+        direction == "LONG"
+        and trend == "UP"
+        and trend_power == "STRONG_BULL"
+        and htf_ok
+        and confidence >= 78
+        and structure in ["NEAR_BREAKOUT_HIGH", "MID_RANGE"]
+    ):
         trade_type = "SPOT"
     else:
         trade_type = "FUTURES"
@@ -1005,19 +1076,29 @@ def get_top_free_signals(limit=2):
                 print(f"Signal generation error for {symbol} {tf}: {e}")
                 continue
 
+    # ================= KEEP BEST SIGNAL ONLY PER PAIR =================
+    best_per_pair = {}
+
+    for s in candidates:
+        pair = s["pair"]
+        if pair not in best_per_pair or s["ranking_score"] > best_per_pair[pair]["ranking_score"]:
+            best_per_pair[pair] = s
+
+    candidates = list(best_per_pair.values())
+
     if not candidates:
         print("Top signals selected: []")
         return []
 
-    # ترتيب قوي
     candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
 
-    # ناخد الأفضل فقط من فوق
     top_pool = candidates[:6] if len(candidates) >= 6 else candidates[:]
 
     # تنويع بسيط بدون تدمير الجودة
     if len(top_pool) > 2:
-        random.shuffle(top_pool[1:])
+        shuffled_tail = top_pool[1:]
+        random.shuffle(shuffled_tail)
+        top_pool = [top_pool[0]] + shuffled_tail
 
     remaining = [x for x in candidates if x not in top_pool]
     candidates = top_pool + remaining

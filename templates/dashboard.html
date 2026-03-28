@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Crypto Trader</title>
 
 <link rel="stylesheet" href="/static/style.css">
@@ -22,29 +23,100 @@ body::before {
     position: fixed;
     width: 100%;
     height: 100%;
-    background: rgba(4, 11, 44, 0.85);
+    background:
+        linear-gradient(rgba(4, 11, 44, 0.88), rgba(4, 11, 44, 0.92));
     z-index: -1;
 }
 
 /* 🔥 HERO */
 .hero {
     text-align: center;
-    padding: 40px;
+    padding: 40px 20px 20px;
 }
 
 .hero h1 {
     color: #22c55e;
     font-size: 34px;
+    margin-bottom: 10px;
+    text-shadow: 0 0 18px rgba(34,197,94,0.18);
+}
+
+.hero p {
+    color: #cbd5e1;
+    margin-top: 0;
+}
+
+/* 🔥 GLASS BOX */
+.glass-box {
+    background: rgba(15,23,42,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 10px 35px rgba(0,0,0,0.35);
+    border-radius: 18px;
+}
+
+/* 🔥 STATUS STRIP */
+.status-strip {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+
+.status-pill {
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-weight: bold;
+    box-shadow: 0 0 18px rgba(0,0,0,0.18);
+}
+
+.status-on {
+    color: #22c55e;
+}
+
+.status-off {
+    color: #ef4444;
+}
+
+.status-plan {
+    color: #38bdf8;
+}
+
+.status-expiry {
+    color: #facc15;
+}
+
+/* 🔥 QUICK ACTIONS */
+.quick-actions {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+}
+
+.quick-actions a,
+.quick-actions button {
+    width: auto !important;
+    padding: 12px 22px !important;
+    border-radius: 12px !important;
+    font-weight: bold;
+    text-decoration: none;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22);
 }
 
 /* 💳 PLANS */
 .plans {
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;
     gap: 30px;
     flex-wrap: wrap;
     margin-top: 40px;
+    padding: 0 20px;
 }
 
 /* 💎 CARD */
@@ -60,6 +132,8 @@ body::before {
     animation: fadeUp 1s ease forwards;
 
     border: 2px solid transparent;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.35);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 /* ✨ Glow */
@@ -76,12 +150,30 @@ body::before {
 
 /* hover */
 .card:hover {
-    transform: scale(1.08);
+    transform: scale(1.05);
+    box-shadow: 0 16px 42px rgba(0,0,0,0.45);
 }
 
 /* VIP */
 .vip::before {
     background: linear-gradient(45deg, gold, orange, yellow);
+}
+
+/* current plan highlight */
+.current-plan {
+    border: 2px solid #22c55e !important;
+    box-shadow: 0 0 25px rgba(34,197,94,0.22) !important;
+}
+
+.current-badge {
+    display: inline-block;
+    background: #22c55e;
+    color: #04111f;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 12px;
 }
 
 /* ✨ animation */
@@ -99,11 +191,14 @@ body::before {
 .price {
     font-size: 26px;
     margin: 10px 0;
+    color: #f8fafc;
+    font-weight: bold;
 }
 
 ul {
     list-style: none;
     padding: 0;
+    line-height: 1.9;
 }
 
 ul li {
@@ -119,14 +214,22 @@ button {
     margin-top: 8px;
     font-weight: bold;
     cursor: pointer;
+    transition: 0.25s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    opacity: 0.96;
 }
 
 .pay {
     background: #22c55e;
+    color: #04111f;
 }
 
 .manual {
     background: #f59e0b;
+    color: white;
 }
 
 /* 💰 PROFIT BOX */
@@ -134,6 +237,11 @@ button {
     margin: 40px auto;
     text-align: center;
     width: 80%;
+    background: rgba(15,23,42,0.88);
+    padding: 28px;
+    border-radius: 20px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
 /* 🎯 progress bar */
@@ -156,11 +264,76 @@ button {
 #profit {
     font-size: 30px;
     color: #22c55e;
+    font-weight: bold;
 }
 
 canvas {
-    max-width: 600px;
+    max-width: 700px;
     margin: auto;
+}
+
+/* 🔥 section title */
+.section-title {
+    text-align: center;
+    font-size: 28px;
+    margin-top: 50px;
+    color: #38bdf8;
+}
+
+/* inputs */
+input, select {
+    outline: none;
+}
+
+/* helper text */
+.helper-text {
+    color: #cbd5e1;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 15px;
+}
+
+/* responsive */
+@media (max-width: 900px) {
+    .box {
+        width: 92%;
+    }
+
+    .card {
+        width: 100%;
+        max-width: 340px;
+    }
+}
+
+@media (max-width: 600px) {
+    .hero {
+        padding: 28px 14px 16px;
+    }
+
+    .hero h1 {
+        font-size: 28px;
+    }
+
+    .status-strip {
+        gap: 10px;
+    }
+
+    .status-pill {
+        width: 100%;
+        max-width: 330px;
+    }
+
+    .quick-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .quick-actions a,
+    .quick-actions button {
+        width: 100% !important;
+        max-width: 320px;
+        text-align: center;
+    }
 }
 </style>
 </head>
@@ -172,12 +345,47 @@ canvas {
     <h1>🚀 AI Crypto Trader</h1>
     <p>Smart Trading • AI Powered • Passive Income</p>
 
-    <div>
-        📦 Plan: {{plan}} | ⏳ Expiry: {{expiry}}
+    <div class="status-strip">
+        <div class="status-pill">
+            📦 Plan:
+            <span class="status-plan">{{plan}}</span>
+        </div>
+
+        <div class="status-pill">
+            ⏳ Expiry:
+            <span class="status-expiry">{{expiry}}</span>
+        </div>
+
+        <div class="status-pill">
+            🤖 Bot Status:
+            {% if bot_active == 1 %}
+                <span class="status-on">Running</span>
+            {% else %}
+                <span class="status-off">Stopped</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="helper-text">
+        ⚠️ البوت لا يرسل صفقات عشوائية — يتم الإرسال فقط عند وجود فرصة واضحة وقوية
+    </div>
+
+    <div class="quick-actions">
+        <a href="/manual">
+            <button type="button" style="background:#38bdf8; color:white;">📘 دليل الاستخدام</button>
+        </a>
+
+        <a href="/payment">
+            <button type="button" style="background:#22c55e; color:#04111f;">💳 صفحة الاشتراك</button>
+        </a>
+
+        <a href="/logout">
+            <button type="button" style="background:#ef4444; color:white;">🚪 تسجيل الخروج</button>
+        </a>
     </div>
 
     <!-- AFFILIATE PROGRAM -->
-    <div style="margin-top:15px; background:rgba(15,23,42,0.85); padding:20px; border-radius:15px; max-width:1000px; margin-left:auto; margin-right:auto;">
+    <div class="glass-box" style="margin-top:25px; padding:20px; max-width:1000px; margin-left:auto; margin-right:auto;">
         <h2 style="color:#38bdf8; margin-top:0;">💸 Affiliate Program</h2>
 
         <p>🔗 <b>رابط الإحالة الخاص بك:</b></p>
@@ -246,9 +454,20 @@ canvas {
     {% endif %}
 </form>
 
+<div class="helper-text">
+    {% if bot_active == 1 %}
+        🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
+    {% else %}
+        🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
+    {% endif %}
+</div>
+
 {% if plan == "vip" or is_admin == 1 %}
-<div style="max-width:900px; margin:30px auto; background:rgba(15,23,42,0.9); padding:25px; border-radius:20px;">
+<div class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
     <h2 style="color:#facc15;">⚙️ VIP Auto Trading Settings</h2>
+    <p style="color:#cbd5e1; text-align:center;">
+        اربط الـ API الخاص بك واضبط إعدادات التداول — البوت لا يستطيع السحب أو الإيداع، فقط تنفيذ الصفقات.
+    </p>
 
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
         <h3>🔐 ربط API</h3>
@@ -277,10 +496,15 @@ canvas {
 </div>
 {% endif %}
 
+<h2 class="section-title">💳 Subscription Plans</h2>
+
 <!-- PLANS -->
 <div class="plans">
 
-<div class="card">
+<div class="card {% if plan == 'basic' %}current-plan{% endif %}">
+{% if plan == "basic" %}
+<div class="current-badge">YOUR CURRENT PLAN</div>
+{% endif %}
 <h2>Basic</h2>
 <div class="price">$25</div>
 
@@ -306,7 +530,10 @@ canvas {
 <a href="/pay/basic"><button class="manual">💸 Manual</button></a>
 </div>
 
-<div class="card">
+<div class="card {% if plan == 'pro' %}current-plan{% endif %}">
+{% if plan == "pro" %}
+<div class="current-badge">YOUR CURRENT PLAN</div>
+{% endif %}
 <h2>Pro 🔥</h2>
 <div class="price">$59.99</div>
 
@@ -333,7 +560,10 @@ canvas {
 <a href="/pay/pro"><button class="manual">💸 Manual</button></a>
 </div>
 
-<div class="card vip">
+<div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
+{% if plan == "vip" %}
+<div class="current-badge">YOUR CURRENT PLAN</div>
+{% endif %}
 <h2>VIP 💎</h2>
 <div class="price">$99.99</div>
 
@@ -367,6 +597,8 @@ canvas {
 <div class="box">
 <h2>💰 Profit</h2>
 
+<p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
+
 <p id="profit">{{profit}} USDT</p>
 <p>📊 Trades: {{trades}}</p>
 
@@ -378,6 +610,7 @@ canvas {
 <!-- CHART -->
 <div class="box">
 <h2>📊 Performance</h2>
+<p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
 <canvas id="chart"></canvas>
 </div>
 
@@ -398,31 +631,61 @@ let chart = new Chart(document.getElementById("chart"), {
         datasets: [{
             label: "Profit",
             data: [],
-            borderColor: "#22c55e"
+            borderColor: "#22c55e",
+            tension: 0.3
         }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                labels: {
+                    color: "white"
+                }
+            }
+        },
+        scales: {
+            x: {
+                ticks: { color: "white" },
+                grid: { color: "rgba(255,255,255,0.08)" }
+            },
+            y: {
+                ticks: { color: "white" },
+                grid: { color: "rgba(255,255,255,0.08)" }
+            }
+        }
     }
 });
 
 setInterval(async ()=>{
- let r = await fetch("/api/data");
- let d = await r.json();
- let values = Object.values(d);
+ try {
+     let r = await fetch("/api/data");
+     let d = await r.json();
+     let values = Object.values(d);
 
- if (!values.length) return;
+     if (!values.length) return;
 
- let user = values[0];
- let profit = user.amount || 0;
+     let user = values[0];
+     let profit = user.amount || 0;
 
- document.getElementById("profit").innerText = profit + " $";
+     document.getElementById("profit").innerText = profit + " $";
 
- // progress bar
- let percent = Math.min(profit * 5, 100);
- document.getElementById("bar").style.width = percent + "%";
+     // progress bar
+     let percent = Math.min(Math.abs(profit) * 5, 100);
+     document.getElementById("bar").style.width = percent + "%";
 
- chart.data.labels.push("");
- chart.data.datasets[0].data.push(profit);
- chart.update();
+     chart.data.labels.push("");
+     chart.data.datasets[0].data.push(profit);
 
+     if (chart.data.labels.length > 20) {
+         chart.data.labels.shift();
+         chart.data.datasets[0].data.shift();
+     }
+
+     chart.update();
+ } catch (e) {
+     console.log("chart update error", e);
+ }
 },3000);
 </script>
 
