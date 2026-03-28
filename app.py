@@ -264,6 +264,14 @@ def init_db():
         )
         """)
 
+        # ✅ جدول حفظ إحالات التليجرام
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_referrals (
+            telegram_id TEXT PRIMARY KEY,
+            referral_code TEXT
+        )
+        """)
+
         # إضافات أمان لو الجدول قديم
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key TEXT")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_secret TEXT")
@@ -398,6 +406,25 @@ def register():
             conn = db()
             c = conn.cursor()
 
+            # ================= لو ref مش موجود في اللينك، هاته من Telegram =================
+            telegram_ref = None
+            if chat_id and not ref:
+                try:
+                    c.execute("""
+                        SELECT referral_code
+                        FROM telegram_referrals
+                        WHERE telegram_id = %s
+                        LIMIT 1
+                    """, (chat_id,))
+                    tg_ref = c.fetchone()
+                    if tg_ref and tg_ref[0]:
+                        telegram_ref = str(tg_ref[0]).strip()
+                        log(f"✅ Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
+                except Exception as tg_err:
+                    log(f"❌ Telegram referral fetch error in register: {tg_err}")
+
+            final_ref = ref or telegram_ref
+
             # ندور على الإيميل الأول
             c.execute("""
                 SELECT id, email, password, chat_id, is_admin, plan, is_paid
@@ -432,6 +459,33 @@ def register():
                     # نضمن كود الإحالة
                     ensure_user_has_referral_code(chat_id, conn)
 
+                # ✅ لو الحساب موجود ولسه referred_by فاضي، اربطه من الإحالة
+                if final_ref:
+                    c.execute("""
+                        SELECT referred_by, chat_id
+                        FROM users
+                        WHERE id = %s
+                        LIMIT 1
+                    """, (user_id,))
+                    existing_user_data = c.fetchone()
+
+                    current_referred_by = existing_user_data[0] if existing_user_data else None
+                    current_chat_id = str(existing_user_data[1] or "").strip() if existing_user_data else ""
+
+                    c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
+                    ref_user = c.fetchone()
+
+                    if ref_user and not current_referred_by:
+                        ref_owner_chat_id = str(ref_user[0] or "").strip()
+                        if ref_owner_chat_id != current_chat_id:
+                            c.execute("""
+                                UPDATE users
+                                SET referred_by = %s
+                                WHERE id = %s
+                            """, (final_ref, user_id))
+                            conn.commit()
+                            log(f"✅ Existing user referred_by updated: {email} -> {final_ref}")
+
                 # لو الإيميل ده هو الأدمن، نضمن إنه متسجل أدمن
                 if is_admin_email(email):
                     c.execute("""
@@ -446,7 +500,7 @@ def register():
                 session["user"] = email
                 session["is_admin"] = True if is_admin_email(email) else False
 
-                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={ref}")
+                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
                 return redirect("/dashboard")
 
             # -----------------------------------
@@ -455,11 +509,11 @@ def register():
             password = generate_password_hash(password_raw)
 
             referred_by = None
-            if ref:
-                c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (ref,))
+            if final_ref:
+                c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
                 ref_user = c.fetchone()
                 if ref_user and str(ref_user[0] or "").strip() != str(chat_id).strip():
-                    referred_by = ref
+                    referred_by = final_ref
 
             c.execute("""
             INSERT INTO users (
@@ -500,7 +554,7 @@ def register():
             session["user"] = email
             session["is_admin"] = True if is_admin_email(email) else False
 
-            log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={ref}")
+            log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
             return redirect("/dashboard")
 
         except Exception as e:
@@ -653,7 +707,7 @@ def dashboard():
                 c.execute("SELECT * FROM users WHERE email = %s", (session["user"],))
                 user = c.fetchone()
 
-            referral_link = f"{BASE_URL}/register?ref={referral_code}"
+            referral_link = f"https://t.me/pro_crypto_99_bot?start=ref_{user['referral_code']}"
 
         c.execute("""
             SELECT COUNT(*) AS total_refs
@@ -702,6 +756,13 @@ def dashboard():
     except Exception as e:
         log(f"❌ dashboard error: {e}")
         return f"❌ حصل خطأ أثناء تحميل الداشبورد: {str(e)}"
+
+
+@app.route("/manual")
+def manual():
+    if "user" not in session:
+        return redirect("/login")
+    return render_template("manual.html")
 
 
 # ================= SIMPLE DATA API =================
@@ -985,6 +1046,7 @@ def request_withdrawal():
 def current_admin_email():
     return (session.get("user") or "").strip().lower()
 
+
 def is_current_admin():
     email = current_admin_email()
     if not email:
@@ -1198,8 +1260,37 @@ def webhook():
 
         # ================= /start =================
         if text.startswith("/start"):
+            start_ref = None
+            parts = text.split()
+
+            if len(parts) > 1 and parts[1].startswith("ref_"):
+                start_ref = parts[1].replace("ref_", "").strip()
+
             conn = db()
             c = conn.cursor()
+
+            # ================= حفظ الإحالة القادمة من البوت =================
+            if start_ref:
+                try:
+                    c.execute("""
+                        CREATE TABLE IF NOT EXISTS telegram_referrals (
+                            telegram_id TEXT PRIMARY KEY,
+                            referral_code TEXT
+                        )
+                    """)
+
+                    c.execute("""
+                        INSERT INTO telegram_referrals (telegram_id, referral_code)
+                        VALUES (%s, %s)
+                        ON CONFLICT (telegram_id)
+                        DO UPDATE SET referral_code = EXCLUDED.referral_code
+                    """, (str(chat_id), start_ref))
+
+                    conn.commit()
+                    log(f"✅ Telegram referral saved: {chat_id} -> {start_ref}")
+
+                except Exception as e:
+                    log(f"❌ Telegram referral save error: {e}")
 
             try:
                 c.execute("""
@@ -1211,6 +1302,7 @@ def webhook():
                 """, (chat_id,))
                 user = c.fetchone()
 
+                # ================= لو المستخدم مربوط بالفعل =================
                 if user:
                     user_id = user[0]
                     email = user[1]
@@ -1251,12 +1343,12 @@ def webhook():
                     if is_paid:
                         send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
 
-                        aff_link = f"{BASE_URL}/register?ref={referral_code}"
+                        aff_link = f"https://t.me/pro_crypto_99_bot?start=ref_{referral_code}"
                         send(chat_id, f"""💸 رابط الأفلييت الخاص بك:
 
 {aff_link}
 
-📌 كل شخص يسجل من خلالك ويتفعّل هيتحسب لك.
+📌 كل شخص يدخل من خلالك ويبدأ البوت هيتسجل تحتك.
 """)
 
                         return "ok", 200
@@ -1324,6 +1416,8 @@ def webhook():
                                 send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
 
                     else:
+                        aff_link = f"https://t.me/pro_crypto_99_bot?start=ref_{referral_code}"
+
                         send(chat_id, f"""📌 أنت استلمت الصفقتين المجانيين بالفعل.
 
 🔥 لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
@@ -1335,12 +1429,13 @@ def webhook():
 💸 ولو حابب تكسب من البوت كمان،
 ده رابط الأفلييت الخاص بك:
 
-{BASE_URL}/register?ref={referral_code}
+{aff_link}
 """)
 
+                # ================= لو المستخدم لسه غير مسجل =================
                 else:
-                    
                     register_link = f"{BASE_URL}/register?chat_id={chat_id}"
+
                     send(chat_id, f"""🔥 أهلاً بيك في AI Crypto Trader
 
 🤖 البوت ده مصمم علشان يفلتر السوق ويختار أفضل الفرص الممكنة فقط،
@@ -1371,6 +1466,8 @@ def webhook():
             finally:
                 conn.close()
 
+            return "ok", 200
+
         # ================= /affiliate =================
         elif text.startswith("/affiliate"):
             conn = db()
@@ -1397,7 +1494,7 @@ def webhook():
                 if not referral_code:
                     referral_code = ensure_user_has_referral_code(chat_id, conn)
 
-                aff_link = f"{BASE_URL}/register?ref={referral_code}"
+                aff_link = f"https://t.me/pro_crypto_99_bot?start=ref_{referral_code}"
 
                 send(chat_id, f"""💸 نظام الأفلييت
 

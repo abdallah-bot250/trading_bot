@@ -10,7 +10,7 @@ SYMBOLS = [
     "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
     "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
     "ATOMUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT",
-    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT", "TRXUSDT",
+    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT", 
     "ETCUSDT", "ALGOUSDT", "ICPUSDT", "APTUSDT", "HBARUSDT",
     "FTMUSDT", "RUNEUSDT", "XLMUSDT", "EGLDUSDT", "THETAUSDT",
     "AXSUSDT", "SANDUSDT", "MANAUSDT", "GALAUSDT", "APEUSDT"
@@ -121,6 +121,22 @@ def get_market_data(symbol, interval="5m", limit=250):
     2) Binance US
     3) KuCoin
     """
+
+    KUCOIN_TF_MAP = {
+        "1m": "1min",
+        "3m": "3min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1hour",
+        "2h": "2hour",
+        "4h": "4hour",
+        "6h": "6hour",
+        "8h": "8hour",
+        "12h": "12hour",
+        "1d": "1day",
+    }
+
     endpoints = [
         ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
@@ -130,6 +146,16 @@ def get_market_data(symbol, interval="5m", limit=250):
         try:
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
             print(f"🌐 {source_name} STATUS {symbol} {interval}: {response.status_code}")
+
+            # لو Binance restricted / blocked
+            if response.status_code == 451:
+                print(f"⚠️ {source_name} restricted for {symbol} {interval}")
+                continue
+
+            # لو مش 200
+            if response.status_code != 200:
+                print(f"⚠️ {source_name} bad status for {symbol} {interval}: {response.status_code}")
+                continue
 
             try:
                 data = response.json()
@@ -149,40 +175,58 @@ def get_market_data(symbol, interval="5m", limit=250):
 
         except Exception as e:
             print(f"❌ {source_name} request failed for {symbol} {interval}: {e}")
+            continue
 
-    # ---------- Fallback: KuCoin ----------
+    # ===================== FALLBACK TO KUCOIN =====================
     try:
+        kucoin_interval = KUCOIN_TF_MAP.get(interval, interval)
         kucoin_symbol = symbol.replace("USDT", "-USDT")
-        kucoin_type = interval
 
-        url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_type}&symbol={kucoin_symbol}"
-        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
+        response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
+
         print(f"🌐 KUCOIN STATUS {symbol} {interval}: {response.status_code}")
+
+        if response.status_code != 200:
+            print(f"⚠️ KUCOIN bad status for {symbol} {interval}: {response.status_code}")
+            return None
 
         data = response.json()
 
-        if not isinstance(data, dict):
-            print(f"❌ KUCOIN invalid response for {symbol} {interval}: {data}")
+        if not isinstance(data, dict) or "data" not in data:
+            print(f"⚠️ KUCOIN invalid response for {symbol} {interval}: {data}")
             return None
 
-        if data.get("code") != "200000":
-            print(f"⚠️ KUCOIN API error for {symbol} {interval}: {data}")
+        candles = data["data"]
+
+        if not candles:
+            print(f"❌ KUCOIN no candles for {symbol} {interval}")
             return None
 
-        rows = data.get("data", [])
-        if rows:
-            rows = rows[:limit]
+        # KuCoin بيرجع الشموع بالعكس، نقلبها
+        candles = candles[::-1]
 
-        df = parse_kucoin_klines_to_df(rows)
+        import pandas as pd
+
+        df = pd.DataFrame(candles, columns=[
+            "time", "open", "close", "high", "low", "volume", "turnover"
+        ])
+
+        df["time"] = pd.to_datetime(df["time"].astype(int), unit="s")
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df = df[["time", "open", "high", "low", "close", "volume"]]
+        df.dropna(inplace=True)
+
         if df is not None and not df.empty:
-            print(f"✅ KUCOIN fallback success for {symbol} {interval}")
             return df
 
-        print(f"❌ KUCOIN no kline data for {symbol} {interval}")
+        print(f"❌ KUCOIN parsed empty df for {symbol} {interval}")
         return None
 
     except Exception as e:
-        print(f"❌ KUCOIN request failed for {symbol} {interval}: {e}")
+        print(f"❌ KUCOIN API error for {symbol} {interval}: {e}")
         return None
 
 
