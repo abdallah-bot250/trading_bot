@@ -591,12 +591,13 @@ def register():
 
 
 # ================= LOGIN =================
+# ================= LOGIN =================
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         try:
             email = request.form["email"].strip().lower()
-            password = request.form["password"]
+            password = request.form["password"].strip()
 
             # ✅ NEW: تحقق أساسي
             if not email or not password:
@@ -609,28 +610,36 @@ def login():
 
             conn = db()
             c = conn.cursor()
-            c.execute("SELECT * FROM users WHERE email = %s", (email,))
-            user = c.fetchone()
-            conn.close()
 
-            if user and check_password_hash(user[2], password):
+            # ✅ IMPORTANT: بحث case-insensitive
+            c.execute("""
+                SELECT * FROM users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+            """, (email,))
+            user = c.fetchone()
+
+            if not user:
+                conn.close()
+                return "❌ الإيميل غير موجود"
+
+            stored_password = str(user[2] or "").strip()
+
+            # ✅ تحقق الباسورد
+            if check_password_hash(stored_password, password):
                 session["user"] = email
                 log(f"✅ Login success: {email}")
+                conn.close()
                 return redirect("/dashboard")
 
-            return "❌ بيانات تسجيل الدخول غير صحيحة"
+            conn.close()
+            return "❌ الباسورد غير صحيح"
 
         except Exception as e:
             log(f"❌ Login error: {e}")
             return f"❌ حصل خطأ أثناء تسجيل الدخول: {str(e)}"
 
     return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
 
 
 # ================= SAVE API =================
