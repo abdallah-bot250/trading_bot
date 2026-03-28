@@ -94,9 +94,24 @@ def send(chat_id, text):
         return False
 
     try:
+        user_link = f"{BASE_URL}/login?chat_id={chat_id}"
+
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={"chat_id": str(chat_id), "text": text},
+            json={
+                "chat_id": str(chat_id),
+                "text": text,
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "🌐 الدخول إلى حسابك",
+                                "url": user_link
+                            }
+                        ]
+                    ]
+                }
+            },
             timeout=10
         )
 
