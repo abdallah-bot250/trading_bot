@@ -10,7 +10,7 @@ SYMBOLS = [
     "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
     "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
     "ATOMUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT",
-    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT", 
+    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT",
     "ETCUSDT", "ALGOUSDT", "ICPUSDT", "APTUSDT", "HBARUSDT",
     "FTMUSDT", "RUNEUSDT", "XLMUSDT", "EGLDUSDT", "THETAUSDT",
     "AXSUSDT", "SANDUSDT", "MANAUSDT", "GALAUSDT", "APEUSDT"
@@ -379,6 +379,168 @@ def strong_momentum(df):
         return False
 
 
+# ================= NEW: LATE ENTRY FILTER =================
+def late_entry_filter(df, direction):
+    try:
+        if df is None or len(df) < 30:
+            return False
+
+        close = float(df["close"].iloc[-1])
+        open_price = float(df["open"].iloc[-1])
+        high = float(df["high"].iloc[-1])
+        low = float(df["low"].iloc[-1])
+
+        ema20v = ema(df, 20).iloc[-1]
+        ema50v = ema(df, 50).iloc[-1]
+        atr_val = atr(df).iloc[-1]
+
+        if pd.isna(ema20v) or pd.isna(ema50v) or pd.isna(atr_val) or atr_val <= 0 or close <= 0:
+            return False
+
+        candle_body = abs(close - open_price)
+        candle_range = abs(high - low)
+
+        # شمعة انفجارية زيادة = غالبًا دخول متأخر
+        if candle_range > (atr_val * 2.4):
+            return True
+
+        if candle_body > (atr_val * 1.6):
+            return True
+
+        # بعيد جدًا عن المتوسطات
+        dist_ema20 = abs(close - ema20v) / close
+        dist_ema50 = abs(close - ema50v) / close
+
+        if dist_ema20 > 0.012:
+            return True
+
+        if dist_ema50 > 0.02:
+            return True
+
+        # داخل LONG بعد شدّة صعود / SHORT بعد شدّة هبوط
+        if direction == "LONG":
+            recent_push = (close - df["close"].iloc[-4]) / df["close"].iloc[-4]
+            if recent_push > 0.012:
+                return True
+
+        if direction == "SHORT":
+            recent_push = (df["close"].iloc[-4] - close) / df["close"].iloc[-4]
+            if recent_push > 0.012:
+                return True
+
+        return False
+    except Exception as e:
+        print(f"late_entry_filter error: {e}")
+        return False
+
+
+# ================= NEW: SUPPORT / RESISTANCE FILTER =================
+def support_resistance_filter(df, direction):
+    try:
+        if df is None or len(df) < 40:
+            return True
+
+        close = float(df["close"].iloc[-1])
+        atr_val = atr(df).iloc[-1]
+
+        if pd.isna(atr_val) or atr_val <= 0 or close <= 0:
+            return True
+
+        recent_high = float(df["high"].tail(25).max())
+        recent_low = float(df["low"].tail(25).min())
+
+        resistance_distance = abs(recent_high - close)
+        support_distance = abs(close - recent_low)
+
+        # LONG تحت مقاومة قريبة جدًا
+        if direction == "LONG":
+            if recent_high > close and resistance_distance < (atr_val * 1.15):
+                return False
+
+        # SHORT فوق دعم قريب جدًا
+        if direction == "SHORT":
+            if recent_low < close and support_distance < (atr_val * 1.15):
+                return False
+
+        return True
+    except Exception as e:
+        print(f"support_resistance_filter error: {e}")
+        return True
+
+
+# ================= NEW: PULLBACK ENTRY QUALITY =================
+def pullback_entry_quality(df, direction):
+    try:
+        if df is None or len(df) < 25:
+            return False
+
+        close = float(df["close"].iloc[-1])
+        ema20v = float(ema(df, 20).iloc[-1])
+
+        if close <= 0 or ema20v <= 0:
+            return False
+
+        dist = abs(close - ema20v) / close
+
+        # الدخول المثالي يكون قريب نسبيًا من المتوسط
+        if dist > 0.0095:
+            return False
+
+        # نمنع الدخول لو آخر 3 شمعات كلها في نفس الاتجاه بقوة
+        closes = df["close"].tail(4).tolist()
+
+        if direction == "LONG":
+            if closes[-1] > closes[-2] > closes[-3] > closes[-4]:
+                if ((closes[-1] - closes[-4]) / closes[-4]) > 0.01:
+                    return False
+
+        if direction == "SHORT":
+            if closes[-1] < closes[-2] < closes[-3] < closes[-4]:
+                if ((closes[-4] - closes[-1]) / closes[-4]) > 0.01:
+                    return False
+
+        return True
+    except Exception as e:
+        print(f"pullback_entry_quality error: {e}")
+        return False
+
+
+# ================= NEW: REJECTION WICK FILTER =================
+def rejection_wick_filter(df, direction):
+    try:
+        if df is None or len(df) < 5:
+            return True
+
+        last = df.iloc[-1]
+
+        open_price = float(last["open"])
+        close = float(last["close"])
+        high = float(last["high"])
+        low = float(last["low"])
+
+        body = abs(close - open_price)
+        upper_wick = high - max(open_price, close)
+        lower_wick = min(open_price, close) - low
+
+        if body <= 0:
+            body = 0.0000001
+
+        # LONG: لو فيه رفض علوي قوي جدًا → خطر
+        if direction == "LONG":
+            if upper_wick > body * 2.2 and close < high:
+                return False
+
+        # SHORT: لو فيه رفض سفلي قوي جدًا → خطر
+        if direction == "SHORT":
+            if lower_wick > body * 2.2 and close > low:
+                return False
+
+        return True
+    except Exception as e:
+        print(f"rejection_wick_filter error: {e}")
+        return True
+
+
 # ================= HIGHER TF CONFIRMATION =================
 def higher_timeframe_confirmation(symbol, direction, current_interval):
     try:
@@ -390,11 +552,21 @@ def higher_timeframe_confirmation(symbol, direction, current_interval):
 
         trend_htf = detect_trend(df_htf)
         trend_power_htf = trend_strength(df_htf)
+        smc_htf = detect_smc(df_htf)
 
         if direction == "LONG":
-            return trend_htf == "UP" or trend_power_htf == "STRONG_BULL"
+            return (
+                trend_htf == "UP"
+                and trend_power_htf in ["STRONG_BULL", "MIXED"]
+                and smc_htf != "LIQUIDITY_BREAK_DOWN"
+            )
+
         elif direction == "SHORT":
-            return trend_htf == "DOWN" or trend_power_htf == "STRONG_BEAR"
+            return (
+                trend_htf == "DOWN"
+                and trend_power_htf in ["STRONG_BEAR", "MIXED"]
+                and smc_htf != "LIQUIDITY_BREAK_UP"
+            )
 
         return False
     except Exception as e:
@@ -885,8 +1057,21 @@ def generate_signal(symbol, interval="5m"):
     if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
         return None
 
+    # ================= NEW FILTERS =================
+    if late_entry_filter(df, direction):
+        return None
+
+    if not support_resistance_filter(df, direction):
+        return None
+
+    if not pullback_entry_quality(df, direction):
+        return None
+
+    if not rejection_wick_filter(df, direction):
+        return None
+
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
+    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
 
     if tp is None or sl is None:
         return None
@@ -1020,8 +1205,21 @@ def generate_free_signal(symbol, interval="5m"):
     if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 6:
         return None
 
+    # ================= NEW FILTERS =================
+    if late_entry_filter(df, direction):
+        return None
+
+    if not support_resistance_filter(df, direction):
+        return None
+
+    if not pullback_entry_quality(df, direction):
+        return None
+
+    if not rejection_wick_filter(df, direction):
+        return None
+
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval)
+    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
 
     if tp is None or sl is None:
         return None

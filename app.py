@@ -408,8 +408,11 @@ def test_telegram():
 # ================= REGISTER =================
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    chat_id = (request.args.get("chat_id") or "").strip()
+    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
     ref = request.args.get("ref", "").strip()
+
+    if request.args.get("chat_id"):
+     session["chat_id"] = request.args.get("chat_id").strip()
 
     if request.method == "POST":
         try:
@@ -475,15 +478,20 @@ def register():
 
                 # لو دخل من تيليجرام ومفيش chat_id محفوظ، اربطه
                 if chat_id and not existing_chat_id:
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = %s
-                        WHERE id = %s
-                    """, (chat_id, user_id))
-                    conn.commit()
+                 c.execute("""
+                    UPDATE users
+                    SET chat_id = NULL
+                    WHERE chat_id = %s AND id != %s
+                """, (chat_id, user_id))
 
-                    # نضمن كود الإحالة
-                    ensure_user_has_referral_code(chat_id, conn)
+                c.execute("""
+                   UPDATE users
+                   SET chat_id = %s
+                   WHERE id = %s
+               """, (chat_id, user_id))
+                conn.commit()
+  
+                ensure_user_has_referral_code(chat_id, conn)
 
                 # ✅ لو الحساب موجود ولسه referred_by فاضي، اربطه من الإحالة
                 if final_ref:
@@ -591,9 +599,13 @@ def register():
 
 
 # ================= LOGIN =================
-# ================= LOGIN =================
-@app.route("/login", methods=["GET", "POST"])
+#@app.route("/login", methods=["GET", "POST"])
 def login():
+    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
+
+    if request.args.get("chat_id"):
+        session["chat_id"] = request.args.get("chat_id").strip()
+
     if request.method == "POST":
         try:
             email = request.form["email"].strip().lower()
@@ -627,8 +639,27 @@ def login():
 
             # ✅ تحقق الباسورد
             if check_password_hash(stored_password, password):
+                user_id = user[0]
+
+                # ✅ NEW: ربط chat_id بالحساب الحالي تلقائيًا
+                if chat_id:
+                    c.execute("""
+                        UPDATE users
+                        SET chat_id = NULL
+                        WHERE chat_id = %s AND id != %s
+                    """, (chat_id, user_id))
+
+                    c.execute("""
+                        UPDATE users
+                        SET chat_id = %s
+                        WHERE id = %s
+                    """, (chat_id, user_id))
+                    conn.commit()
+
+                    ensure_user_has_referral_code(chat_id, conn)
+
                 session["user"] = email
-                log(f"✅ Login success: {email}")
+                log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
                 return redirect("/dashboard")
 
@@ -1341,7 +1372,7 @@ def webhook():
                     SELECT id, email, trades, is_paid, referral_code
                     FROM users
                     WHERE chat_id = %s
-                    ORDER BY id DESC
+                    ORDER BY is_paid DESC, id DESC
                     LIMIT 1
                 """, (chat_id,))
                 user = c.fetchone()
