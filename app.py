@@ -11,8 +11,6 @@ import json
 from market_analyzer import get_top_free_signals
 import random
 import string
-from datetime import datetime, timedelta
-from flask import session, redirect, request, render_template
 import re
 
 # ================= APP =================
@@ -70,7 +68,20 @@ def generate_referral_code(chat_id):
 def ensure_user_has_referral_code(chat_id, conn):
     cur = conn.cursor()
 
-    cur.execute("SELECT referral_code FROM users WHERE chat_id = %s", (chat_id,))
+    cur.execute("""
+        SELECT referral_code
+        FROM users
+        WHERE chat_id = %s
+        ORDER BY 
+            CASE 
+                WHEN is_admin = 1 THEN 1
+                WHEN lifetime_owner = 1 THEN 2
+                WHEN is_paid = 1 THEN 3
+                ELSE 4
+            END,
+            id DESC
+        LIMIT 1
+    """, (chat_id,))
     result = cur.fetchone()
 
     if result and result[0]:
@@ -187,7 +198,7 @@ def can_receive_signals(user):
         trades = user[7]
         expiry = user[8]
 
-        if user[23] == 1:
+        if user[22] == 1 or user[23] == 1:
             return True
 
         # trial: أول إشارتين فقط
@@ -280,7 +291,6 @@ def init_db():
         )
         """)
 
-        # ✅ جدول حفظ إحالات التليجرام
         c.execute("""
         CREATE TABLE IF NOT EXISTS telegram_referrals (
             telegram_id TEXT PRIMARY KEY,
@@ -310,6 +320,23 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_vip_unlocked INTEGER DEFAULT 0")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lifetime_owner INTEGER DEFAULT 0")
+
+        # تنظيف chat_id
+        c.execute("""
+            UPDATE users
+            SET chat_id = TRIM(chat_id)
+            WHERE chat_id IS NOT NULL
+        """)
+
+        # منع تكرار chat_id
+        try:
+            c.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
+                ON users (chat_id)
+                WHERE chat_id IS NOT NULL AND chat_id <> ''
+            """)
+        except Exception as idx_err:
+            log(f"⚠️ chat_id unique index warning: {idx_err}")
 
         # فعّل الأدمن تلقائيًا لو الإيميل موجود
         if ADMIN_EMAIL:
@@ -409,33 +436,32 @@ def test_telegram():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
-    ref = request.args.get("ref", "").strip()
+    ref = (request.args.get("ref") or session.get("ref") or "").strip()
 
     if request.args.get("chat_id"):
-     session["chat_id"] = request.args.get("chat_id").strip()
+        session["chat_id"] = request.args.get("chat_id").strip()
+
+    if request.args.get("ref"):
+        session["ref"] = request.args.get("ref").strip()
 
     if request.method == "POST":
         try:
-            email = request.form["email"].strip().lower()
-            password_raw = request.form["password"].strip()
+            email = (request.form.get("email") or "").strip().lower()
+            password_raw = (request.form.get("password") or "").strip()
 
-            # ✅ NEW: تحقق أساسي
             if not email or not password_raw:
                 return "❌ لازم تكتب الإيميل والباسورد"
 
-            # ✅ NEW: تحقق الإيميل
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
                 return "❌ لازم تدخل إيميل صحيح"
 
-            # ✅ NEW: تحقق الباسورد
             if len(password_raw) < 6:
                 return "❌ الباسورد لازم يكون 6 أحرف أو أكثر"
 
             conn = db()
             c = conn.cursor()
 
-            # ================= لو ref مش موجود في اللينك، هاته من Telegram =================
             telegram_ref = None
             if chat_id and not ref:
                 try:
@@ -454,7 +480,6 @@ def register():
 
             final_ref = ref or telegram_ref
 
-            # ندور على الإيميل الأول
             c.execute("""
                 SELECT id, email, password, chat_id, is_admin, plan, is_paid
                 FROM users
@@ -463,37 +488,30 @@ def register():
             """, (email,))
             existing = c.fetchone()
 
-            # -----------------------------------
-            # لو الإيميل موجود بالفعل
-            # -----------------------------------
             if existing:
                 user_id = existing[0]
                 stored_password = existing[2]
-                existing_chat_id = str(existing[3] or "").strip()
 
-                # تحقق من كلمة السر
                 if not check_password_hash(stored_password, password_raw):
                     conn.close()
                     return "❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة"
 
-                # لو دخل من تيليجرام ومفيش chat_id محفوظ، اربطه
-                if chat_id and not existing_chat_id:
-                 c.execute("""
-                    UPDATE users
-                    SET chat_id = NULL
-                    WHERE chat_id = %s AND id != %s
-                """, (chat_id, user_id))
+                if chat_id:
+                    c.execute("""
+                        UPDATE users
+                        SET chat_id = NULL
+                        WHERE chat_id = %s AND id != %s
+                    """, (chat_id, user_id))
 
-                c.execute("""
-                   UPDATE users
-                   SET chat_id = %s
-                   WHERE id = %s
-               """, (chat_id, user_id))
-                conn.commit()
-  
-                ensure_user_has_referral_code(chat_id, conn)
+                    c.execute("""
+                        UPDATE users
+                        SET chat_id = %s
+                        WHERE id = %s
+                    """, (chat_id, user_id))
+                    conn.commit()
 
-                # ✅ لو الحساب موجود ولسه referred_by فاضي، اربطه من الإحالة
+                    ensure_user_has_referral_code(chat_id, conn)
+
                 if final_ref:
                     c.execute("""
                         SELECT referred_by, chat_id
@@ -520,7 +538,6 @@ def register():
                             conn.commit()
                             log(f"✅ Existing user referred_by updated: {email} -> {final_ref}")
 
-                # لو الإيميل ده هو الأدمن، نضمن إنه متسجل أدمن
                 if is_admin_email(email):
                     c.execute("""
                         UPDATE users
@@ -537,9 +554,6 @@ def register():
                 log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
                 return redirect("/dashboard")
 
-            # -----------------------------------
-            # لو الإيميل جديد => نعمل حساب جديد
-            # -----------------------------------
             password = generate_password_hash(password_raw)
 
             referred_by = None
@@ -599,7 +613,7 @@ def register():
 
 
 # ================= LOGIN =================
-#@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
     chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
 
@@ -608,14 +622,12 @@ def login():
 
     if request.method == "POST":
         try:
-            email = request.form["email"].strip().lower()
-            password = request.form["password"].strip()
+            email = (request.form.get("email") or "").strip().lower()
+            password = (request.form.get("password") or "").strip()
 
-            # ✅ NEW: تحقق أساسي
             if not email or not password:
                 return "❌ لازم تكتب الإيميل والباسورد"
 
-            # ✅ NEW: تحقق الإيميل
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
                 return "❌ لازم تدخل إيميل صحيح"
@@ -623,7 +635,6 @@ def login():
             conn = db()
             c = conn.cursor()
 
-            # ✅ IMPORTANT: بحث case-insensitive
             c.execute("""
                 SELECT * FROM users
                 WHERE LOWER(email) = %s
@@ -637,11 +648,9 @@ def login():
 
             stored_password = str(user[2] or "").strip()
 
-            # ✅ تحقق الباسورد
             if check_password_hash(stored_password, password):
                 user_id = user[0]
 
-                # ✅ NEW: ربط chat_id بالحساب الحالي تلقائيًا
                 if chat_id:
                     c.execute("""
                         UPDATE users
@@ -659,6 +668,7 @@ def login():
                     ensure_user_has_referral_code(chat_id, conn)
 
                 session["user"] = email
+                session["is_admin"] = True if is_admin_email(email) else False
                 log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
                 return redirect("/dashboard")
@@ -671,6 +681,12 @@ def login():
             return f"❌ حصل خطأ أثناء تسجيل الدخول: {str(e)}"
 
     return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 
 # ================= SAVE API =================
@@ -764,7 +780,7 @@ def dashboard():
         conn = db()
         c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-        c.execute("SELECT * FROM users WHERE email = %s", (session["user"],))
+        c.execute("SELECT * FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
         user = c.fetchone()
 
         if not user:
@@ -779,7 +795,7 @@ def dashboard():
             referral_code = user.get("referral_code")
             if not referral_code:
                 referral_code = ensure_user_has_referral_code(chat_id, conn)
-                c.execute("SELECT * FROM users WHERE email = %s", (session["user"],))
+                c.execute("SELECT * FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
                 user = c.fetchone()
 
             referral_link = f"https://t.me/pro_crypto_99_bot?start=ref_{user['referral_code']}"
@@ -849,7 +865,7 @@ def api_data():
     try:
         conn = db()
         c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        c.execute("SELECT email, profit FROM users WHERE email = %s", (session["user"],))
+        c.execute("SELECT email, profit FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
         user = c.fetchone()
         conn.close()
 
@@ -878,8 +894,8 @@ def toggle_bot():
         c = conn.cursor()
 
         c.execute(
-            "SELECT plan, bot_active FROM users WHERE email = %s",
-            (session["user"],)
+            "SELECT plan, bot_active FROM users WHERE LOWER(email) = %s",
+            (session["user"].lower(),)
         )
         user = c.fetchone()
 
@@ -892,8 +908,8 @@ def toggle_bot():
         c.execute("""
             UPDATE users
             SET bot_active = %s
-            WHERE email = %s
-        """, (new_status, session["user"]))
+            WHERE LOWER(email) = %s
+        """, (new_status, session["user"].lower()))
 
         conn.commit()
         conn.close()
@@ -933,8 +949,8 @@ def create_payment():
         c = conn.cursor()
 
         c.execute(
-            "SELECT chat_id FROM users WHERE email = %s",
-            (session["user"],)
+            "SELECT chat_id FROM users WHERE LOWER(email) = %s",
+            (session["user"].lower(),)
         )
         user = c.fetchone()
         conn.close()
@@ -1034,8 +1050,8 @@ def owner_free_upgrade():
                 is_admin = 1,
                 lifetime_owner = 1,
                 bot_active = 1
-            WHERE email = %s
-        """, (session["user"],))
+            WHERE LOWER(email) = %s
+        """, (session["user"].lower(),))
 
         conn.commit()
         conn.close()
@@ -1077,8 +1093,8 @@ def request_withdrawal():
         c.execute("""
             SELECT chat_id, affiliate_balance
             FROM users
-            WHERE email = %s
-        """, (session["user"],))
+            WHERE LOWER(email) = %s
+        """, (session["user"].lower(),))
         user = c.fetchone()
 
         if not user:
@@ -1100,8 +1116,8 @@ def request_withdrawal():
         c.execute("""
             UPDATE users
             SET affiliate_balance = affiliate_balance - %s
-            WHERE email = %s
-        """, (amount, session["user"]))
+            WHERE LOWER(email) = %s
+        """, (amount, session["user"].lower()))
 
         conn.commit()
         conn.close()
@@ -1114,10 +1130,6 @@ def request_withdrawal():
 
 
 # ================= ADMIN =================
-
-# =========================
-# HELPER: تحقق الأدمن الحقيقي
-# =========================
 def current_admin_email():
     return (session.get("user") or "").strip().lower()
 
@@ -1149,9 +1161,6 @@ def is_current_admin():
         return False
 
 
-# =========================
-# ADMIN DASHBOARD
-# =========================
 @app.route("/admin")
 def admin_dashboard():
     if not session.get("user"):
@@ -1206,9 +1215,6 @@ def admin_dashboard():
         return f"❌ Error: {str(e)}"
 
 
-# =========================
-# ACTIVATE USER
-# =========================
 @app.route("/activate-user", methods=["POST"])
 def activate_user():
     if not session.get("user"):
@@ -1231,9 +1237,9 @@ def activate_user():
 
         c.execute("""
             UPDATE users
-            SET is_paid = 1, plan = %s, expiry = %s
+            SET is_paid = 1, plan = %s, expiry = %s, bot_active = CASE WHEN %s = 'vip' THEN 1 ELSE bot_active END
             WHERE id = %s
-        """, (plan, expiry, user_id))
+        """, (plan, expiry, plan, user_id))
 
         conn.commit()
         conn.close()
@@ -1246,9 +1252,6 @@ def activate_user():
         return f"❌ Error: {str(e)}"
 
 
-# =========================
-# DELETE USER
-# =========================
 @app.route("/delete-user", methods=["POST"])
 def delete_user():
     if not session.get("user"):
@@ -1263,7 +1266,6 @@ def delete_user():
         conn = db()
         c = conn.cursor()
 
-        # حماية: ممنوع تمسح نفسك كأدمن
         current_email = current_admin_email()
         c.execute("SELECT email FROM users WHERE id = %s LIMIT 1", (user_id,))
         row = c.fetchone()
@@ -1284,9 +1286,6 @@ def delete_user():
         return f"❌ Error: {str(e)}"
 
 
-# =========================
-# MARK WITHDRAWAL PAID
-# =========================
 @app.route("/mark-withdrawal-paid", methods=["POST"])
 def mark_withdrawal_paid():
     if not session.get("user"):
@@ -1344,7 +1343,6 @@ def webhook():
             conn = db()
             c = conn.cursor()
 
-            # ================= حفظ الإحالة القادمة من البوت =================
             if start_ref:
                 try:
                     c.execute("""
@@ -1369,52 +1367,47 @@ def webhook():
 
             try:
                 c.execute("""
-                    SELECT id, email, trades, is_paid, referral_code
+                    SELECT id, email, trades, is_paid, referral_code, plan, expiry, is_admin, lifetime_owner
                     FROM users
                     WHERE chat_id = %s
-                    ORDER BY is_paid DESC, id DESC
+                    ORDER BY 
+                        CASE 
+                            WHEN is_admin = 1 THEN 1
+                            WHEN lifetime_owner = 1 THEN 2
+                            WHEN is_paid = 1 THEN 3
+                            ELSE 4
+                        END,
+                        id DESC
                     LIMIT 1
                 """, (chat_id,))
                 user = c.fetchone()
 
-                # ================= لو المستخدم مربوط بالفعل =================
                 if user:
                     user_id = user[0]
                     email = user[1]
                     trades = int(user[2] or 0)
                     is_paid = bool(user[3])
                     referral_code = user[4]
+                    current_plan = user[5]
+                    expiry = user[6]
+                    is_admin_flag = int(user[7] or 0)
+                    lifetime_owner = int(user[8] or 0)
 
-                    # لو مفيش referral code نولده
                     if not referral_code:
                         referral_code = ensure_user_has_referral_code(chat_id, conn)
 
                     send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
 
-                    # ================= OWNER / ADMIN =================
-                    c.execute("""
-                        SELECT is_admin, lifetime_owner, plan, expiry
-                        FROM users
-                        WHERE id = %s
-                    """, (user_id,))
-                    extra_user = c.fetchone()
-
-                    if extra_user:
-                        is_admin_flag = int(extra_user[0] or 0)
-                        lifetime_owner = int(extra_user[1] or 0)
-                        current_plan = extra_user[2]
-                        expiry = extra_user[3]
-
-                        if is_admin_flag == 1 or lifetime_owner == 1:
-                            send(chat_id, f"""👑 حساب المالك / الأدمن مفعل
+                    if is_admin_flag == 1 or lifetime_owner == 1:
+                        send(chat_id, f"""👑 حساب المالك / الأدمن مفعل
 
 📦 الخطة: {current_plan}
 ⏳ الصلاحية: {expiry}
 
 🚀 هتوصلك الإشارات تلقائيًا.
 """)
+                        return "ok", 200
 
-                    # ================= لو المستخدم مدفوع =================
                     if is_paid:
                         send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
 
@@ -1428,7 +1421,6 @@ def webhook():
 
                         return "ok", 200
 
-                    # ================= الإشارتين المجانيين =================
                     if trades < 2:
                         free_signals = get_top_free_signals(limit=2)
                         log(f"🎯 Free signals returned: {free_signals}")
@@ -1459,7 +1451,6 @@ def webhook():
                                 if success:
                                     sent_count += 1
 
-                            # نزود العداد فقط لو الرسائل اتبعت فعلاً
                             if sent_count > 0:
                                 c.execute("""
                                     UPDATE users
@@ -1507,7 +1498,6 @@ def webhook():
 {aff_link}
 """)
 
-                # ================= لو المستخدم لسه غير مسجل =================
                 else:
                     register_link = f"{BASE_URL}/register?chat_id={chat_id}"
 
@@ -1591,7 +1581,6 @@ def webhook():
             finally:
                 conn.close()
 
-        # ================= HELP / DEFAULT =================
         else:
             send(chat_id, """👋 الأوامر المتاحة:
 
@@ -1644,7 +1633,6 @@ def payment_webhook():
 
             expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
-            # ===== هات المستخدم =====
             c.execute("""
                 SELECT email, referred_by
                 FROM users
@@ -1655,11 +1643,13 @@ def payment_webhook():
 
             c.execute("""
                 UPDATE users
-                SET is_paid = 1, plan = %s, expiry = %s
+                SET is_paid = 1,
+                    plan = %s,
+                    expiry = %s,
+                    bot_active = CASE WHEN %s = 'vip' THEN 1 ELSE bot_active END
                 WHERE chat_id = %s
-            """, (plan, expiry, chat_id))
+            """, (plan, expiry, plan, chat_id))
 
-            # ================= AFFILIATE COMMISSION =================
             if buyer:
                 buyer_email = buyer[0]
                 referred_by = buyer[1]
@@ -1676,7 +1666,6 @@ def payment_webhook():
                     if referrer:
                         referrer_chat_id = str(referrer[0] or "").strip()
 
-                        # منع تكرار احتساب نفس الشخص
                         c.execute("""
                             SELECT id
                             FROM affiliate_referrals
@@ -1687,8 +1676,6 @@ def payment_webhook():
                         already_exists = c.fetchone()
 
                         if not already_exists:
-
-                            # ===== عمولة بالنسبة حسب الخطة =====
                             plan_prices = {
                                 "basic": 25,
                                 "pro": 59.99,
@@ -1705,9 +1692,8 @@ def payment_webhook():
                             commission_percent = float(commission_percent_map.get(plan, 0.08))
                             commission_amount = round(plan_price * commission_percent, 2)
 
-                            referred_email = buyer_email  # ✅ تصليح الخطأ
+                            referred_email = buyer_email
 
-                            # تسجيل الإحالة
                             c.execute("""
                                 INSERT INTO affiliate_referrals (
                                     referrer_chat_id,
@@ -1717,7 +1703,6 @@ def payment_webhook():
                                 VALUES (%s, %s, %s)
                             """, (referrer_chat_id, chat_id, referred_email))
 
-                            # تسجيل العمولة
                             c.execute("""
                                 INSERT INTO affiliate_commissions (
                                     referrer_chat_id,
@@ -1729,7 +1714,6 @@ def payment_webhook():
                                 VALUES (%s, %s, %s, %s, %s)
                             """, (referrer_chat_id, chat_id, plan, commission_amount, "approved"))
 
-                            # تحديث الرصيد
                             c.execute("""
                                 UPDATE users
                                 SET affiliate_balance = COALESCE(affiliate_balance, 0) + %s,
@@ -1737,7 +1721,6 @@ def payment_webhook():
                                 WHERE chat_id = %s
                             """, (commission_amount, referrer_chat_id))
 
-                            # ===== Free unlocks =====
                             c.execute("""
                                 SELECT total_referrals, free_basic_unlocked, free_pro_unlocked, free_vip_unlocked
                                 FROM users
@@ -1751,7 +1734,6 @@ def payment_webhook():
                                 free_pro = int(ref_stats[2] or 0)
                                 free_vip = int(ref_stats[3] or 0)
 
-                                # Basic Free بعد 15
                                 if total_refs >= 15 and free_basic == 0:
                                     c.execute("""
                                         UPDATE users
@@ -1760,7 +1742,6 @@ def payment_webhook():
                                     """, (referrer_chat_id,))
                                     send(referrer_chat_id, "🎁 مبروك! فتحت Basic مجانًا بسبب نظام الأفلييت.")
 
-                                # Pro Free بعد 25
                                 if total_refs >= 25 and free_pro == 0:
                                     c.execute("""
                                         UPDATE users
@@ -1769,7 +1750,6 @@ def payment_webhook():
                                     """, (referrer_chat_id,))
                                     send(referrer_chat_id, "🔥 مبروك! فتحت Pro مجانًا بسبب نظام الأفلييت.")
 
-                                # VIP Free بعد 32
                                 if total_refs >= 32 and free_vip == 0:
                                     c.execute("""
                                         UPDATE users
@@ -1778,7 +1758,6 @@ def payment_webhook():
                                     """, (referrer_chat_id,))
                                     send(referrer_chat_id, "💎 مبروك! فتحت VIP مجانًا بسبب نظام الأفلييت.")
 
-                            # رسالة العمولة
                             send(referrer_chat_id, f"""💸 تم إضافة عمولة جديدة
 
 👤 مستخدم جديد اشترك من خلالك
