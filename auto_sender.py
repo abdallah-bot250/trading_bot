@@ -1051,8 +1051,6 @@ def run():
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
 
-                    channel_sent = False
-
                     if not chat_id:
                         continue
 
@@ -1082,13 +1080,9 @@ def run():
 
                     # ===== SEND SIGNAL =====
                     msg = format_signal(signal)
-
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:
-                        if not channel_sent:
-                           send_channel(msg)
-                           channel_sent = True
                         log(f"Signal sent to {chat_id} -> {signal['pair']}")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
 

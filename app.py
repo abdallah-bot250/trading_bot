@@ -98,7 +98,6 @@ def ensure_user_has_referral_code(chat_id, conn):
     conn.commit()
     return new_code
 
-CHANNEL_ID = -1003722350505
 def send(chat_id, text):
     if not TOKEN or not chat_id:
         log(f"⚠️ TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
@@ -142,27 +141,6 @@ def send(chat_id, text):
         log(f"❌ Telegram Error: {e}")
         return False
 
-def send_channel(text):
-    if not TOKEN:
-        print("⚠️ TELEGRAM_TOKEN missing")
-        return False
-
-    try:
-        r = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={
-                "chat_id": str(CHANNEL_ID),
-                "text": text
-            },
-            timeout=10
-        )
-
-        print("📢 Sent to channel:", r.text)
-        return True
-
-    except Exception as e:
-        print("❌ Channel error:", e)
-        return False
     
 def format_signal(s):
     if not s:
@@ -382,7 +360,6 @@ init_db()
 # ================= ROUTES =================
 @app.route("/")
 def home():
-    send_channel("🔥 test message from bot")
     return "🔥 البوت شغال"
 
 
