@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>تم إنشاء الحساب | AI Crypto Trader</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Tahoma, Arial, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0f172a, #111827, #020617);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        .box {
+            width: 100%;
+            max-width: 620px;
+            background: rgba(15, 23, 42, 0.88);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 24px;
+            padding: 34px 26px;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-block;
+            background: rgba(34, 197, 94, 0.14);
+            color: #86efac;
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            font-size: 30px;
+            margin-bottom: 14px;
+            line-height: 1.6;
+        }
+
+        .sub {
+            color: #cbd5e1;
+            font-size: 15px;
+            line-height: 2;
+            margin-bottom: 24px;
+        }
+
+        .email-box {
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: #dbeafe;
+            padding: 16px;
+            border-radius: 18px;
+            font-size: 18px;
+            margin-bottom: 22px;
+            word-break: break-word;
+        }
+
+        .steps {
+            text-align: right;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 20px;
+            padding: 22px;
+            margin-bottom: 24px;
+            line-height: 2.1;
+            color: #e2e8f0;
+            font-size: 15px;
+        }
+
+        .warning {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.25);
+            color: #fecaca;
+            padding: 16px;
+            border-radius: 16px;
+            margin-bottom: 22px;
+            font-size: 14px;
+            line-height: 1.9;
+        }
+
+        .btns {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            text-decoration: none;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: bold;
+            transition: 0.25s ease;
+            display: inline-block;
+            min-width: 220px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #22c55e, #84cc16);
+            color: #0f172a;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            opacity: 0.95;
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .note {
+            margin-top: 22px;
+            color: #94a3b8;
+            font-size: 13px;
+            line-height: 1.9;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="box">
+        <div class="badge">✅ تم إنشاء الحساب بنجاح</div>
+
+        <h1>حسابك جاهز 🔥</h1>
+
+        <div class="sub">
+            باقي خطوة واحدة فقط علشان تبدأ تستقبل الإشارات على تيليجرام.
+        </div>
+
+        <div class="email-box">
+            {{ email }}
+        </div>
+
+        <div class="steps">
+            <b>الخطوة الأخيرة:</b><br>
+            1️⃣ افتح البوت من الزر اللي تحت<br>
+            2️⃣ ابعت نفس الإيميل اللي فوق للبوت<br>
+            3️⃣ البوت هيربط حسابك فورًا<br>
+            4️⃣ بعدها هتوصلك الإشارات حسب خطتك (مجاني / مدفوع / VIP)
+        </div>
+
+        <div class="warning">
+            ❗ مهم جدًا: لو ما بعتش الإيميل للبوت، الإشارات مش هتوصلك حتى لو سجلت في الموقع.
+        </div>
+
+        <div class="btns">
+            <a href="https://t.me/pro_crypto_99_bot" target="_blank" class="btn btn-primary">
+                🤖 افتح البوت الآن
+            </a>
+
+            <a href="{{ url_for('login') }}" class="btn btn-secondary">
+                🔐 تسجيل الدخول
+            </a>
+        </div>
+
+        <div class="note">
+            بعد ما تبعت الإيميل للبوت، هيتم ربط حسابك بالتليجرام تلقائيًا.
+        </div>
+    </div>
+
+</body>
+</html>

@@ -485,17 +485,17 @@ def register():
             password_raw = (request.form.get("password") or "").strip()
 
             if not email or not password_raw:
-             flash("❌ لازم تكتب الإيميل والباسورد", "error")
-             return redirect(url_for("register", chat_id=chat_id, ref=ref))
+                flash("❌ لازم تكتب الإيميل والباسورد", "error")
+                return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
-             flash("❌ لازم تدخل إيميل صحيح", "error")
-             return redirect(url_for("register", chat_id=chat_id, ref=ref))
+                flash("❌ لازم تدخل إيميل صحيح", "error")
+                return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
             if len(password_raw) < 6:
-              flash("❌ الباسورد لازم يكون 6 أحرف أو أكثر", "error")
-              return redirect(url_for("register", chat_id=chat_id, ref=ref))
+                flash("❌ الباسورد لازم يكون 6 أحرف أو أكثر", "error")
+                return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
             conn = db()
             c = conn.cursor()
@@ -531,9 +531,9 @@ def register():
                 stored_password = existing[2]
 
                 if not check_password_hash(stored_password, password_raw):
-                  conn.close()
-                  flash("❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة", "error")
-                  return redirect(url_for("register", chat_id=chat_id, ref=ref))
+                    conn.close()
+                    flash("❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة", "error")
+                    return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
                 if chat_id:
                     c.execute("""
@@ -591,6 +591,10 @@ def register():
                 session["is_admin"] = True if is_admin_email(email) else False
 
                 log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
+
+                flash("✅ تم تسجيل الدخول بنجاح", "success")
+                flash("📩 مهم جدًا: افتح البوت وابعت نفس الإيميل اللي سجلت بيه علشان توصلك الإشارات", "success")
+
                 return redirect("/dashboard")
 
             password = generate_password_hash(password_raw)
@@ -642,12 +646,16 @@ def register():
             session["is_admin"] = True if is_admin_email(email) else False
 
             log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
+
+            flash("✅ تم إنشاء الحساب بنجاح", "success")
+            flash("📩 مهم جدًا: افتح البوت وابعت نفس الإيميل اللي سجلت بيه علشان توصلك الإشارات", "success")
+
             return redirect("/dashboard")
 
         except Exception as e:
-           log(f"❌ Register error: {e}")
-           flash("❌ حصل خطأ أثناء التسجيل", "error")
-           return redirect(url_for("register", chat_id=chat_id, ref=ref))
+            log(f"❌ Register error: {e}")
+            flash("❌ حصل خطأ أثناء التسجيل", "error")
+            return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
     return render_template("register.html", chat_id=chat_id, ref=ref)
 
@@ -873,6 +881,8 @@ def dashboard():
 
         conn.close()
 
+        is_linked = True if user.get("chat_id") else False
+
         return render_template(
             "dashboard.html",
             plan=user.get("plan"),
@@ -891,7 +901,8 @@ def dashboard():
             free_basic_unlocked=user.get("free_basic_unlocked", 0),
             free_pro_unlocked=user.get("free_pro_unlocked", 0),
             free_vip_unlocked=user.get("free_vip_unlocked", 0),
-            chat_id=chat_id
+            chat_id=chat_id,
+            is_linked=is_linked
         )
 
     except Exception as e:
@@ -1604,6 +1615,41 @@ def webhook():
                 conn.close()
 
             return "ok", 200
+
+        # ============ LINK ACCOUNT ============
+        elif "@" in text:
+            try:
+                conn = db()
+                c = conn.cursor()
+
+                email = text.lower().strip()
+
+                c.execute("SELECT id FROM users WHERE email = %s", (email,))
+                user = c.fetchone()
+
+                if not user:
+                    send(chat_id, "❌ الإيميل غير موجود في الموقع")
+                else:
+                    c.execute(
+                        "UPDATE users SET chat_id = %s WHERE email = %s",
+                        (chat_id, email)
+                    )
+                    conn.commit()
+
+                    send(chat_id, "✅ تم ربط حسابك بنجاح!\nهتوصلك الإشارات هنا 👌")
+
+            except Exception as e:
+                log(f"link account error: {e}")
+                send(chat_id, "❌ حصل خطأ حاول تاني")
+            finally:
+                try:
+                    conn.close()
+                except:
+                    pass
+
+            return "ok", 200
+
+        # ============ /affiliate ============
 
         # ================= /affiliate =================
         elif text.startswith("/affiliate"):

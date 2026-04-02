@@ -23,12 +23,20 @@ body::before {
     position: fixed;
     width: 100%;
     height: 100%;
-    background:
-        linear-gradient(rgba(4, 11, 44, 0.88), rgba(4, 11, 44, 0.92));
+    background: linear-gradient(rgba(4, 11, 44, 0.88), rgba(4, 11, 44, 0.94));
     z-index: -1;
 }
 
-/* 🔥 HERO */
+/* container */
+.page-wrap {
+    width: 100%;
+    max-width: 1250px;
+    margin: 0 auto;
+    padding: 0 18px 40px;
+    box-sizing: border-box;
+}
+
+/* HERO */
 .hero {
     text-align: center;
     padding: 40px 20px 20px;
@@ -36,7 +44,7 @@ body::before {
 
 .hero h1 {
     color: #22c55e;
-    font-size: 34px;
+    font-size: 36px;
     margin-bottom: 10px;
     text-shadow: 0 0 18px rgba(34,197,94,0.18);
 }
@@ -44,9 +52,10 @@ body::before {
 .hero p {
     color: #cbd5e1;
     margin-top: 0;
+    font-size: 15px;
 }
 
-/* 🔥 GLASS BOX */
+/* GLASS BOX */
 .glass-box {
     background: rgba(15,23,42,0.85);
     backdrop-filter: blur(10px);
@@ -55,22 +64,23 @@ body::before {
     border-radius: 18px;
 }
 
-/* 🔥 STATUS STRIP */
+/* STATUS STRIP */
 .status-strip {
     display: flex;
     justify-content: center;
     gap: 15px;
     flex-wrap: wrap;
-    margin-top: 18px;
+    margin-top: 22px;
 }
 
 .status-pill {
     background: rgba(15,23,42,0.92);
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 999px;
-    padding: 10px 16px;
+    padding: 12px 18px;
     font-weight: bold;
     box-shadow: 0 0 18px rgba(0,0,0,0.18);
+    font-size: 14px;
 }
 
 .status-on {
@@ -89,13 +99,13 @@ body::before {
     color: #facc15;
 }
 
-/* 🔥 QUICK ACTIONS */
+/* QUICK ACTIONS */
 .quick-actions {
     display: flex;
     justify-content: center;
     gap: 14px;
     flex-wrap: wrap;
-    margin-top: 22px;
+    margin-top: 24px;
 }
 
 .quick-actions a,
@@ -108,7 +118,16 @@ body::before {
     box-shadow: 0 10px 28px rgba(0,0,0,0.22);
 }
 
-/* 💳 PLANS */
+/* SECTION GRID */
+.section-grid {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 30px;
+}
+
+/* PLANS */
 .plans {
     display: flex;
     justify-content: center;
@@ -119,7 +138,7 @@ body::before {
     padding: 0 20px;
 }
 
-/* 💎 CARD */
+/* CARD */
 .card {
     background: rgba(15,23,42,0.9);
     padding: 25px;
@@ -128,15 +147,12 @@ body::before {
     text-align: center;
     position: relative;
     overflow: hidden;
-
     animation: fadeUp 1s ease forwards;
-
     border: 2px solid transparent;
     box-shadow: 0 12px 35px rgba(0,0,0,0.35);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
-/* ✨ Glow */
 .card::before {
     content: "";
     position: absolute;
@@ -145,21 +161,18 @@ body::before {
     background: linear-gradient(45deg, #22c55e, #38bdf8, #facc15);
     z-index: -1;
     filter: blur(10px);
-    opacity: 0.6;
+    opacity: 0.55;
 }
 
-/* hover */
 .card:hover {
-    transform: scale(1.05);
+    transform: scale(1.04);
     box-shadow: 0 16px 42px rgba(0,0,0,0.45);
 }
 
-/* VIP */
 .vip::before {
     background: linear-gradient(45deg, gold, orange, yellow);
 }
 
-/* current plan highlight */
 .current-plan {
     border: 2px solid #22c55e !important;
     box-shadow: 0 0 25px rgba(34,197,94,0.22) !important;
@@ -176,7 +189,6 @@ body::before {
     margin-bottom: 12px;
 }
 
-/* ✨ animation */
 @keyframes fadeUp {
     from {
         opacity: 0;
@@ -189,7 +201,7 @@ body::before {
 }
 
 .price {
-    font-size: 26px;
+    font-size: 28px;
     margin: 10px 0;
     color: #f8fafc;
     font-weight: bold;
@@ -205,7 +217,7 @@ ul li {
     margin: 8px 0;
 }
 
-/* 🔥 BUTTONS */
+/* BUTTONS */
 button {
     padding: 12px;
     width: 100%;
@@ -232,19 +244,21 @@ button:hover {
     color: white;
 }
 
-/* 💰 PROFIT BOX */
+/* BOX */
 .box {
     margin: 40px auto;
     text-align: center;
-    width: 80%;
+    width: 100%;
+    max-width: 1000px;
     background: rgba(15,23,42,0.88);
     padding: 28px;
     border-radius: 20px;
     box-shadow: 0 12px 35px rgba(0,0,0,0.35);
     border: 1px solid rgba(255,255,255,0.05);
+    box-sizing: border-box;
 }
 
-/* 🎯 progress bar */
+/* PROGRESS */
 .progress {
     width: 100%;
     height: 15px;
@@ -262,7 +276,7 @@ button:hover {
 }
 
 #profit {
-    font-size: 30px;
+    font-size: 32px;
     color: #22c55e;
     font-weight: bold;
 }
@@ -272,31 +286,60 @@ canvas {
     margin: auto;
 }
 
-/* 🔥 section title */
+/* section title */
 .section-title {
     text-align: center;
-    font-size: 28px;
-    margin-top: 50px;
+    font-size: 30px;
+    margin-top: 60px;
     color: #38bdf8;
 }
 
 /* inputs */
 input, select {
     outline: none;
+    box-sizing: border-box;
 }
 
 /* helper text */
 .helper-text {
     color: #cbd5e1;
     text-align: center;
-    margin-top: 10px;
+    margin-top: 12px;
     font-size: 15px;
+    line-height: 1.8;
+}
+
+/* top notice */
+.notice-box {
+    max-width: 1000px;
+    margin: 0 auto 25px auto;
+    padding: 18px;
+    border-radius: 16px;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.notice-warning {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(234, 179, 8, 0.08));
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    color: #fde68a;
+}
+
+.notice-success {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.10), rgba(56, 189, 248, 0.08));
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    color: #bbf7d0;
+}
+
+/* mini stats */
+.mini-stat {
+    width: 220px;
 }
 
 /* responsive */
 @media (max-width: 900px) {
     .box {
-        width: 92%;
+        width: 100%;
     }
 
     .card {
@@ -306,12 +349,16 @@ input, select {
 }
 
 @media (max-width: 600px) {
+    .page-wrap {
+        padding: 0 12px 30px;
+    }
+
     .hero {
-        padding: 28px 14px 16px;
+        padding: 28px 10px 16px;
     }
 
     .hero h1 {
-        font-size: 28px;
+        font-size: 29px;
     }
 
     .status-strip {
@@ -334,14 +381,61 @@ input, select {
         max-width: 320px;
         text-align: center;
     }
+
+    .notice-box {
+        padding: 16px 14px;
+    }
 }
 </style>
 </head>
 
 <body>
 
+<div class="page-wrap">
+
 <!-- HERO -->
 <div class="hero">
+
+{% if not is_linked %}
+<div class="notice-box notice-warning">
+    <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
+        ⚠️ حسابك غير مربوط بالبوت
+    </div>
+
+    <div style="font-size: 14px; line-height: 1.9; color: #fef3c7;">
+        علشان تستلم الإشارات المجانية أو المدفوعة لازم تكمل خطوة واحدة فقط:
+        <br><br>
+        1️⃣ افتح البوت
+        <br>
+        2️⃣ ابعت نفس الإيميل اللي سجلت بيه في الموقع
+        <br><br>
+        ❗ بدون الخطوة دي الإشارات مش هتوصلك
+    </div>
+
+    <a href="https://t.me/pro_crypto_99_bot" target="_blank"
+       style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
+       🤖 افتح البوت الآن
+    </a>
+</div>
+{% else %}
+<div class="notice-box notice-success">
+    <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
+        ✅ حسابك مربوط بالبوت
+    </div>
+
+    <div style="font-size: 14px; line-height: 1.9; color: #dcfce7;">
+        ممتاز — الإشارات هتوصلك على تيليجرام حسب الباقة الخاصة بك وحالة السوق.
+        <br>
+        لو البوت شغال والفرصة قوية، هتوصلك مباشرة.
+    </div>
+
+    <a href="https://t.me/pro_crypto_99_bot" target="_blank"
+       style="display:inline-block; margin-top:16px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
+       💬 افتح البوت
+    </a>
+</div>
+{% endif %}
+
     <h1>🚀 AI Crypto Trader</h1>
     <p>Smart Trading • AI Powered • Passive Income</p>
 
@@ -372,47 +466,51 @@ input, select {
 
     <div class="quick-actions">
         <a href="/manual" style="text-decoration:none;">
-    <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
-        📘 دليل الاستخدام
-    </button>
+            <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
+                📘 دليل الاستخدام
+            </button>
         </a>
 
-
         <a href="/logout">
-            <button type="button" style="background:#ef4444; color:white;">🚪 تسجيل الخروج</button>
+            <button type="button" style="background:#ef4444; color:white;">
+                🚪 تسجيل الخروج
+            </button>
         </a>
     </div>
 
     <!-- AFFILIATE PROGRAM -->
-    <div class="glass-box" style="margin-top:25px; padding:20px; max-width:1000px; margin-left:auto; margin-right:auto;">
-        <h2 style="color:#38bdf8; margin-top:0;">💸 Affiliate Program</h2>
+    <div class="glass-box" style="margin-top:30px; padding:24px; max-width:1000px; margin-left:auto; margin-right:auto;">
+        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">💸 Affiliate Program</h2>
+        <p style="color:#cbd5e1; margin-top:0;">اكسب من مشاركة البوت مع غيرك — وكل اشتراك جديد من رابطك يتحسب لك.</p>
 
         <p>🔗 <b>رابط الإحالة الخاص بك:</b></p>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:15px;">
             <input id="refLink" type="text" value="{{referral_link}}" readonly
                    style="width:70%; min-width:260px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
-            <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">📋 Copy</button>
+            <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">
+                📋 Copy
+            </button>
         </div>
 
         <div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap; margin-top:15px;">
-            <div class="card" style="width:220px;">
+            <div class="card mini-stat">
                 <h3>👥 Referrals</h3>
                 <p>{{total_referrals}}</p>
             </div>
 
-            <div class="card" style="width:220px;">
+            <div class="card mini-stat">
                 <h3>💰 Balance</h3>
                 <p>${{affiliate_balance}}</p>
             </div>
 
-            <div class="card" style="width:220px;">
+            <div class="card mini-stat">
                 <h3>🏦 Withdrawn</h3>
                 <p>${{total_withdrawn}}</p>
             </div>
         </div>
 
-        <div style="margin-top:25px;">
+        <div style="margin-top:28px;">
             <h3 style="color:#22c55e;">🏧 طلب سحب العمولة</h3>
             <p style="color:#cbd5e1;">الحد الأدنى: $25 | الحد الأقصى: $300 | خلال 24 ساعة</p>
 
@@ -429,42 +527,55 @@ input, select {
     </div>
 
     {% if is_admin == 1 %}
-    <div style="margin-top:20px; text-align:center;">
+    <div style="margin-top:22px; text-align:center;">
         <a href="/admin">
-            <button style="background:#f59e0b; color:white; width:auto; padding:12px 25px;">👑 Admin Dashboard</button>
+            <button style="background:#f59e0b; color:white; width:auto; padding:12px 25px;">
+                👑 Admin Dashboard
+            </button>
         </a>
 
         <a href="/owner-free-upgrade">
-            <button style="background:#22c55e; color:white; width:auto; padding:12px 25px;">💎 Activate My Lifetime VIP</button>
+            <button style="background:#22c55e; color:white; width:auto; padding:12px 25px;">
+                💎 Activate My Lifetime VIP
+            </button>
         </a>
     </div>
     {% endif %}
 </div>
 
-<form action="/toggle-bot" method="POST" style="text-align:center; margin-top:15px;">
-    {% if bot_active == 1 %}
-        <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
-            🔴 إيقاف البوت
-        </button>
-    {% else %}
-        <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
-            🟢 تشغيل البوت
-        </button>
-    {% endif %}
-</form>
+<!-- BOT TOGGLE -->
+<div class="box" style="max-width:850px; margin-top:25px;">
+    <h2 style="margin-top:0;">🤖 Bot Control</h2>
+    <p style="color:#cbd5e1; line-height:1.8;">
+        تحكم في استقبال الإشارات أو تنفيذ التداول التلقائي حسب باقتك وإعداداتك الحالية.
+    </p>
 
-<div class="helper-text">
-    {% if bot_active == 1 %}
-        🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
-    {% else %}
-        🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
-    {% endif %}
+    <form action="/toggle-bot" method="POST" style="text-align:center; margin-top:15px;">
+        {% if bot_active == 1 %}
+            <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
+                🔴 إيقاف البوت
+            </button>
+        {% else %}
+            <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
+                🟢 تشغيل البوت
+            </button>
+        {% endif %}
+    </form>
+
+    <div class="helper-text">
+        {% if bot_active == 1 %}
+            🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
+        {% else %}
+            🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
+        {% endif %}
+    </div>
 </div>
 
+<!-- VIP SETTINGS -->
 {% if plan == "vip" or is_admin == 1 %}
 <div class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
-    <h2 style="color:#facc15;">⚙️ VIP Auto Trading Settings</h2>
-    <p style="color:#cbd5e1; text-align:center;">
+    <h2 style="color:#facc15; margin-top:0;">⚙️ VIP Auto Trading Settings</h2>
+    <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
         اربط الـ API الخاص بك واضبط إعدادات التداول — البوت لا يستطيع السحب أو الإيداع، فقط تنفيذ الصفقات.
     </p>
 
@@ -500,117 +611,109 @@ input, select {
 <!-- PLANS -->
 <div class="plans">
 
-<div class="card {% if plan == 'basic' %}current-plan{% endif %}">
-{% if plan == "basic" %}
-<div class="current-badge">YOUR CURRENT PLAN</div>
-{% endif %}
-<h2>Basic</h2>
-<div class="price">$25</div>
+    <div class="card {% if plan == 'basic' %}current-plan{% endif %}">
+        {% if plan == "basic" %}
+        <div class="current-badge">YOUR CURRENT PLAN</div>
+        {% endif %}
+        <h2>Basic</h2>
+        <div class="price">$25</div>
 
-<ul>
-<li>✔ إشارات Telegram (Spot & Futures)</li>
-<li>✔ تحليل باستخدام AI</li>
-<li>✔ مؤشرات حديثة:
-    <br>• RSI
-    <br>• MACD
-    <br>• Smart Money Concepts
-</li>
+        <ul>
+            <li>✔ إشارات Telegram (Spot & Futures)</li>
+            <li>✔ تحليل باستخدام AI</li>
+            <li>✔ مؤشرات حديثة:
+                <br>• RSI
+                <br>• MACD
+                <br>• Smart Money Concepts
+            </li>
+            <li>❌ بدون تنفيذ تلقائي</li>
+            <li>❌ بدون إدارة مخاطرة متقدمة</li>
+            <li>❌ بدون إشارات VIP</li>
+        </ul>
 
-<li>❌ بدون تنفيذ تلقائي</li>
-<li>❌ بدون إدارة مخاطرة متقدمة</li>
-<li>❌ بدون إشارات VIP</li>
-</ul>
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="basic">
+            <button class="pay">💳 Subscribe</button>
+        </form>
 
-<form action="/create-payment" method="GET">
-<input type="hidden" name="plan" value="basic">
-<button class="pay">💳 Subscribe</button>
-</form>
+        <a href="/pay/basic"><button class="manual">💸 Manual</button></a>
+    </div>
 
-<a href="/pay/basic"><button class="manual">💸 Manual</button></a>
-</div>
+    <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
+        {% if plan == "pro" %}
+        <div class="current-badge">YOUR CURRENT PLAN</div>
+        {% endif %}
+        <h2>Pro 🔥</h2>
+        <div class="price">$59.99</div>
 
-<div class="card {% if plan == 'pro' %}current-plan{% endif %}">
-{% if plan == "pro" %}
-<div class="current-badge">YOUR CURRENT PLAN</div>
-{% endif %}
-<h2>Pro 🔥</h2>
-<div class="price">$59.99</div>
+        <ul>
+            <li>✔ إشارات احترافية (Spot & Futures)</li>
+            <li>✔ عدد صفقات يومية أكبر</li>
+            <li>✔ دقة أعلى في التحليل</li>
+            <li>✔ مؤشرات متقدمة:
+                <br>• Order Blocks
+                <br>• Liquidity Zones
+                <br>• Volume Analysis
+            </li>
+            <li>✔ إدارة مخاطرة محسنة</li>
+            <li>❌ بدون تنفيذ تلقائي</li>
+        </ul>
 
-<ul>
-<li>✔ إشارات احترافية (Spot & Futures)</li>
-<li>✔ عدد صفقات يومية أكبر</li>
-<li>✔ دقة أعلى في التحليل</li>
-<li>✔ مؤشرات متقدمة:
-    <br>• Order Blocks
-    <br>• Liquidity Zones
-    <br>• Volume Analysis
-</li>
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="pro">
+            <button class="pay">💳 Subscribe</button>
+        </form>
 
-<li>✔ إدارة مخاطرة محسنة</li>
+        <a href="/pay/pro"><button class="manual">💸 Manual</button></a>
+    </div>
 
-<li>❌ بدون تنفيذ تلقائي</li>
-</ul>
+    <div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
+        {% if plan == "vip" %}
+        <div class="current-badge">YOUR CURRENT PLAN</div>
+        {% endif %}
+        <h2>VIP 💎</h2>
+        <div class="price">$99.99</div>
 
-<form action="/create-payment" method="GET">
-<input type="hidden" name="plan" value="pro">
-<button class="pay">💳 Subscribe</button>
-</form>
+        <ul>
+            <li>✔ تداول تلقائي كامل (Spot & Futures)</li>
+            <li>✔ ربط Binance / Bybit / OKX</li>
+            <li>✔ تنفيذ صفقات بدون تدخل</li>
+            <li>✔ أعلى نسبة نجاح</li>
+            <li>✔ إدارة مخاطرة ذكية AI</li>
+            <li style="color:#facc15;">⚠️ البوت يتداول فقط بالمبلغ الذي تحدده</li>
+            <li style="color:#facc15;">⚠️ لا يمكنه السحب أو الإيداع — تداول فقط</li>
+        </ul>
 
-<a href="/pay/pro"><button class="manual">💸 Manual</button></a>
-</div>
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="vip">
+            <button class="pay">💳 Subscribe</button>
+        </form>
 
-<div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
-{% if plan == "vip" %}
-<div class="current-badge">YOUR CURRENT PLAN</div>
-{% endif %}
-<h2>VIP 💎</h2>
-<div class="price">$99.99</div>
-
-<ul>
-<li>✔ تداول تلقائي كامل (Spot & Futures)</li>
-<li>✔ ربط Binance / Bybit / OKX</li>
-<li>✔ تنفيذ صفقات بدون تدخل</li>
-<li>✔ أعلى نسبة نجاح</li>
-<li>✔ إدارة مخاطرة ذكية AI</li>
-
-<li style="color:#facc15;">
-⚠️ البوت يتداول فقط بالمبلغ الذي تحدده
-</li>
-
-<li style="color:#facc15;">
-⚠️ لا يمكنه السحب أو الإيداع — تداول فقط
-</li>
-</ul>
-
-<form action="/create-payment" method="GET">
-<input type="hidden" name="plan" value="vip">
-<button class="pay">💳 Subscribe</button>
-</form>
-
-<a href="/pay/vip"><button class="manual">💸 Manual</button></a>
-</div>
+        <a href="/pay/vip"><button class="manual">💸 Manual</button></a>
+    </div>
 
 </div>
 
 <!-- PROFIT -->
 <div class="box">
-<h2>💰 Profit</h2>
+    <h2>💰 Profit</h2>
+    <p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
 
-<p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
+    <p id="profit">{{profit}} USDT</p>
+    <p>📊 Trades: {{trades}}</p>
 
-<p id="profit">{{profit}} USDT</p>
-<p>📊 Trades: {{trades}}</p>
-
-<div class="progress">
-    <div class="progress-bar" id="bar"></div>
-</div>
+    <div class="progress">
+        <div class="progress-bar" id="bar"></div>
+    </div>
 </div>
 
 <!-- CHART -->
 <div class="box">
-<h2>📊 Performance</h2>
-<p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
-<canvas id="chart"></canvas>
+    <h2>📊 Performance</h2>
+    <p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
+    <canvas id="chart"></canvas>
+</div>
+
 </div>
 
 <script>
@@ -669,7 +772,6 @@ setInterval(async ()=>{
 
      document.getElementById("profit").innerText = profit + " $";
 
-     // progress bar
      let percent = Math.min(Math.abs(profit) * 5, 100);
      document.getElementById("bar").style.width = percent + "%";
 
@@ -685,7 +787,7 @@ setInterval(async ()=>{
  } catch (e) {
      console.log("chart update error", e);
  }
-},3000);
+}, 3000);
 </script>
 
 </body>
