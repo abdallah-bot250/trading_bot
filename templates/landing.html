@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Crypto Trader | Smart Crypto Signals</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background:
+        radial-gradient(circle at top right, rgba(34,197,94,0.15), transparent 25%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.12), transparent 28%),
+        linear-gradient(135deg, #020617, #0f172a 55%, #111827);
+    color: #f8fafc;
+    overflow-x: hidden;
+}
+
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.container {
+    width: 92%;
+    max-width: 1200px;
+    margin: auto;
+}
+
+.navbar {
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    backdrop-filter: blur(14px);
+    background: rgba(2,6,23,0.72);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.nav-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 0;
+    gap: 16px;
+}
+
+.logo {
+    font-size: 24px;
+    font-weight: 800;
+    color: #22c55e;
+    letter-spacing: 0.5px;
+}
+
+.nav-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.nav-btn {
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: 0.25s ease;
+}
+
+.nav-btn:hover {
+    transform: translateY(-2px);
+}
+
+.nav-btn.primary {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    color: #04111f;
+    border: none;
+}
+
+.nav-btn.secondary {
+    background: rgba(255,255,255,0.03);
+    color: #e2e8f0;
+}
+
+.hero {
+    padding: 90px 0 70px;
+    text-align: center;
+    position: relative;
+}
+
+.badge {
+    display: inline-block;
+    background: rgba(34,197,94,0.12);
+    color: #86efac;
+    border: 1px solid rgba(34,197,94,0.22);
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 22px;
+    box-shadow: 0 0 25px rgba(34,197,94,0.08);
+}
+
+.hero h1 {
+    font-size: 56px;
+    line-height: 1.2;
+    margin: 0 auto 20px;
+    max-width: 950px;
+    color: white;
+}
+
+.hero .accent {
+    color: #22c55e;
+}
+
+.hero p {
+    color: #cbd5e1;
+    font-size: 20px;
+    line-height: 1.9;
+    max-width: 900px;
+    margin: auto;
+}
+
+.hero-cta {
+    margin-top: 35px;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    display: inline-block;
+    padding: 16px 28px;
+    border-radius: 16px;
+    font-weight: 800;
+    transition: 0.28s ease;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+}
+
+.btn:hover {
+    transform: translateY(-3px) scale(1.02);
+}
+
+.btn-primary {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    color: #04111f;
+}
+
+.btn-secondary {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: white;
+}
+
+.hero-stats {
+    margin-top: 45px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    gap: 18px;
+}
+
+.stat-card {
+    background: rgba(15,23,42,0.72);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 22px 18px;
+    box-shadow: 0 14px 35px rgba(0,0,0,0.25);
+    backdrop-filter: blur(10px);
+}
+
+.stat-card h3 {
+    margin: 0 0 10px;
+    color: #22c55e;
+    font-size: 28px;
+}
+
+.stat-card p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 15px;
+}
+
+.section {
+    padding: 75px 0;
+}
+
+.section-title {
+    text-align: center;
+    font-size: 38px;
+    margin-bottom: 14px;
+    color: #f8fafc;
+}
+
+.section-sub {
+    text-align: center;
+    color: #94a3b8;
+    max-width: 800px;
+    margin: 0 auto 40px;
+    font-size: 18px;
+    line-height: 1.9;
+}
+
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+}
+
+.feature-card {
+    background: rgba(15,23,42,0.82);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 22px;
+    padding: 28px 24px;
+    box-shadow: 0 14px 35px rgba(0,0,0,0.25);
+    transition: 0.28s ease;
+}
+
+.feature-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(34,197,94,0.18);
+}
+
+.feature-icon {
+    font-size: 34px;
+    margin-bottom: 16px;
+}
+
+.feature-card h3 {
+    margin-top: 0;
+    color: #22c55e;
+    font-size: 22px;
+}
+
+.feature-card p {
+    color: #cbd5e1;
+    line-height: 1.9;
+    margin-bottom: 0;
+}
+
+.problem-solution {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+}
+
+.ps-box {
+    background: rgba(15,23,42,0.82);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 22px;
+    padding: 28px;
+    box-shadow: 0 14px 35px rgba(0,0,0,0.25);
+}
+
+.ps-box h3 {
+    margin-top: 0;
+    font-size: 26px;
+}
+
+.ps-box.problem h3 {
+    color: #ef4444;
+}
+
+.ps-box.solution h3 {
+    color: #22c55e;
+}
+
+.ps-box ul {
+    list-style: none;
+    padding: 0;
+    margin: 18px 0 0;
+    line-height: 2;
+    color: #cbd5e1;
+}
+
+.highlight {
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(56,189,248,0.12));
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 24px;
+    padding: 35px 28px;
+    text-align: center;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+}
+
+.highlight h2 {
+    margin-top: 0;
+    color: #22c55e;
+    font-size: 34px;
+}
+
+.highlight p {
+    color: #e2e8f0;
+    font-size: 19px;
+    line-height: 2;
+    max-width: 900px;
+    margin: auto;
+}
+
+.plan-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+}
+
+.plan-card {
+    background: rgba(15,23,42,0.92);
+    border-radius: 24px;
+    padding: 30px 26px;
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+    position: relative;
+    transition: 0.28s ease;
+}
+
+.plan-card:hover {
+    transform: translateY(-7px);
+}
+
+.plan-card.pro {
+    border: 1px solid rgba(56,189,248,0.28);
+}
+
+.plan-card.vip {
+    border: 1px solid rgba(250,204,21,0.35);
+    box-shadow: 0 0 35px rgba(250,204,21,0.08);
+}
+
+.plan-badge {
+    position: absolute;
+    top: -12px;
+    left: 20px;
+    background: #22c55e;
+    color: #04111f;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.plan-card.vip .plan-badge {
+    background: linear-gradient(90deg, #facc15, #f59e0b);
+    color: #111827;
+}
+
+.plan-card h3 {
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+.price {
+    font-size: 40px;
+    font-weight: 800;
+    margin: 14px 0 20px;
+    color: white;
+}
+
+.price span {
+    font-size: 16px;
+    color: #94a3b8;
+}
+
+.plan-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    line-height: 2.05;
+    color: #cbd5e1;
+    min-height: 290px;
+}
+
+.plan-card li {
+    margin-bottom: 8px;
+}
+
+.plan-card .btn {
+    width: 100%;
+    text-align: center;
+    margin-top: 18px;
+}
+
+.faq-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 22px;
+}
+
+.faq-item {
+    background: rgba(15,23,42,0.82);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 20px;
+    padding: 24px;
+}
+
+.faq-item h3 {
+    margin-top: 0;
+    color: #38bdf8;
+    font-size: 21px;
+}
+
+.faq-item p {
+    margin-bottom: 0;
+    color: #cbd5e1;
+    line-height: 1.9;
+}
+
+.cta-final {
+    text-align: center;
+    padding: 90px 20px;
+    background:
+        radial-gradient(circle at center, rgba(34,197,94,0.12), transparent 40%),
+        linear-gradient(135deg, #0b1220, #0f172a);
+    border-top: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.cta-final h2 {
+    font-size: 42px;
+    margin-top: 0;
+    color: white;
+}
+
+.cta-final p {
+    max-width: 850px;
+    margin: 18px auto 0;
+    color: #cbd5e1;
+    line-height: 2;
+    font-size: 19px;
+}
+
+.footer {
+    text-align: center;
+    padding: 28px 20px;
+    color: #64748b;
+    font-size: 14px;
+}
+
+.warning-box {
+    margin-top: 28px;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.18);
+    color: #fecaca;
+    padding: 18px;
+    border-radius: 18px;
+    line-height: 1.9;
+    font-size: 15px;
+}
+
+@media (max-width: 1100px) {
+    .hero h1 {
+        font-size: 46px;
+    }
+
+    .hero-stats,
+    .grid-3,
+    .plan-grid,
+    .problem-solution,
+    .faq-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .nav-inner {
+        flex-direction: column;
+    }
+
+    .hero {
+        padding: 70px 0 55px;
+    }
+
+    .hero h1 {
+        font-size: 34px;
+    }
+
+    .hero p {
+        font-size: 17px;
+    }
+
+    .hero-stats,
+    .grid-3,
+    .plan-grid,
+    .problem-solution,
+    .faq-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .section-title {
+        font-size: 30px;
+    }
+
+    .cta-final h2 {
+        font-size: 32px;
+    }
+
+    .price {
+        font-size: 34px;
+    }
+
+    .plan-card ul {
+        min-height: auto;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<!-- NAVBAR -->
+<div class="navbar">
+    <div class="container nav-inner">
+        <div class="logo">🚀 AI Crypto Trader</div>
+
+        <div class="nav-actions">
+            <a href="/login" class="nav-btn secondary">تسجيل الدخول</a>
+            <a href="/register" class="nav-btn primary">ابدأ الآن</a>
+        </div>
+    </div>
+</div>
+
+<!-- HERO -->
+<section class="hero">
+    <div class="container">
+        <div class="badge">🔥 إشارات ذكية • فلترة قوية • فرص مختارة فقط</div>
+
+        <h1>
+            وقف الدخول العشوائي في السوق...
+            <br>
+            وابدأ مع <span class="accent">بوت يختار أقوى الفرص فقط</span>
+        </h1>
+
+        <p>
+            AI Crypto Trader ليس بوتًا يرسل عشرات الصفقات يوميًا بدون معنى.
+            <br>
+            بل نظام ذكي يفلتر السوق، يستبعد الفرص الضعيفة، ويعطيك فقط ما يراه مناسبًا للدخول.
+        </p>
+
+        <div class="hero-cta">
+            <a href="/register" class="btn btn-primary">🚀 ابدأ مجانًا الآن</a>
+            <a href="#pricing" class="btn btn-secondary">💳 شاهد الباقات</a>
+        </div>
+
+        <div class="hero-stats">
+            <div class="stat-card">
+                <h3>AI</h3>
+                <p>تحليل ذكي لحالة السوق والاتجاه والزخم</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>SMC</h3>
+                <p>فلترة باستخدام السيولة والبنية السعرية</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>Spot + Futures</h3>
+                <p>مرونة كاملة حسب أسلوب تداولك</p>
+            </div>
+
+            <div class="stat-card">
+                <h3>VIP Auto</h3>
+                <p>إمكانية تنفيذ تلقائي لصفقات VIP</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- PROBLEM / SOLUTION -->
+<section class="section">
+    <div class="container">
+        <h2 class="section-title">📉 المشكلة الحقيقية في أغلب البوتات</h2>
+        <p class="section-sub">
+            أغلب الناس لا تخسر لأن السوق صعب فقط...
+            بل لأنها تدخل في فرص كثيرة، ضعيفة، وعشوائية.
+        </p>
+
+        <div class="problem-solution">
+            <div class="ps-box problem">
+                <h3>❌ البوتات العادية</h3>
+                <ul>
+                    <li>• ترسل صفقات كثيرة بدون فلترة حقيقية</li>
+                    <li>• تدخل في السوق حتى لو الاتجاه غير واضح</li>
+                    <li>• تعتمد على مؤشرات فقط</li>
+                    <li>• تستهلك رأس المال بسرعة</li>
+                    <li>• تخليك داخل السوق طوال الوقت</li>
+                </ul>
+            </div>
+
+            <div class="ps-box solution">
+                <h3>✅ AI Crypto Trader</h3>
+                <ul>
+                    <li>• يختار الفرص الأقوى فقط</li>
+                    <li>• يستبعد السوق المتذبذب والعشوائي</li>
+                    <li>• يعتمد على اتجاه + زخم + سيولة + تأكيد</li>
+                    <li>• يحافظ على رأس المال قدر الإمكان</li>
+                    <li>• الجودة أولًا... لا كثرة الصفقات</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section">
+    <div class="container">
+        <h2 class="section-title">🔥 لماذا هذا البوت مختلف فعلًا؟</h2>
+        <p class="section-sub">
+            لأن النظام مبني ليخدم متداول يريد الدخول بذكاء، لا باندفاع.
+        </p>
+
+        <div class="grid-3">
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>تحليل متعدد الطبقات</h3>
+                <p>
+                    البوت لا ينظر إلى مؤشر واحد فقط، بل يراجع الاتجاه،
+                    الفوليوم، البنية السعرية، Smart Money، والفريمات الأكبر.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>فلترة ذكية قبل أي دخول</h3>
+                <p>
+                    إذا كانت الصفقة ليست واضحة بما يكفي،
+                    فالبوت ببساطة لن يرسلها — وهذه نقطة القوة الحقيقية.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🛡️</div>
+                <h3>تقليل العشوائية</h3>
+                <p>
+                    الهدف ليس أن تتداول أكثر...
+                    الهدف أن تتداول بشكل أنظف وأهدأ وأذكى.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- HIGHLIGHT -->
+<section class="section">
+    <div class="container">
+        <div class="highlight">
+            <h2>⚡ هذا البوت لا يرسل صفقات كثيرة...</h2>
+            <p>
+                بل يرسل فقط ما يراه مناسبًا فعلًا للدخول.
+                <br><br>
+                وهذه بالضبط هي الفكرة التي تفرق بين نظام يستهلك حسابك،
+                ونظام يحاول الحفاظ على رأس المال واختيار الأفضل فقط.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- PLANS -->
+<section class="section" id="pricing">
+    <div class="container">
+        <h2 class="section-title">💳 اختر الخطة المناسبة لك</h2>
+        <p class="section-sub">
+            ابدأ مجانًا أولًا، ثم فعّل الخطة التي تناسب طريقة تداولك.
+        </p>
+
+        <div class="plan-grid">
+            <div class="plan-card">
+                <div class="plan-badge">للمبتدئين</div>
+                <h3>Basic</h3>
+                <div class="price">$25 <span>/ شهر</span></div>
+
+                <ul>
+                    <li>✔ إشارات Spot & Futures</li>
+                    <li>✔ تحليل AI أساسي</li>
+                    <li>✔ RSI + MACD + Trend</li>
+                    <li>✔ مناسب للتجربة والانطلاق</li>
+                    <li>✖ بدون تنفيذ تلقائي</li>
+                    <li>✖ بدون أعلى فلترة VIP</li>
+                </ul>
+
+                <a href="/register" class="btn btn-primary">ابدأ الآن</a>
+            </div>
+
+            <div class="plan-card pro">
+                <div class="plan-badge">الأكثر توازنًا</div>
+                <h3>Pro 🔥</h3>
+                <div class="price">$59.99 <span>/ شهر</span></div>
+
+                <ul>
+                    <li>✔ فلترة أعلى من Basic</li>
+                    <li>✔ إشارات أنظف وأقوى</li>
+                    <li>✔ Order Blocks + Liquidity Zones</li>
+                    <li>✔ Volume Analysis</li>
+                    <li>✔ Risk Management أفضل</li>
+                    <li>✖ بدون Auto Trading</li>
+                </ul>
+
+                <a href="/register" class="btn btn-primary">اشترك الآن</a>
+            </div>
+
+            <div class="plan-card vip">
+                <div class="plan-badge">الأقوى</div>
+                <h3>VIP 💎</h3>
+                <div class="price">$99.99 <span>/ شهر</span></div>
+
+                <ul>
+                    <li>✔ أقوى فلترة داخل النظام</li>
+                    <li>✔ إشارات أقل لكن أعلى جودة</li>
+                    <li>✔ ربط Binance / Bybit / OKX</li>
+                    <li>✔ تنفيذ تلقائي كامل</li>
+                    <li>✔ إدارة مخاطرة ذكية</li>
+                    <li>✔ أقرب تجربة احترافية حقيقية</li>
+                </ul>
+
+                <a href="/register" class="btn btn-primary">ابدأ VIP الآن</a>
+            </div>
+        </div>
+
+        <div class="warning-box">
+            ⚠️ تنبيه مهم:
+            التداول يحتوي على مخاطرة، ولا يوجد نظام يضمن الربح 100%.
+            هذا البوت هدفه تحسين جودة الدخول وتقليل العشوائية — وليس بيع أوهام.
+        </div>
+    </div>
+</section>
+
+<!-- FAQ -->
+<section class="section">
+    <div class="container">
+        <h2 class="section-title">❓ أسئلة شائعة</h2>
+        <p class="section-sub">
+            أهم الأسئلة التي تخطر في بال أي شخص قبل الاشتراك.
+        </p>
+
+        <div class="faq-grid">
+            <div class="faq-item">
+                <h3>لماذا أحيانًا لا يرسل البوت صفقات؟</h3>
+                <p>
+                    لأن البوت لا يعمل بمنطق "لازم يرسل أي شيء".
+                    لو السوق غير مناسب، الأفضل عدم الدخول أصلًا.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>هل البوت مناسب للمبتدئ؟</h3>
+                <p>
+                    نعم، لأنه يقلل من العشوائية ويوفر فرصًا أوضح من التداول اليدوي العشوائي.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>هل VIP يرسل أكثر؟</h3>
+                <p>
+                    لا، غالبًا يرسل أقل... لكن بجودة وفلترة أعلى من باقي الخطط.
+                </p>
+            </div>
+
+            <div class="faq-item">
+                <h3>هل يمكن للبوت سحب أموال من الحساب؟</h3>
+                <p>
+                    لا. في وضع API الخاص بـ VIP، البوت يستخدم التداول فقط حسب الإعدادات التي تحددها أنت.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FINAL CTA -->
+<section class="cta-final">
+    <div class="container">
+        <h2>🚀 جرّب النظام الآن وخد أول خطوة بشكل أذكى</h2>
+        <p>
+            عندك تجربة مجانية بعد التسجيل،
+            وبعدها تقدر تختار الخطة التي تناسبك حسب أسلوب تداولك.
+            <br><br>
+            لو كنت تعبت من العشوائية، فهذه الصفحة غالبًا وصلت لك في الوقت المناسب.
+        </p>
+
+        <div class="hero-cta" style="margin-top:35px;">
+            <a href="/register" class="btn btn-primary">🔥 ابدأ مجانًا الآن</a>
+            <a href="/login" class="btn btn-secondary">🔐 تسجيل الدخول</a>
+        </div>
+    </div>
+</section>
+
+<div class="footer">
+    AI Crypto Trader © جميع الحقوق محفوظة
+</

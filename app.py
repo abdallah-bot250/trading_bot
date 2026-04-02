@@ -394,8 +394,8 @@ init_db()
 
 # ================= ROUTES =================
 @app.route("/")
-def home():
-    return "🔥 البوت شغال"
+def landing():
+    return render_template("landing.html")
 
 
 @app.route("/health")
