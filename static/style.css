@@ -1,43 +1,138 @@
-/* 🌌 BACKGROUND */
+/* ===============================
+   AI CRYPTO TRADER - GLOBAL STYLE
+================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
 body {
     margin: 0;
-    font-family: 'Segoe UI', sans-serif;
+    font-family: "Segoe UI", "Cairo", Arial, sans-serif;
     background: url("/static/bg.jpg") no-repeat center center fixed;
     background-size: cover;
     color: white;
+    position: relative;
+    min-height: 100vh;
 }
 
-/* 🔥 overlay */
+/* 🌌 Overlay */
 body::before {
     content: "";
     position: fixed;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    top: 0;
-    left: 0;
+    inset: 0;
+    background:
+        linear-gradient(rgba(4, 11, 44, 0.88), rgba(4, 11, 44, 0.92));
     z-index: -1;
+}
+
+/* 🔗 Links */
+a {
+    color: inherit;
+    text-decoration: none;
 }
 
 /* 🔥 HERO */
 .hero {
     text-align: center;
-    padding: 40px;
+    padding: 40px 20px 20px;
 }
 
 .hero h1 {
     color: #22c55e;
     font-size: 34px;
+    margin-bottom: 10px;
+    text-shadow: 0 0 18px rgba(34,197,94,0.18);
 }
 
-/* 💳 CONTAINER */
+.hero p {
+    color: #cbd5e1;
+    margin-top: 0;
+    line-height: 1.8;
+}
+
+/* 🧊 GLASS */
+.glass-box {
+    background: rgba(15,23,42,0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 10px 35px rgba(0,0,0,0.35);
+    border-radius: 18px;
+}
+
+/* 📦 CONTAINERS */
+.container {
+    width: 92%;
+    max-width: 1200px;
+    margin: auto;
+}
+
+/* 🔥 STATUS STRIP */
+.status-strip {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+
+.status-pill {
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-weight: bold;
+    box-shadow: 0 0 18px rgba(0,0,0,0.18);
+}
+
+.status-on {
+    color: #22c55e;
+}
+
+.status-off {
+    color: #ef4444;
+}
+
+.status-plan {
+    color: #38bdf8;
+}
+
+.status-expiry {
+    color: #facc15;
+}
+
+/* ⚡ QUICK ACTIONS */
+.quick-actions {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 22px;
+}
+
+.quick-actions a,
+.quick-actions button {
+    width: auto !important;
+    padding: 12px 22px !important;
+    border-radius: 12px !important;
+    font-weight: bold;
+    text-decoration: none;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+}
+
+/* 💳 PLANS */
 .plans {
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: stretch;
     gap: 30px;
     flex-wrap: wrap;
     margin-top: 40px;
+    padding: 0 20px;
 }
 
 /* 💎 CARD */
@@ -50,28 +145,33 @@ body::before {
     position: relative;
     overflow: hidden;
 
-    border: 1px solid rgba(255,255,255,0.1);
-    backdrop-filter: blur(10px);
+    border: 2px solid transparent;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.35);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 
     opacity: 0;
     transform: translateY(40px);
     animation: fadeUp 1s ease forwards;
 }
 
-/* delay animation */
+/* animation delay */
 .card:nth-child(1) { animation-delay: 0.2s; }
 .card:nth-child(2) { animation-delay: 0.4s; }
 .card:nth-child(3) { animation-delay: 0.6s; }
 
-/* 🚀 دخول animation */
+/* ✨ fade */
 @keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(40px);
+    }
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
 
-/* ✨ glow border */
+/* ✨ Glow Border */
 .card::before {
     content: "";
     position: absolute;
@@ -79,20 +179,14 @@ body::before {
     border-radius: 20px;
     background: linear-gradient(45deg, #22c55e, #38bdf8, #facc15);
     z-index: -1;
-    filter: blur(12px);
+    filter: blur(10px);
     opacity: 0.6;
-    animation: glowMove 4s linear infinite;
 }
 
-/* glow animation */
-@keyframes glowMove {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* hover */
+/* Hover */
 .card:hover {
-    transform: scale(1.07);
+    transform: scale(1.05);
+    box-shadow: 0 16px 42px rgba(0,0,0,0.45);
 }
 
 /* VIP */
@@ -100,29 +194,50 @@ body::before {
     background: linear-gradient(45deg, gold, orange, yellow);
 }
 
-/* titles */
-.card h2 {
+/* Current Plan */
+.current-plan {
+    border: 2px solid #22c55e !important;
+    box-shadow: 0 0 25px rgba(34,197,94,0.22) !important;
+}
+
+.current-badge {
+    display: inline-block;
+    background: #22c55e;
+    color: #04111f;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: bold;
+    margin-bottom: 12px;
+}
+
+/* Titles */
+.card h2,
+.card h3 {
     margin-bottom: 10px;
 }
 
 .price {
     font-size: 26px;
     margin: 10px 0;
-    color: #38bdf8;
+    color: #f8fafc;
+    font-weight: bold;
 }
 
-/* list */
-.card ul {
+/* Lists */
+ul {
     list-style: none;
     padding: 0;
+    line-height: 1.9;
 }
 
-.card ul li {
+ul li {
     margin: 8px 0;
 }
 
-/* buttons */
-button {
+/* 🔘 BUTTONS */
+button,
+.btn {
     padding: 12px;
     width: 100%;
     border-radius: 10px;
@@ -130,35 +245,49 @@ button {
     margin-top: 8px;
     font-weight: bold;
     cursor: pointer;
+    transition: 0.25s ease;
+}
+
+button:hover,
+.btn:hover {
+    transform: translateY(-2px);
+    opacity: 0.96;
 }
 
 .pay {
-    background: linear-gradient(90deg, #22c55e, #16a34a);
+    background: #22c55e;
+    color: #04111f;
 }
 
 .manual {
-    background: linear-gradient(90deg, #f59e0b, #d97706);
+    background: #f59e0b;
+    color: white;
 }
 
-/* 💰 PROFIT */
+/* 💰 PROFIT BOX */
 .box {
     margin: 40px auto;
     text-align: center;
     width: 80%;
+    background: rgba(15,23,42,0.88);
+    padding: 28px;
+    border-radius: 20px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
 #profit {
     font-size: 30px;
     color: #22c55e;
+    font-weight: bold;
 }
 
-/* 🎯 PROGRESS BAR */
+/* 🎯 PROGRESS */
 .progress {
-    width: 300px;
+    width: 100%;
     height: 15px;
     background: #1e293b;
     border-radius: 10px;
-    margin: auto;
     overflow: hidden;
     margin-top: 10px;
 }
@@ -172,6 +301,109 @@ button {
 
 /* 📊 CHART */
 canvas {
-    max-width: 600px;
+    max-width: 700px;
     margin: auto;
+}
+
+/* 🧠 Section Title */
+.section-title {
+    text-align: center;
+    font-size: 28px;
+    margin-top: 50px;
+    color: #38bdf8;
+}
+
+/* 📝 Inputs */
+input,
+select,
+textarea {
+    outline: none;
+    font-family: inherit;
+}
+
+/* 🧾 Helper */
+.helper-text {
+    color: #cbd5e1;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 15px;
+}
+
+/* 🚨 Alerts */
+.alert {
+    padding: 14px 16px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.alert-success {
+    background: rgba(34,197,94,0.15);
+    color: #bbf7d0;
+    border: 1px solid rgba(34,197,94,0.25);
+}
+
+.alert-error {
+    background: rgba(239,68,68,0.15);
+    color: #fecaca;
+    border: 1px solid rgba(239,68,68,0.25);
+}
+
+.alert-warning {
+    background: rgba(245,158,11,0.12);
+    color: #fde68a;
+    border: 1px solid rgba(245,158,11,0.25);
+}
+
+/* 📱 Responsive */
+@media (max-width: 900px) {
+    .box {
+        width: 92%;
+    }
+
+    .card {
+        width: 100%;
+        max-width: 340px;
+    }
+}
+
+@media (max-width: 600px) {
+    .hero {
+        padding: 28px 14px 16px;
+    }
+
+    .hero h1 {
+        font-size: 28px;
+    }
+
+    .status-strip {
+        gap: 10px;
+    }
+
+    .status-pill {
+        width: 100%;
+        max-width: 330px;
+    }
+
+    .quick-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .quick-actions a,
+    .quick-actions button {
+        width: 100% !important;
+        max-width: 320px;
+        text-align: center;
+    }
+
+    .plans {
+        padding: 0 12px;
+    }
+
+    .section-title {
+        font-size: 24px;
+    }
 }

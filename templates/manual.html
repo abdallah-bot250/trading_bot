@@ -2,85 +2,152 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>دليل المستخدم - AI Crypto Trader</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>دليل المستخدم | AI Crypto Trader</title>
 
 <style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Cairo", Arial, sans-serif;
+}
+
 body {
-    margin:0;
-    font-family: 'Cairo', sans-serif;
-    background:#0f172a;
-    color:#e2e8f0;
+    background:
+        radial-gradient(circle at top right, rgba(34,197,94,0.10), transparent 24%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
+        linear-gradient(135deg, #0b1020, #111827, #020617);
+    color: #e2e8f0;
 }
 
 .container {
-    max-width:1100px;
-    margin:auto;
-    padding:20px;
+    max-width: 1100px;
+    margin: auto;
+    padding: 30px 20px;
 }
 
+/* HEADER */
+.header {
+    text-align: center;
+    margin-bottom: 35px;
+}
+
+.header h1 {
+    color: #22c55e;
+    font-size: 34px;
+    margin-bottom: 10px;
+}
+
+.header p {
+    color: #94a3b8;
+    font-size: 16px;
+}
+
+/* CARD */
 .card {
-    background:#111827;
-    border:1px solid #1f2937;
-    border-radius:14px;
-    padding:20px;
-    margin-bottom:20px;
+    background: rgba(15,23,42,0.85);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 22px;
+    margin-bottom: 22px;
+    box-shadow: 0 12px 35px rgba(0,0,0,0.25);
 }
 
-h1,h2,h3 {
-    color:#22c55e;
+/* TITLES */
+h2 {
+    color: #22c55e;
+    margin-bottom: 12px;
 }
 
-.section-title {
-    margin-bottom:10px;
+h3 {
+    color: #38bdf8;
+    margin-bottom: 8px;
 }
 
+/* TEXT */
+p {
+    line-height: 1.9;
+    color: #cbd5e1;
+}
+
+/* PLAN GRID */
 .plan-grid {
-    display:grid;
+    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
-    gap:20px;
+    gap: 20px;
+    margin-top: 15px;
 }
 
 .plan {
-    background:#0b1220;
-    border:1px solid #1e293b;
-    border-radius:14px;
-    padding:20px;
+    background: rgba(2,6,23,0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 18px;
+    padding: 20px;
 }
 
 .plan h3 {
-    margin-top:0;
+    color: #22c55e;
 }
 
 .good {
-    color:#22c55e;
+    color: #22c55e;
 }
 
 .bad {
-    color:#ef4444;
+    color: #ef4444;
 }
 
+/* NOTE */
 .note {
-    background:#1e293b;
-    padding:15px;
-    border-radius:10px;
-    margin-top:10px;
+    background: rgba(30,41,59,0.6);
+    padding: 14px;
+    border-radius: 12px;
+    margin-top: 14px;
+    font-size: 14px;
 }
 
+/* WARNING */
 .warning {
-    background:#3f1d1d;
-    border:1px solid #7f1d1d;
-    padding:15px;
-    border-radius:10px;
+    background: rgba(239,68,68,0.10);
+    border: 1px solid rgba(239,68,68,0.25);
+    padding: 16px;
+    border-radius: 14px;
+    font-size: 14px;
 }
 
+/* STEPS */
 .steps {
-    line-height:2;
+    line-height: 2.1;
 }
 
+/* CTA */
+.cta {
+    text-align: center;
+    margin-top: 30px;
+}
+
+.cta a {
+    display: inline-block;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #04111f;
+    padding: 14px 24px;
+    border-radius: 14px;
+    font-weight: bold;
+    text-decoration: none;
+    box-shadow: 0 10px 28px rgba(34,197,94,0.2);
+}
+
+.cta a:hover {
+    transform: translateY(-2px);
+}
+
+/* FOOTER */
 .footer {
-    text-align:center;
-    margin-top:30px;
-    opacity:0.6;
+    text-align: center;
+    margin-top: 35px;
+    color: #64748b;
+    font-size: 13px;
 }
 </style>
 
@@ -89,13 +156,15 @@ h1,h2,h3 {
 
 <div class="container">
 
+<div class="header">
 <h1>🤖 دليل استخدام AI Crypto Trader</h1>
+<p>افهم النظام واشتغل بذكاء بدل العشوائية</p>
+</div>
 
 <div class="card">
-<h2 class="section-title">🔥 ما هو هذا البوت؟</h2>
+<h2>🔥 ما هو هذا البوت؟</h2>
 <p>
-هذا البوت مصمم لاختيار أفضل فرص التداول فقط بناءً على تحليل السوق،
-بدل الدخول العشوائي في صفقات ضعيفة.
+هذا البوت مصمم لاختيار أفضل فرص التداول فقط بدل الدخول العشوائي.
 <br><br>
 يعتمد على:
 <br>• الاتجاه (Trend)
@@ -103,17 +172,17 @@ h1,h2,h3 {
 <br>• الفوليوم والسيولة
 <br>• الفريمات الأكبر للتأكيد
 <br><br>
-⚠️ إذا لم توجد فرصة مناسبة، لن يتم إرسال أي صفقة — حفاظًا على رأس المال.
+⚠️ إذا لم توجد فرصة مناسبة، لن يتم إرسال أي صفقة.
 </p>
 </div>
 
 <div class="card">
-<h2>⚙️ كيف يعمل البوت؟</h2>
+<h2>⚙️ كيف يعمل؟</h2>
 <p>
 يقوم البوت بتحليل السوق بالكامل ثم:
-<br>• يستبعد الأسواق المتذبذبة
-<br>• يختار أقوى الاتجاهات فقط
-<br>• يحدد نقطة دخول + هدف + وقف خسارة
+<br>• يستبعد الأسواق المتذبذبة  
+<br>• يختار الاتجاهات الواضحة  
+<br>• يحدد دخول + هدف + وقف خسارة  
 <br><br>
 🎯 الهدف: صفقات أقل لكن أقوى
 </p>
@@ -125,70 +194,39 @@ h1,h2,h3 {
 <div class="plan-grid">
 
 <div class="plan">
-<h3>💼 أساسي</h3>
-
-<p>مناسب للمبتدئين</p>
-
+<h3>💼 Basic</h3>
 <p class="good">
 ✔ إشارات Spot + Futures  
-✔ تحليل: RSI + MACD + Trend  
-✔ عدد صفقات أكثر  
+✔ RSI + MACD + Trend  
+✔ مناسب للبداية  
 </p>
-
 <p class="bad">
 ✖ فلترة أقل  
-✖ دقة أقل من باقي الخطط  
 </p>
-
-<p>
-📊 مستوى الدقة: جيد  
-📈 عدد الإشارات: أعلى
-</p>
-
 </div>
 
 <div class="plan">
-<h3>🔥 محترف</h3>
-
-<p>توازن بين الجودة والكمية</p>
-
+<h3>🔥 Pro</h3>
 <p class="good">
-✔ كل مميزات الأساسي  
-✔ فلترة أقوى  
-✔ تأكيد من الفريمات الأكبر  
+✔ فلترة أعلى  
 ✔ إشارات أنضف  
+✔ Volume + Liquidity  
 </p>
-
-<p>
-📊 مستوى الدقة: أعلى من الأساسي  
-📈 عدد الإشارات: متوسط
-</p>
-
 </div>
 
 <div class="plan">
 <h3>💎 VIP</h3>
-
-<p>أقوى نسخة من البوت</p>
-
 <p class="good">
-✔ أقوى فلترة داخل النظام  
-✔ أقل إشارات لكن أعلى جودة  
-✔ حماية أعلى لرأس المال  
-✔ تنفيذ تلقائي (اختياري)  
+✔ أقوى فلترة  
+✔ Auto Trading  
+✔ أعلى دقة  
 </p>
-
-<p>
-📊 مستوى الدقة: الأعلى  
-📈 عدد الإشارات: الأقل
-</p>
-
 </div>
 
 </div>
 
 <div class="note">
-⚠️ كلما ارتفعت الخطة، قلت الإشارات وزادت جودة الفرص.
+⚠️ كلما ارتفعت الخطة → قلت الإشارات وزادت الجودة
 </div>
 
 </div>
@@ -196,9 +234,9 @@ h1,h2,h3 {
 <div class="card">
 <h2>📌 أنواع التداول</h2>
 <p>
-🔹 Spot: شراء العملة والاحتفاظ بها  
+🔹 Spot: شراء فقط  
 <br>
-🔹 Futures: تداول صعود وهبوط (LONG / SHORT)
+🔹 Futures: صعود وهبوط (LONG / SHORT)
 </p>
 </div>
 
@@ -206,17 +244,13 @@ h1,h2,h3 {
 <h2>💳 طريقة الاشتراك</h2>
 
 <div class="steps">
-1. اختر الخطة المناسبة  
+1️⃣ اختر الخطة  
 <br>
-2. اضغط اشتراك  
+2️⃣ اضغط اشتراك  
 <br>
-3. قم بالدفع  
+3️⃣ ادفع  
 <br>
-4. سيتم تفعيل حسابك  
-</div>
-
-<div class="note">
-📸 سيتم إضافة صور الدفع هنا (/Binance / )
+4️⃣ يتفعل حسابك تلقائيًا  
 </div>
 
 </div>
@@ -224,43 +258,32 @@ h1,h2,h3 {
 <div class="card warning">
 <h2>⚠️ تنبيه مهم</h2>
 <p>
-• البوت لا يضمن الربح 100%  
+• التداول فيه مخاطرة  
 <br>
-• التداول يحتوي على مخاطرة  
+• لا تستخدم كل رأس المال  
 <br>
-• لا تدخل بكل رأس المال  
-<br>
-• استخدم إدارة رأس المال دائمًا  
+• لا يوجد ربح مضمون  
 </p>
 </div>
 
 <div class="card">
 <h2>❓ أسئلة شائعة</h2>
 
-<p>
-❓ لماذا لا يرسل البوت صفقات أحيانًا؟  
-<br>
-➡️ لأن السوق غير مناسب
-</p>
+<p>❓ لماذا لا يرسل صفقات؟<br>➡️ السوق غير مناسب</p>
+<p>❓ لماذا VIP أقل؟<br>➡️ فلترة أقوى</p>
+<p>❓ هل يعمل Futures؟<br>➡️ نعم</p>
 
-<p>
-❓ لماذا VIP يرسل أقل؟  
-<br>
-➡️ لأنه يختار الفرص الأقوى فقط
-</p>
+</div>
 
-<p>
-❓ هل البوت يعمل Spot و Futures؟  
-<br>
-➡️ نعم
-</p>
-
+<div class="cta">
+<a href="/register">🚀 ابدأ الآن</a>
 </div>
 
 <div class="footer">
-AI Crypto Trader ©
+AI Crypto Trader ©️ جميع الحقوق محفوظة
 </div>
 
 </div>
 
-</bod
+</body>
+</html>

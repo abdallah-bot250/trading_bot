@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>إنشاء حساب | AI Crypto Trader</title>
+
 <style>
 * {
     box-sizing: border-box;
@@ -13,7 +14,10 @@
 }
 
 body {
-    background: linear-gradient(135deg, #0b1020, #111827, #0f172a);
+    background:
+        radial-gradient(circle at top right, rgba(34,197,94,0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
+        linear-gradient(135deg, #0b1020, #111827, #0f172a);
     color: #fff;
     min-height: 100vh;
     display: flex;
@@ -24,12 +28,12 @@ body {
 
 .container {
     width: 100%;
-    max-width: 480px;
+    max-width: 520px;
     background: rgba(17, 24, 39, 0.94);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 24px;
-    padding: 30px 24px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    border-radius: 26px;
+    padding: 34px 26px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.38);
     backdrop-filter: blur(12px);
 }
 
@@ -48,14 +52,36 @@ h2 {
     text-align: center;
     margin-bottom: 10px;
     color: #ffffff;
+    font-size: 28px;
 }
 
 .sub {
     text-align: center;
     color: #cbd5e1;
     font-size: 14px;
-    line-height: 1.8;
+    line-height: 1.9;
     margin-bottom: 22px;
+}
+
+.flash-box {
+    padding: 12px 14px;
+    border-radius: 14px;
+    margin-bottom: 18px;
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.8;
+}
+
+.flash-box.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fecaca;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.flash-box.success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #bbf7d0;
+    border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
 .highlight-box {
@@ -83,6 +109,49 @@ h2 {
     color: #facc15;
     font-weight: 700;
     text-align: center;
+}
+
+.telegram-box {
+    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(34,197,94,0.08));
+    border: 1px solid rgba(56,189,248,0.20);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 24px;
+    line-height: 1.9;
+}
+
+.telegram-box h3 {
+    color: #38bdf8;
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+.telegram-box p {
+    color: #dbeafe;
+    font-size: 14px;
+}
+
+.telegram-steps {
+    margin-top: 12px;
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 2;
+}
+
+.telegram-btn {
+    display: inline-block;
+    margin-top: 14px;
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: white;
+    padding: 12px 18px;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 800;
+}
+
+.telegram-btn:hover {
+    text-decoration: none;
+    opacity: 0.95;
 }
 
 .form-group {
@@ -151,7 +220,7 @@ button.main-btn:hover {
     opacity: 0.95;
 }
 
-a {
+.bottom-link {
     display: block;
     margin-top: 18px;
     color: #00d084;
@@ -160,7 +229,7 @@ a {
     font-weight: 700;
 }
 
-a:hover {
+.bottom-link:hover {
     text-decoration: underline;
 }
 
@@ -169,7 +238,30 @@ a:hover {
     text-align: center;
     font-size: 12px;
     color: #94a3b8;
-    line-height: 1.8;
+    line-height: 1.9;
+}
+
+.mini-note {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.9;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 28px 20px;
+        border-radius: 22px;
+    }
+
+    h2 {
+        font-size: 24px;
+    }
+
+    .logo {
+        font-size: 26px;
+    }
 }
 </style>
 </head>
@@ -179,21 +271,22 @@ a:hover {
 <div class="container">
     <div class="logo">🚀 <span>AI Crypto Trader</span></div>
     <h2>إنشاء حساب جديد</h2>
+
     <div class="sub">
-    .    ابدأ الآن وجرّب نظام الفلترة الذكي الذي يختار الفرص الأقوى فقط بدلًا من الإشارات العشوائية.
-</div>
+        ابدأ الآن وجرّب نظام الفلترة الذكي الذي يختار الفرص الأقوى فقط بدلًا من الإشارات العشوائية.
+    </div>
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <div style="background: rgba(239, 68, 68, 0.15); color: #fecaca; border: 1px solid rgba(239, 68, 68, 0.25); padding: 12px 14px; border-radius: 14px; margin-bottom: 18px; font-size: 14px; text-align: center;">
-        {{ message }}
-      </div>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash-box {{ category }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-<div class="highlight-box">
+    <div class="highlight-box">
         <h3>🔥 لماذا هذا البوت مختلف؟</h3>
         <p>
             هذا البوت لا يعتمد على كثرة الصفقات، بل على اختيار الفرص الأقوى فقط حسب حالة السوق.
@@ -208,6 +301,30 @@ a:hover {
         </p>
         <div class="bonus">
             🎁 بعد التسجيل ستحصل على صفقات مجانية لتجربة النظام
+        </div>
+    </div>
+
+    <div class="telegram-box">
+        <h3>🤖 خطوة مهمة جدًا بعد التسجيل</h3>
+        <p>
+            لكي تستلم الإشارات المجانية أو المدفوعة على تيليجرام،
+            لازم بعد إنشاء الحساب تقوم بربطه بالبوت.
+        </p>
+
+        <div class="telegram-steps">
+            1️⃣ أنشئ حسابك من هنا  
+            <br>
+            2️⃣ افتح البوت على تيليجرام  
+            <br>
+            3️⃣ ابعت <b>نفس الإيميل</b> الذي سجلت به هنا  
+            <br>
+            4️⃣ بعدها هتوصلك الإشارات تلقائيًا
+        </div>
+
+        <div style="text-align:center;">
+            <a href="https://t.me/pro_crypto_99_bot" target="_blank" class="telegram-btn">
+                افتح البوت الآن
+            </a>
         </div>
     </div>
 
@@ -235,20 +352,31 @@ a:hover {
         <button type="submit" class="main-btn">إنشاء الحساب</button>
     </form>
 
-<a href="{{ url_for('login') }}">لديك حساب بالفعل؟ تسجيل الدخول</a>
+    <div class="mini-note">
+        بعد إنشاء الحساب:
+        <br>
+        افتح البوت وابعت نفس الإيميل علشان يتربط حسابك وتبدأ تستلم الإشارات.
+    </div>
 
-<div class="note">
-    بعد التسجيل يمكنك ربط حسابك بالتليجرام وتفعيل الباقة المناسبة والبدء فورًا.
-</div>
+    <a href="{{ url_for('login') }}" class="bottom-link">لديك حساب بالفعل؟ تسجيل الدخول</a>
+
+    <div class="note">
+        AI Crypto Trader يساعدك على تقليل العشوائية وتحسين جودة الدخول،
+        لكنه لا يضمن الربح 100% — إدارة رأس المال تظل مسؤوليتك دائمًا.
+    </div>
 </div>
 
 <script>
 function togglePassword() {
     const pass = document.getElementById("password");
+    const btn = document.querySelector(".toggle-pass");
+
     if (pass.type === "password") {
         pass.type = "text";
+        btn.innerText = "إخفاء";
     } else {
         pass.type = "password";
+        btn.innerText = "إظهار";
     }
 }
 </script>

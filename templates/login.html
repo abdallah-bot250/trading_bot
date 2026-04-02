@@ -1,187 +1,244 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>تسجيل الدخول | AI Crypto Trader</title>
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: "Cairo", Arial, sans-serif;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تسجيل الدخول | AI Crypto Trader</title>
 
-    body {
-      background: linear-gradient(135deg, #0b1020, #111827, #0f172a);
-      color: #fff;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
+<style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Cairo", Arial, sans-serif;
+}
 
-    .login-box {
-      width: 100%;
-      max-width: 420px;
-      background: rgba(17, 24, 39, 0.92);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 22px;
-      padding: 32px 26px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-      backdrop-filter: blur(12px);
-    }
+body {
+    background:
+        radial-gradient(circle at top right, rgba(34,197,94,0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
+        linear-gradient(135deg, #0b1020, #111827, #0f172a);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
 
-    .logo {
-      text-align: center;
-      margin-bottom: 18px;
-      font-size: 28px;
-      font-weight: 800;
-    }
+.login-box {
+    width: 100%;
+    max-width: 460px;
+    background: rgba(17, 24, 39, 0.94);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 26px;
+    padding: 34px 26px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.38);
+    backdrop-filter: blur(12px);
+}
 
-    .logo span {
-      color: #00d084;
-    }
+.logo {
+    text-align: center;
+    margin-bottom: 14px;
+    font-size: 28px;
+    font-weight: 800;
+}
 
-    .subtitle {
-      text-align: center;
-      color: #cbd5e1;
-      margin-bottom: 28px;
-      font-size: 14px;
-      line-height: 1.8;
-    }
+.logo span {
+    color: #00d084;
+}
 
-    .form-group {
-      margin-bottom: 18px;
-    }
+.subtitle {
+    text-align: center;
+    color: #cbd5e1;
+    margin-bottom: 24px;
+    font-size: 14px;
+    line-height: 1.9;
+}
 
-    label {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 14px;
-      color: #e5e7eb;
-    }
+/* 🔥 FLASH */
+.flash {
+    padding: 12px 14px;
+    border-radius: 14px;
+    margin-bottom: 18px;
+    font-size: 14px;
+    text-align: center;
+    line-height: 1.8;
+}
 
-    input {
-      width: 100%;
-      padding: 14px 16px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: rgba(255,255,255,0.04);
-      color: white;
-      outline: none;
-      font-size: 15px;
-      transition: 0.2s;
-    }
+.flash.error {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fecaca;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
 
-    input:focus {
-      border-color: #00d084;
-      box-shadow: 0 0 0 3px rgba(0,208,132,0.15);
-    }
+.flash.success {
+    background: rgba(34, 197, 94, 0.15);
+    color: #bbf7d0;
+    border: 1px solid rgba(34, 197, 94, 0.25);
+}
 
-    .btn {
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 14px;
-      background: linear-gradient(135deg, #00d084, #00a86b);
-      color: #08111f;
-      font-size: 16px;
-      font-weight: 800;
-      cursor: pointer;
-      transition: 0.2s;
-      margin-top: 10px;
-    }
+/* 🤖 TELEGRAM NOTE */
+.telegram-note {
+    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(34,197,94,0.08));
+    border: 1px solid rgba(56,189,248,0.20);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 22px;
+    font-size: 14px;
+    line-height: 1.9;
+    color: #dbeafe;
+    text-align: center;
+}
 
-    .btn:hover {
-      transform: translateY(-1px);
-      opacity: 0.95;
-    }
+.telegram-note a {
+    display: inline-block;
+    margin-top: 10px;
+    background: #38bdf8;
+    color: white;
+    padding: 10px 16px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: bold;
+}
 
-    .links {
-      text-align: center;
-      margin-top: 20px;
-      font-size: 14px;
-      color: #cbd5e1;
-    }
+.telegram-note a:hover {
+    opacity: 0.9;
+}
 
-    .links a {
-      color: #00d084;
-      text-decoration: none;
-      font-weight: 700;
-    }
+.form-group {
+    margin-bottom: 18px;
+}
 
-    .links a:hover {
-      text-decoration: underline;
-    }
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #e5e7eb;
+}
 
-    .note {
-      margin-top: 22px;
-      text-align: center;
-      font-size: 12px;
-      color: #94a3b8;
-      line-height: 1.8;
-    }
+input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: white;
+    outline: none;
+    font-size: 15px;
+    transition: 0.2s;
+}
 
-    .flash {
-      background: rgba(239, 68, 68, 0.15);
-      color: #fecaca;
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      padding: 12px 14px;
-      border-radius: 14px;
-      margin-bottom: 18px;
-      font-size: 14px;
-      text-align: center;
-    }
+input:focus {
+    border-color: #00d084;
+    box-shadow: 0 0 0 3px rgba(0,208,132,0.15);
+}
 
-    .success {
-      background: rgba(34, 197, 94, 0.15);
-      color: #bbf7d0;
-      border: 1px solid rgba(34, 197, 94, 0.25);
-    }
-  </style>
+.btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #00d084, #00a86b);
+    color: #08111f;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-top: 10px;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
+.links {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 14px;
+    color: #cbd5e1;
+}
+
+.links a {
+    color: #00d084;
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.links a:hover {
+    text-decoration: underline;
+}
+
+.note {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.9;
+}
+</style>
 </head>
+
 <body>
 
-  <div class="login-box">
-    <div class="logo">🔐 <span>AI Crypto Trader</span></div>
-    <div class="subtitle">
-      سجّل دخولك للوصول إلى لوحة التحكم وربط API وإدارة اشتراكك بسهولة.
-    </div>
+<div class="login-box">
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="flash {% if category == 'success' %}success{% endif %}">
-            {{ message }}
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+<div class="logo">🔐 <span>AI Crypto Trader</span></div>
 
-    <form method="POST">
-      <div class="form-group">
-        <label for="email">البريد الإلكتروني</label>
-        <input type="email" id="email" name="email" placeholder="example@email.com" required>
+<div class="subtitle">
+سجّل دخولك للتحكم في حسابك، تفعيل الاشتراك، وربط البوت بسهولة.
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">
+        {{ message }}
       </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
 
-      <div class="form-group">
-        <label for="password">كلمة المرور</label>
-        <input type="password" id="password" name="password" placeholder="••••••••" required>
-      </div>
+<div class="telegram-note">
+⚠️ لو الإشارات مش بتوصلك:
+<br>
+افتح البوت وابعت نفس الإيميل اللي سجلت بيه هنا
 
-      <button type="submit" class="btn">تسجيل الدخول</button>
-    </form>
+<br>
 
-    <div class="links">
-      ليس لديك حساب؟ <a href="/register">إنشاء حساب</a>
-    </div>
+<a href="https://t.me/pro_crypto_99_bot" target="_blank">
+فتح البوت
+</a>
+</div>
 
-    <div class="note">
-      بعد تسجيل الدخول يمكنك تفعيل الخطة وربط حساب التداول والتحكم الكامل في البوت.
-    </div>
-  </div>
+<form method="POST">
+
+<div class="form-group">
+<label for="email">البريد الإلكتروني</label>
+<input type="email" id="email" name="email" placeholder="example@email.com" required>
+</div>
+
+<div class="form-group">
+<label for="password">كلمة المرور</label>
+<input type="password" id="password" name="password" placeholder="••••••••" required>
+</div>
+
+<button type="submit" class="btn">تسجيل الدخول</button>
+
+</form>
+
+<div class="links">
+ليس لديك حساب؟ <a href="/register">إنشاء حساب</a>
+</div>
+
+<div class="note">
+بعد تسجيل الدخول:
+<br>
+يمكنك تفعيل الخطة وربط حساب التداول والتحكم الكامل في البوت.
+</div>
+
+</div>
 
 </body>
 </html>

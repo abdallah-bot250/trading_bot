@@ -9,11 +9,14 @@
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: Tahoma, Arial, sans-serif;
+            font-family: "Cairo", Tahoma, Arial, sans-serif;
         }
 
         body {
-            background: linear-gradient(135deg, #0f172a, #111827, #020617);
+            background:
+                radial-gradient(circle at top right, rgba(34,197,94,0.12), transparent 24%),
+                radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
+                linear-gradient(135deg, #0f172a, #111827, #020617);
             color: white;
             min-height: 100vh;
             display: flex;
@@ -24,13 +27,14 @@
 
         .box {
             width: 100%;
-            max-width: 620px;
-            background: rgba(15, 23, 42, 0.88);
+            max-width: 680px;
+            background: rgba(15, 23, 42, 0.90);
             border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 24px;
-            padding: 34px 26px;
-            box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+            border-radius: 28px;
+            padding: 36px 28px;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.38);
             text-align: center;
+            backdrop-filter: blur(12px);
         }
 
         .badge {
@@ -38,14 +42,15 @@
             background: rgba(34, 197, 94, 0.14);
             color: #86efac;
             border: 1px solid rgba(34, 197, 94, 0.25);
-            padding: 8px 14px;
+            padding: 8px 16px;
             border-radius: 999px;
             font-size: 13px;
+            font-weight: bold;
             margin-bottom: 18px;
         }
 
         h1 {
-            font-size: 30px;
+            font-size: 32px;
             margin-bottom: 14px;
             line-height: 1.6;
         }
@@ -61,9 +66,10 @@
             background: rgba(59, 130, 246, 0.12);
             border: 1px solid rgba(59, 130, 246, 0.25);
             color: #dbeafe;
-            padding: 16px;
+            padding: 18px;
             border-radius: 18px;
-            font-size: 18px;
+            font-size: 19px;
+            font-weight: bold;
             margin-bottom: 22px;
             word-break: break-word;
         }
@@ -72,12 +78,18 @@
             text-align: right;
             background: rgba(255,255,255,0.03);
             border: 1px solid rgba(255,255,255,0.06);
-            border-radius: 20px;
-            padding: 22px;
-            margin-bottom: 24px;
-            line-height: 2.1;
+            border-radius: 22px;
+            padding: 24px;
+            margin-bottom: 22px;
+            line-height: 2.15;
             color: #e2e8f0;
             font-size: 15px;
+        }
+
+        .steps h3 {
+            color: #22c55e;
+            margin-bottom: 14px;
+            font-size: 20px;
         }
 
         .warning {
@@ -88,7 +100,18 @@
             border-radius: 16px;
             margin-bottom: 22px;
             font-size: 14px;
-            line-height: 1.9;
+            line-height: 1.95;
+        }
+
+        .tip {
+            background: rgba(245, 158, 11, 0.10);
+            border: 1px solid rgba(245, 158, 11, 0.22);
+            color: #fde68a;
+            padding: 16px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            line-height: 1.95;
         }
 
         .btns {
@@ -100,23 +123,24 @@
 
         .btn {
             text-decoration: none;
-            padding: 14px 20px;
-            border-radius: 14px;
+            padding: 15px 20px;
+            border-radius: 16px;
             font-size: 15px;
-            font-weight: bold;
+            font-weight: 800;
             transition: 0.25s ease;
             display: inline-block;
-            min-width: 220px;
+            min-width: 230px;
+            box-shadow: 0 10px 28px rgba(0,0,0,0.18);
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #22c55e, #84cc16);
+            background: linear-gradient(135deg, #22c55e, #16a34a);
             color: #0f172a;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            opacity: 0.95;
+            opacity: 0.96;
         }
 
         .btn-secondary {
@@ -131,10 +155,25 @@
         }
 
         .note {
-            margin-top: 22px;
+            margin-top: 24px;
             color: #94a3b8;
             font-size: 13px;
             line-height: 1.9;
+        }
+
+        @media (max-width: 640px) {
+            .box {
+                padding: 28px 18px;
+            }
+
+            h1 {
+                font-size: 27px;
+            }
+
+            .btn {
+                width: 100%;
+                min-width: auto;
+            }
         }
     </style>
 </head>
@@ -143,10 +182,10 @@
     <div class="box">
         <div class="badge">✅ تم إنشاء الحساب بنجاح</div>
 
-        <h1>حسابك جاهز 🔥</h1>
+        <h1>حسابك جاهز للانطلاق 🔥</h1>
 
         <div class="sub">
-            باقي خطوة واحدة فقط علشان تبدأ تستقبل الإشارات على تيليجرام.
+            تم إنشاء حسابك بنجاح، وباقي خطوة واحدة فقط علشان تبدأ تستقبل الإشارات على تيليجرام.
         </div>
 
         <div class="email-box">
@@ -154,15 +193,31 @@
         </div>
 
         <div class="steps">
-            <b>الخطوة الأخيرة:</b><br>
-            1️⃣ افتح البوت من الزر اللي تحت<br>
-            2️⃣ ابعت نفس الإيميل اللي فوق للبوت<br>
-            3️⃣ البوت هيربط حسابك فورًا<br>
-            4️⃣ بعدها هتوصلك الإشارات حسب خطتك (مجاني / مدفوع / VIP)
+            <h3>🤖 الخطوة الأخيرة لتفعيل استقبال الإشارات</h3>
+
+            1️⃣ افتح البوت من الزر الموجود بالأسفل  
+            <br>
+            2️⃣ ابعت <b>نفس الإيميل</b> الظاهر فوق للبوت  
+            <br>
+            3️⃣ البوت هيربط حسابك بالتليجرام تلقائيًا  
+            <br>
+            4️⃣ بعدها هتبدأ تستقبل الإشارات حسب حالتك:
+            <br><br>
+            • 🎁 لو جديد → هتوصلك الصفقات المجانية  
+            <br>
+            • 💳 لو مشترك → هتوصلك إشارات الخطة  
+            <br>
+            • 💎 لو VIP → هتشتغل كل مزايا VIP حسب إعداداتك
         </div>
 
         <div class="warning">
-            ❗ مهم جدًا: لو ما بعتش الإيميل للبوت، الإشارات مش هتوصلك حتى لو سجلت في الموقع.
+            ❗ مهم جدًا:
+            لو لم ترسل الإيميل للبوت، فلن تصلك الإشارات حتى لو سجلت أو دفعت من الموقع.
+        </div>
+
+        <div class="tip">
+            💡 نصيحة:
+            انسخ الإيميل الظاهر فوق وابَعته كما هو داخل البوت لتتم عملية الربط فورًا بدون أي مشاكل.
         </div>
 
         <div class="btns">
@@ -176,7 +231,7 @@
         </div>
 
         <div class="note">
-            بعد ما تبعت الإيميل للبوت، هيتم ربط حسابك بالتليجرام تلقائيًا.
+            بعد إرسال الإيميل للبوت سيتم ربط حسابك تلقائيًا، وبعدها يمكنك الدخول للوحة التحكم وإدارة اشتراكك بكل سهولة.
         </div>
     </div>
 

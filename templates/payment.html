@@ -1,41 +1,168 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>Payment</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الدفع | AI Crypto Trader</title>
 
 <style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Cairo", Arial, sans-serif;
+}
+
 body {
-    background: #141e30;
+    background:
+        radial-gradient(circle at top right, rgba(34,197,94,0.12), transparent 24%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
+        linear-gradient(135deg, #0b1020, #111827, #0f172a);
     color: white;
-    text-align: center;
-    font-family: Arial;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
 }
 
 .container {
-    background: #1f2a40;
-    padding: 30px;
-    width: 350px;
-    margin: auto;
-    border-radius: 10px;
-}
-
-button {
-    padding: 15px;
     width: 100%;
-    margin-top: 20px;
-    background: #ff9800;
-    border: none;
-    color: white;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 16px;
+    max-width: 520px;
+    background: rgba(17, 24, 39, 0.94);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 26px;
+    padding: 34px 28px;
+    box-shadow: 0 24px 70px rgba(0,0,0,0.38);
+    backdrop-filter: blur(12px);
+    text-align: center;
 }
 
-.plan {
-    margin-top: 10px;
+.logo {
+    font-size: 30px;
+    font-weight: 800;
+    margin-bottom: 12px;
+}
+
+.logo span {
+    color: #22c55e;
+}
+
+h2 {
+    margin-bottom: 12px;
+    font-size: 28px;
+}
+
+.sub {
+    color: #cbd5e1;
+    font-size: 15px;
+    line-height: 1.9;
+    margin-bottom: 22px;
+}
+
+.plan-box {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(34, 197, 94, 0.18);
+    border-radius: 18px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.plan-title {
+    color: #22c55e;
     font-size: 18px;
-    color: #00e676;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+.plan-name {
+    font-size: 28px;
+    font-weight: 900;
+    color: #ffffff;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.plan-note {
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.8;
+}
+
+.features {
+    text-align: right;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 24px;
+}
+
+.features h3 {
+    color: #38bdf8;
+    margin-bottom: 12px;
+    font-size: 18px;
+}
+
+.features ul {
+    list-style: none;
+    padding: 0;
+    line-height: 2;
+    color: #e2e8f0;
+    font-size: 14px;
+}
+
+.features li {
+    margin-bottom: 4px;
+}
+
+.pay-btn {
+    display: inline-block;
+    width: 100%;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    color: #08111f;
+    font-size: 17px;
+    font-weight: 900;
+    text-decoration: none;
+    transition: 0.2s;
+    box-shadow: 0 14px 35px rgba(34,197,94,0.18);
+}
+
+.pay-btn:hover {
+    transform: translateY(-2px);
+    opacity: 0.96;
+}
+
+.secure-note {
+    margin-top: 18px;
+    font-size: 14px;
+    color: #cbd5e1;
+    line-height: 1.9;
+}
+
+.warning {
+    margin-top: 18px;
+    background: rgba(245, 158, 11, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.22);
+    color: #fde68a;
+    padding: 14px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.9;
+}
+
+.back-link {
+    display: inline-block;
+    margin-top: 18px;
+    color: #38bdf8;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.back-link:hover {
+    text-decoration: underline;
 }
 </style>
 </head>
@@ -44,19 +171,50 @@ button {
 
 <div class="container">
 
-<h2>💳 الدفع</h2>
+<div class="logo">💳 <span>AI Crypto Trader</span></div>
 
-<p class="plan">📦 خطتك: {{plan}}</p>
+<h2>تأكيد الدفع</h2>
 
-<p>اضغط على الزر للدفع وتفعيل الاشتراك فوراً 👇</p>
+<div class="sub">
+أنت على بعد خطوة واحدة فقط من تفعيل الاشتراك وفتح مزايا البوت حسب خطتك.
+</div>
 
-<a href="/create-payment?plan={{plan}}">
-    <button>🚀 ادفع الآن (Crypto)</button>
+<div class="plan-box">
+    <div class="plan-title">📦 الخطة المختارة</div>
+    <div class="plan-name">{{plan}}</div>
+    <div class="plan-note">
+        بعد الدفع سيتم تفعيل حسابك تلقائيًا وربط الخطة بحسابك خلال ثوانٍ.
+    </div>
+</div>
+
+<div class="features">
+    <h3>🔥 ماذا ستحصل بعد التفعيل؟</h3>
+    <ul>
+        <li>✔ تفعيل الخطة المختارة مباشرة</li>
+        <li>✔ وصول الإشارات حسب الباقة</li>
+        <li>✔ إمكانية ربط حسابك بالبوت</li>
+        <li>✔ تجربة تداول أكثر تنظيمًا وفلترة</li>
+        <li>✔ لوحة تحكم كاملة لإدارة حسابك</li>
+    </ul>
+</div>
+
+<a href="/create-payment?plan={{plan}}" class="pay-btn">
+🚀 ادفع الآن (Crypto)
 </a>
 
-<p style="margin-top:15px; font-size:14px; color:#ccc;">
-⚡ بعد الدفع سيتم تفعيل حسابك تلقائياً خلال ثواني
-</p>
+<div class="secure-note">
+🔐 الدفع يتم بشكل آمن  
+<br>
+⚡ التفعيل يتم تلقائيًا بعد إتمام العملية
+</div>
+
+<div class="warning">
+⚠️ مهم:
+إذا لم تكن قد ربطت حسابك بالبوت بعد،
+افتح البوت وابعت نفس الإيميل الذي سجلت به حتى تصلك الإشارات بشكل صحيح.
+</div>
+
+<a href="/dashboard" class="back-link">⬅ العودة إلى لوحة التحكم</a>
 
 </div>
 
