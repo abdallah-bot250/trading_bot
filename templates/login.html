@@ -1,108 +1,187 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<title>Login</title>
-<style>
-body {
-    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
-    font-family: Arial;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تسجيل الدخول | AI Crypto Trader</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "Cairo", Arial, sans-serif;
+    }
 
-.container {
-    background: white;
-    padding: 30px;
-    border-radius: 15px;
-    width: 300px;
-    text-align: center;
-}
+    body {
+      background: linear-gradient(135deg, #0b1020, #111827, #0f172a);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
 
-h2 {
-    margin-bottom: 20px;
-}
+    .login-box {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(17, 24, 39, 0.92);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 22px;
+      padding: 32px 26px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      backdrop-filter: blur(12px);
+    }
 
-input {
-    width: 100%;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    box-sizing: border-box;
-}
+    .logo {
+      text-align: center;
+      margin-bottom: 18px;
+      font-size: 28px;
+      font-weight: 800;
+    }
 
-button {
-    width: 100%;
-    padding: 10px;
-    background: #2c5364;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-}
+    .logo span {
+      color: #00d084;
+    }
 
-button:hover {
-    background: #203a43;
-}
+    .subtitle {
+      text-align: center;
+      color: #cbd5e1;
+      margin-bottom: 28px;
+      font-size: 14px;
+      line-height: 1.8;
+    }
 
-a {
-    display: block;
-    margin-top: 10px;
-    color: #2c5364;
-}
+    .form-group {
+      margin-bottom: 18px;
+    }
 
-.password-wrap {
-    position: relative;
-}
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #e5e7eb;
+    }
 
-.toggle-pass {
-    position: absolute;
-    right: 10px;
-    top: 18px;
-    background: transparent;
-    border: none;
-    color: #2c5364;
-    font-size: 13px;
-    font-weight: bold;
-    cursor: pointer;
-    width: auto;
-    padding: 0;
-}
-</style>
+    input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: white;
+      outline: none;
+      font-size: 15px;
+      transition: 0.2s;
+    }
+
+    input:focus {
+      border-color: #00d084;
+      box-shadow: 0 0 0 3px rgba(0,208,132,0.15);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #00d084, #00a86b);
+      color: #08111f;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.2s;
+      margin-top: 10px;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      opacity: 0.95;
+    }
+
+    .links {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #cbd5e1;
+    }
+
+    .links a {
+      color: #00d084;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .links a:hover {
+      text-decoration: underline;
+    }
+
+    .note {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.8;
+    }
+
+    .flash {
+      background: rgba(239, 68, 68, 0.15);
+      color: #fecaca;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      padding: 12px 14px;
+      border-radius: 14px;
+      margin-bottom: 18px;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .success {
+      background: rgba(34, 197, 94, 0.15);
+      color: #bbf7d0;
+      border: 1px solid rgba(34, 197, 94, 0.25);
+    }
+  </style>
 </head>
-
 <body>
 
-<div class="container">
-<h2>Login</h2>
+  <div class="login-box">
+    <div class="logo">🔐 <span>AI Crypto Trader</span></div>
+    <div class="subtitle">
+      سجّل دخولك للوصول إلى لوحة التحكم وربط API وإدارة اشتراكك بسهولة.
+    </div>
 
-<form method="POST">
-<input name="email" type="email" placeholder="Email" required autocomplete="email">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {% if category == 'success' %}success{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
-<div class="password-wrap">
-    <input id="password" name="password" type="password" placeholder="Password" required autocomplete="current-password">
-    <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
-</div>
+    <form method="POST">
+      <div class="form-group">
+        <label for="email">البريد الإلكتروني</label>
+        <input type="email" id="email" name="email" placeholder="example@email.com" required>
+      </div>
 
-<button>Login</button>
-</form>
+      <div class="form-group">
+        <label for="password">كلمة المرور</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" required>
+      </div>
 
-<a href="/register">Create new account</a>
-</div>
+      <button type="submit" class="btn">تسجيل الدخول</button>
+    </form>
 
-<script>
-function togglePassword() {
-    const pass = document.getElementById("password");
-    if (pass.type === "password") {
-        pass.type = "text";
-    } else {
-        pass.type = "password";
-    }
-}
-</script>
+    <div class="links">
+      ليس لديك حساب؟ <a href="/register">إنشاء حساب</a>
+    </div>
+
+    <div class="note">
+      بعد تسجيل الدخول يمكنك تفعيل الخطة وربط حساب التداول والتحكم الكامل في البوت.
+    </div>
+  </div>
 
 </body>
 </html>

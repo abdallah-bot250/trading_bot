@@ -9,3 +9,4 @@ ccxt
 werkzeug
 psycopg2-binary
 python-dotenv
+cryptography

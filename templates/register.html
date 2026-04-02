@@ -1,57 +1,116 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<title>Register</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إنشاء حساب | AI Crypto Trader</title>
 <style>
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: "Cairo", Arial, sans-serif;
+}
+
 body {
-    background: linear-gradient(135deg, #1e3c72, #2a5298);
-    font-family: Arial;
+    background: linear-gradient(135deg, #0b1020, #111827, #0f172a);
+    color: #fff;
+    min-height: 100vh;
     display: flex;
-    justify-content: center;
     align-items: center;
-    height: 100vh;
+    justify-content: center;
+    padding: 20px;
 }
 
 .container {
-    background: white;
-    padding: 30px;
-    border-radius: 15px;
-    width: 300px;
+    width: 100%;
+    max-width: 480px;
+    background: rgba(17, 24, 39, 0.94);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 24px;
+    padding: 30px 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    backdrop-filter: blur(12px);
+}
+
+.logo {
     text-align: center;
+    font-size: 30px;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+.logo span {
+    color: #00d084;
 }
 
 h2 {
-    margin-bottom: 20px;
+    text-align: center;
+    margin-bottom: 10px;
+    color: #ffffff;
+}
+
+.sub {
+    text-align: center;
+    color: #cbd5e1;
+    font-size: 14px;
+    line-height: 1.8;
+    margin-bottom: 22px;
+}
+
+.highlight-box {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(34, 197, 94, 0.15);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 24px;
+    line-height: 1.9;
+}
+
+.highlight-box h3 {
+    color: #22c55e;
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+.highlight-box p {
+    color: #cbd5e1;
+    font-size: 14px;
+}
+
+.bonus {
+    margin-top: 12px;
+    color: #facc15;
+    font-weight: 700;
+    text-align: center;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    color: #e5e7eb;
 }
 
 input {
     width: 100%;
-    padding: 10px;
-    margin: 10px 0;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    box-sizing: border-box;
-}
-
-button {
-    width: 100%;
-    padding: 10px;
-    background: #2a5298;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
     color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+    outline: none;
+    font-size: 15px;
+    transition: 0.2s;
 }
 
-button:hover {
-    background: #1e3c72;
-}
-
-a {
-    display: block;
-    margin-top: 10px;
-    color: #2a5298;
+input:focus {
+    border-color: #00d084;
+    box-shadow: 0 0 0 3px rgba(0,208,132,0.15);
 }
 
 .password-wrap {
@@ -60,16 +119,57 @@ a {
 
 .toggle-pass {
     position: absolute;
-    right: 10px;
-    top: 18px;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
     background: transparent;
     border: none;
-    color: #2a5298;
+    color: #00d084;
     font-size: 13px;
     font-weight: bold;
     cursor: pointer;
     width: auto;
     padding: 0;
+}
+
+button.main-btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #00d084, #00a86b);
+    color: #08111f;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.2s;
+    margin-top: 8px;
+}
+
+button.main-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.95;
+}
+
+a {
+    display: block;
+    margin-top: 18px;
+    color: #00d084;
+    text-decoration: none;
+    text-align: center;
+    font-weight: 700;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.note {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.8;
 }
 </style>
 </head>
@@ -77,41 +177,69 @@ a {
 <body>
 
 <div class="container">
-<h2>Create Account</h2>
-
-<div style="background:#0f172a;padding:18px;border-radius:14px;border:1px solid #1e293b;margin-bottom:20px;line-height:1.9;">
-  <h3 style="margin-top:0;color:#22c55e;">🔥 لماذا هذا البوت مختلف؟</h3>
-  <p style="margin:0;color:#cbd5e1;">
-    هذا البوت لا يعتمد على كثرة الصفقات، بل على اختيار الفرص الأقوى فقط حسب حالة السوق.
-    <br><br>
-    يقوم بتحليل:
-    <br>• الاتجاه والزخم
-    <br>• الفوليوم والسيولة
-    <br>• الفريمات الأكبر للتأكيد
-    <br>• استبعاد الأسواق العشوائية والمتذبذبة
-    <br><br>
-    ⚠️ إذا لم تكن هناك فرصة مناسبة، فلن يتم إرسال صفقة — حفاظًا على رأس المال.
-    <br><br>
-    🎁 بعد التسجيل ستحصل على صفقات مجانية لتجربة النظام.
-    <p style="color:#facc15;margin-bottom:15px;text-align:center;">
-⚡ البوت لا يرسل صفقات كثيرة… بل يرسل فقط ما يراه مناسبًا للدخول.
-  </p>
+    <div class="logo">🚀 <span>AI Crypto Trader</span></div>
+    <h2>إنشاء حساب جديد</h2>
+    <div class="sub">
+    .    ابدأ الآن وجرّب نظام الفلترة الذكي الذي يختار الفرص الأقوى فقط بدلًا من الإشارات العشوائية.
 </div>
 
-<form method="POST">
-<input name="name" placeholder="Full Name" required autocomplete="name">
-<input name="email" type="email" placeholder="Email" required autocomplete="email">
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div style="background: rgba(239, 68, 68, 0.15); color: #fecaca; border: 1px solid rgba(239, 68, 68, 0.25); padding: 12px 14px; border-radius: 14px; margin-bottom: 18px; font-size: 14px; text-align: center;">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
 
-<div class="password-wrap">
-    <input id="password" name="password" type="password" placeholder="Password" required minlength="6" autocomplete="new-password">
-    <button type="button" class="toggle-pass" onclick="togglePassword()">Show</button>
-</div>
+<div class="highlight-box">
+        <h3>🔥 لماذا هذا البوت مختلف؟</h3>
+        <p>
+            هذا البوت لا يعتمد على كثرة الصفقات، بل على اختيار الفرص الأقوى فقط حسب حالة السوق.
+            <br><br>
+            يقوم بتحليل:
+            <br>• الاتجاه والزخم
+            <br>• الفوليوم والسيولة
+            <br>• الفريمات الأكبر للتأكيد
+            <br>• استبعاد الأسواق العشوائية والمتذبذبة
+            <br><br>
+            ⚠️ إذا لم تكن هناك فرصة مناسبة، فلن يتم إرسال صفقة — حفاظًا على رأس المال.
+        </p>
+        <div class="bonus">
+            🎁 بعد التسجيل ستحصل على صفقات مجانية لتجربة النظام
+        </div>
+    </div>
 
-<input type="hidden" name="chat_id" value="{{chat_id}}">
-<button>Register</button>
-</form>
+    <form method="POST">
+        <div class="form-group">
+            <label for="name">الاسم الكامل</label>
+            <input id="name" name="name" placeholder="اكتب اسمك الكامل" required autocomplete="name">
+        </div>
 
-<a href="{{ url_for('login') }}">Already have an account?</a>
+        <div class="form-group">
+            <label for="email">البريد الإلكتروني</label>
+            <input id="email" name="email" type="email" placeholder="example@email.com" required autocomplete="email">
+        </div>
+
+        <div class="form-group">
+            <label for="password">كلمة المرور</label>
+            <div class="password-wrap">
+                <input id="password" name="password" type="password" placeholder="أدخل كلمة مرور قوية" required minlength="6" autocomplete="new-password">
+                <button type="button" class="toggle-pass" onclick="togglePassword()">إظهار</button>
+            </div>
+        </div>
+
+        <input type="hidden" name="chat_id" value="{{chat_id}}">
+
+        <button type="submit" class="main-btn">إنشاء الحساب</button>
+    </form>
+
+    <a href="{{ url_for('login') }}">لديك حساب بالفعل؟ تسجيل الدخول</a>
+
+    <div class="note">
+        بعد التسجيل يمكنك ربط حسابك بالتليجرام وتفعيل الباقة المناسبة والبدء فورًا.
+    </div>
 </div>
 
 <script>
