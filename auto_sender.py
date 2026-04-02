@@ -52,6 +52,7 @@ def log(msg):
 def db():
     database_url = os.environ.get("DATABASE_URL")
 
+
     if not database_url:
         raise Exception("DATABASE_URL not found in environment variables")
 
@@ -63,6 +64,7 @@ def db():
     return psycopg2.connect(database_url, sslmode="require")
 
 # ================= TELEGRAM =================
+CHANNEL_ID = -1003722350505
 def send(chat_id, text):
     try:
         if not TOKEN or not chat_id:
@@ -89,6 +91,37 @@ def send(chat_id, text):
     except Exception as e:
         log(f"Telegram Error: {e}")
         return False
+    
+def send_channel(text):
+    try:
+        if not TOKEN:
+            log("Telegram skipped: TOKEN missing for channel")
+            return False
+
+        r = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            json={
+                "chat_id": str(CHANNEL_ID),
+                "text": text
+            },
+            timeout=10
+        )
+
+        if r.status_code != 200:
+            log(f"Channel HTTP Error {r.status_code}: {r.text}")
+            return False
+
+        data = r.json()
+        if not data.get("ok"):
+            log(f"Channel API Error: {data}")
+            return False
+
+        log("📢 Signal sent to channel successfully")
+        return True
+
+    except Exception as e:
+        log(f"❌ Channel send error: {e}")
+        return False    
 
 # ================= SYMBOL HELPERS =================
 def normalize_symbol_for_ccxt(symbol):
@@ -1018,6 +1051,8 @@ def run():
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
 
+                    channel_sent = False
+
                     if not chat_id:
                         continue
 
@@ -1046,9 +1081,14 @@ def run():
                         log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
 
                     # ===== SEND SIGNAL =====
-                    sent_ok = send(chat_id, format_signal(signal))
+                    msg = format_signal(signal)
+
+                    sent_ok = send(chat_id, msg)
 
                     if sent_ok:
+                        if not channel_sent:
+                           send_channel(msg)
+                           channel_sent = True
                         log(f"Signal sent to {chat_id} -> {signal['pair']}")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
 
