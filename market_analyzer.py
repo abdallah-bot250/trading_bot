@@ -400,32 +400,32 @@ def late_entry_filter(df, direction):
         candle_body = abs(close - open_price)
         candle_range = abs(high - low)
 
-        # شمعة انفجارية زيادة = غالبًا دخول متأخر
-        if candle_range > (atr_val * 2.4):
+        # نمنع فقط لو الشمعة انفجارية جدًا جدًا
+        if candle_range > (atr_val * 3.1):
             return True
 
-        if candle_body > (atr_val * 1.6):
+        if candle_body > (atr_val * 2.15):
             return True
 
-        # بعيد جدًا عن المتوسطات
         dist_ema20 = abs(close - ema20v) / close
         dist_ema50 = abs(close - ema50v) / close
 
-        if dist_ema20 > 0.012:
+        # نسمح ببعد أكبر شوية عشان ندخل بدري
+        if dist_ema20 > 0.017:
             return True
 
-        if dist_ema50 > 0.02:
+        if dist_ema50 > 0.028:
             return True
 
-        # داخل LONG بعد شدّة صعود / SHORT بعد شدّة هبوط
+        # نمنع فقط لو الحركة فعلاً خلصت
         if direction == "LONG":
             recent_push = (close - df["close"].iloc[-4]) / df["close"].iloc[-4]
-            if recent_push > 0.012:
+            if recent_push > 0.017:
                 return True
 
         if direction == "SHORT":
             recent_push = (df["close"].iloc[-4] - close) / df["close"].iloc[-4]
-            if recent_push > 0.012:
+            if recent_push > 0.017:
                 return True
 
         return False
@@ -476,28 +476,47 @@ def pullback_entry_quality(df, direction):
 
         close = float(df["close"].iloc[-1])
         ema20v = float(ema(df, 20).iloc[-1])
+        ema50v = float(ema(df, 50).iloc[-1])
 
-        if close <= 0 or ema20v <= 0:
+        if close <= 0 or ema20v <= 0 or ema50v <= 0:
             return False
 
-        dist = abs(close - ema20v) / close
+        dist_ema20 = abs(close - ema20v) / close
+        dist_ema50 = abs(close - ema50v) / close
 
-        # الدخول المثالي يكون قريب نسبيًا من المتوسط
-        if dist > 0.0095:
+        # لازم يكون قريب من منطقة ارتداد من غير chase
+        if dist_ema20 > 0.013:
             return False
 
-        # نمنع الدخول لو آخر 3 شمعات كلها في نفس الاتجاه بقوة
-        closes = df["close"].tail(4).tolist()
+        if dist_ema50 > 0.022:
+            return False
 
+        closes = df["close"].tail(5).tolist()
+
+        # لو السوق جري زيادة قوي = دخول متأخر
         if direction == "LONG":
-            if closes[-1] > closes[-2] > closes[-3] > closes[-4]:
-                if ((closes[-1] - closes[-4]) / closes[-4]) > 0.01:
+            if closes[-1] > closes[-2] > closes[-3]:
+                recent_push = (closes[-1] - closes[-4]) / closes[-4]
+                if recent_push > 0.0085:
                     return False
 
         if direction == "SHORT":
-            if closes[-1] < closes[-2] < closes[-3] < closes[-4]:
-                if ((closes[-4] - closes[-1]) / closes[-4]) > 0.01:
+            if closes[-1] < closes[-2] < closes[-3]:
+                recent_push = (closes[-4] - closes[-1]) / closes[-4]
+                if recent_push > 0.0085:
                     return False
+
+        # لو الشمعة الأخيرة رجعت قريب من المتوسط فده أحسن دخول
+        last_low = float(df["low"].iloc[-1])
+        last_high = float(df["high"].iloc[-1])
+
+        if direction == "LONG":
+            if last_low > ema20v * 1.012:
+                return False
+
+        if direction == "SHORT":
+            if last_high < ema20v * 0.988:
+                return False
 
         return True
     except Exception as e:
@@ -707,20 +726,20 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
     # ================= BASE MIN TARGETS =================
     if timeframe == "15m":
-        min_tp_percent = 0.0115
-        min_sl_percent = 0.0048
+        min_tp_percent = 0.012
+        min_sl_percent = 0.0062
         atr_tp_multiplier = 2.9
-        atr_sl_multiplier = 1.15
+        atr_sl_multiplier = 1.55
     elif timeframe == "1h":
-        min_tp_percent = 0.016
-        min_sl_percent = 0.0065
+        min_tp_percent = 0.017
+        min_sl_percent = 0.008
         atr_tp_multiplier = 3.4
-        atr_sl_multiplier = 1.3
+        atr_sl_multiplier = 1.7
     else:  # 5m
-        min_tp_percent = 0.0085
-        min_sl_percent = 0.0038
+        min_tp_percent = 0.009
+        min_sl_percent = 0.0052
         atr_tp_multiplier = 2.4
-        atr_sl_multiplier = 0.95
+        atr_sl_multiplier = 1.35
 
     # ================= BOOSTS =================
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
@@ -761,8 +780,18 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     sl_move = max(atr_based_sl, entry * min_sl_percent)
 
     # ================= RR ENFORCEMENT =================
-    min_rr_tp = sl_move * 2.0
+    # ================= RR ENFORCEMENT =================
+    min_rr_tp = sl_move * 2.25
     tp_move = max(tp_move, min_rr_tp)
+
+# ================= EXTRA EARLY ENTRY BOOST =================
+# بما إننا دخلنا أبكر شوية، ندي الهدف مساحة أنضف
+    if timeframe == "5m":
+     tp_move = max(tp_move, entry * 0.0105)
+    elif timeframe == "15m":
+     tp_move = max(tp_move, entry * 0.0135)
+    elif timeframe == "1h":
+     tp_move = max(tp_move, entry * 0.018)
 
     # ================= ANTI-TINY TARGETS =================
     if entry < 0.1:

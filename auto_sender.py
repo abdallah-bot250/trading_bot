@@ -7,8 +7,24 @@ import ccxt
 import os
 import psycopg2
 from dotenv import load_dotenv
+from cryptography.fernet import Fernet
 
 load_dotenv()
+FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()
+
+if not FERNET_KEY:
+    raise Exception("FERNET_KEY missing in environment variables")
+
+cipher = Fernet(FERNET_KEY.encode())
+
+def decrypt_text(value):
+    if not value:
+        return None
+    try:
+        return cipher.decrypt(value.encode()).decode()
+    except Exception as e:
+        log(f"decrypt_text error: {e}")
+        return None
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
@@ -64,7 +80,7 @@ def db():
     return psycopg2.connect(database_url, sslmode="require")
 
 # ================= TELEGRAM =================
-CHANNEL_ID = -1003722350505
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
 def send(chat_id, text):
     try:
         if not TOKEN or not chat_id:
@@ -305,10 +321,10 @@ def get_users():
     c = conn.cursor()
 
     c.execute("""
-    SELECT chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid
-    FROM users
-    WHERE chat_id IS NOT NULL
-      AND chat_id <> ''
+        SELECT chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active
+        FROM users
+        WHERE chat_id IS NOT NULL
+        AND chat_id <> ''
     """)
 
     users = c.fetchall()
@@ -370,22 +386,24 @@ def is_trial_allowed(trades):
     return (trades or 0) < 2
 
 def is_paid_plan_active(plan, expiry, is_paid):
-    if plan == "trial":
-        return True
-
-    if is_paid != 1:
-        return False
-
-    if not expiry:
-        return False
-
-    if str(expiry).lower() == "lifetime":
-        return True
-
     try:
-        expiry_date = datetime.strptime(str(expiry), "%Y-%m-%d")
-        return datetime.now() <= expiry_date
-    except:
+        if int(is_paid) != 1:
+            return False
+
+        if str(expiry).strip().lower() == "lifetime":
+            return True
+
+        if not expiry:
+            return False
+
+        from datetime import datetime
+        expiry_date = datetime.strptime(str(expiry).strip(), "%Y-%m-%d").date()
+        today = datetime.utcnow().date()
+
+        return expiry_date >= today
+
+    except Exception as e:
+        log(f"is_paid_plan_active error: {e}")
         return False
 
 # ================= PLAN FILTER =================
@@ -437,7 +455,10 @@ def get_exchange(api_key, api_secret, trade_type):
         "apiKey": api_key,
         "secret": api_secret,
         "enableRateLimit": True,
-        "options": {"defaultType": default_type}
+        "options": {
+            "defaultType": default_type,
+            "adjustForTimeDifference": True
+        }
     })
 
     return exchange
@@ -597,7 +618,7 @@ def calculate_amount(usdt_balance, risk_percent, entry_price):
     amount = capital / entry_price
     return round(amount, 6)
 
-def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, trade_type):
+def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, trade_type, direction):
     try:
         opposite_side = "sell" if side == "buy" else "buy"
 
@@ -626,12 +647,52 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
 # ================= TRADE EXECUTION =================
 def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id):
     try:
+        # ================= فك التشفير =================
+        api_key = decrypt_text(api_key)
+        api_secret = decrypt_text(api_secret)
+
+        if not api_key or not api_secret:
+            return None, "API KEY / SECRET invalid after decrypt"
+
         exchange = get_exchange(api_key, api_secret, trade_type)
         exchange.load_markets()
 
         raw_symbol = signal["pair"]
         symbol = normalize_symbol_for_ccxt(raw_symbol)
 
+        entry = float(signal["entry"])
+        tp = float(signal["tp"])
+        sl = float(signal["sl"])
+        side = "buy" if signal["direction"] == "LONG" else "sell"
+
+        # ================= live price check =================
+        live_price = get_live_price(raw_symbol)
+        if live_price is None:
+            return None, "فشل سحب السعر الحالي"
+
+        deviation = abs(live_price - entry) / entry * 100
+        if deviation > MAX_ENTRY_DEVIATION_PERCENT:
+            return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
+
+        # ================= FUTURES تجهيزات =================
+        leverage = 10
+
+        if trade_type == "futures":
+            try:
+                # hedge mode
+                exchange.set_position_mode(True)
+                log(f"Hedge mode enabled for {chat_id}")
+            except Exception as e:
+                log(f"Hedge mode warning: {e}")
+
+            try:
+                # leverage
+                exchange.set_leverage(leverage, symbol)
+                log(f"Leverage set to {leverage}x for {symbol}")
+            except Exception as e:
+                log(f"Leverage warning: {e}")
+
+        # ================= balance =================
         balance = exchange.fetch_balance()
         usdt_balance = (
             balance.get("USDT", {}).get("free")
@@ -643,35 +704,55 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if usdt_balance < 10:
             return None, "رصيد USDT أقل من الحد الأدنى"
 
-        side = "buy" if signal["direction"] == "LONG" else "sell"
-        entry = float(signal["entry"])
-        tp = float(signal["tp"])
-        sl = float(signal["sl"])
+        # ================= حجم الصفقة الفعلي =================
+        capital_to_use = float(risk_percent or 10)
 
-        # تأكيد حي قبل التنفيذ
-        live_price = get_live_price(raw_symbol)
-        if live_price is None:
-            return None, "فشل سحب السعر الحالي"
+        if capital_to_use < 5:
+            return None, "قيمة الصفقة أقل من الحد الأدنى"
 
-        deviation = abs(live_price - entry) / entry * 100
-        if deviation > MAX_ENTRY_DEVIATION_PERCENT:
-            return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
+        if capital_to_use > usdt_balance:
+            return None, f"الرصيد غير كافي. المطلوب {capital_to_use} والمتاح {usdt_balance}"
 
-        amount = calculate_amount(usdt_balance, risk_percent, entry)
+        if trade_type == "futures":
+            position_notional = capital_to_use * leverage
+        else:
+            position_notional = capital_to_use
+
+        amount = position_notional / live_price
+
+        market = exchange.market(symbol)
+
+        # precision / limits
+        min_amount = market.get("limits", {}).get("amount", {}).get("min", 0)
+        amount_precision = market.get("precision", {}).get("amount", None)
+
+        if amount_precision is not None:
+            amount = float(exchange.amount_to_precision(symbol, amount))
+
+        if min_amount and amount < min_amount:
+            return None, f"الكمية أقل من الحد الأدنى للزوج: min={min_amount}"
+
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
-        valid_amount, reason = validate_symbol_amount(exchange, symbol, amount)
-        if not valid_amount:
-            return None, f"Validation failed: {reason}"
+        log(f"TRADE DEBUG | {chat_id} | {symbol} | balance={usdt_balance} | capital={capital_to_use} | amount={amount} | side={side}")
 
-        order = exchange.create_market_order(symbol, side, amount)
+        # ================= create market order =================
+        params = {}
+
+        if trade_type == "futures":
+            params = {
+                "positionSide": "LONG" if signal["direction"] == "LONG" else "SHORT"
+            }
+
+        order = exchange.create_market_order(symbol, side, amount, params=params)
 
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
+        # ================= TP / SL =================
         protection_ok, protection_msg = place_protection_orders(
-            exchange, symbol, side, amount, tp, sl, trade_type
+            exchange, symbol, side, amount, tp, sl, trade_type, signal["direction"]
         )
 
         conn = db()
@@ -701,6 +782,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         return order, protection_msg
 
     except Exception as e:
+        log(f"execute_trade full error: {e}")
         return None, f"Trade Error: {e}"
 
 # ================= TRADE MONITOR =================
@@ -976,10 +1058,9 @@ def notify_users_no_signal(users):
     try:
         for user in users:
             try:
-                chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
+                chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active = user
 
-                if not chat_id:
-                    continue
+                log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
 
                 # ===== ACCESS CHECK =====
                 if plan == "trial":
@@ -1051,6 +1132,8 @@ def run():
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
 
+                    log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
+
                     if not chat_id:
                         continue
 
@@ -1092,7 +1175,7 @@ def run():
                         log(f"Signal failed to send to {chat_id}")
 
                     # ===== AUTO TRADE FOR VIP =====
-                    if plan == "vip" and bot_active == 1 and api_key and api_secret:
+                    if str(plan).strip().lower() == "vip" and (str(expiry).strip().lower() == "lifetime" or is_paid_plan_active(plan, expiry, is_paid)) and int(bot_active) == 1 and api_key and api_secret:
                         try:
                             can_trade, reason = can_trade_user(chat_id, trade_amount)
                             if not can_trade:
@@ -1114,7 +1197,7 @@ def run():
                                 api_secret=api_secret,
                                 signal=signal,
                                 trade_type=signal_trade_type,
-                                risk_percent=adjust_risk(profit),
+                                risk_percent=trade_amount,
                                 chat_id=chat_id
                             )
 
