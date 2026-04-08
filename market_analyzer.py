@@ -1014,21 +1014,23 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
 # ================= INTERNAL SIGNAL BUILDER =================
 def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None):
-    from datetime import datetime, timezone
-
     df = get_market_data(symbol, interval)
     if df is None or len(df) < (100 if is_paid else 60):
         return None
 
-    if is_choppy(df):
+    # ===== فلاتر أساسية فقط (لازم تفضل قاتلة) =====
+    choppy = is_choppy(df)
+    momentum_ok = strong_momentum(df)
+    vol_ok = volatility_ok(df)
+
+    # نخلي النسخة المجانية stricter شوية
+    if choppy and not is_paid:
         return None
 
-    if not strong_momentum(df):
+    if not vol_ok and not is_paid:
         return None
 
-    if not volatility_ok(df):
-        return None
-
+    # ===== Indicators =====
     df["rsi"] = rsi(df)
     macd_line, signal_line = macd(df)
     df["atr"] = atr(df)
@@ -1046,9 +1048,10 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     signal_val = signal_line.iloc[-1]
     atr_val = df["atr"].iloc[-1]
 
-    if pd.isna(rsi_val) or pd.isna(macd_val) or pd.isna(signal_val):
+    if pd.isna(rsi_val) or pd.isna(macd_val) or pd.isna(signal_val) or pd.isna(atr_val):
         return None
 
+    # ===== AI/Base Score =====
     score = ai_score(
         rsi_val,
         macd_val,
@@ -1060,9 +1063,24 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         structure
     )
 
-    if not news_ok:
-        score -= 2
+    # ===== Penalty System بدل القتل =====
+    penalty = 0.0
 
+    if choppy:
+        penalty += 1.0
+
+    if not momentum_ok:
+        penalty += 1.2
+
+    if not vol_ok:
+        penalty += 1.0
+
+    if not news_ok:
+        penalty += 1.0
+
+    score -= penalty
+
+    # ===== Direction =====
     if score >= MIN_SCORE_TO_TRADE:
         direction = "LONG"
     elif score <= -MIN_SCORE_TO_TRADE:
@@ -1070,77 +1088,107 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     else:
         return None
 
-    if trend_power == "MIXED" and abs(score) < 7:
+    # السوق المتلخبط يتفلتر بس مش بقسوة
+    if trend_power == "MIXED" and abs(score) < (6.5 if is_paid else 5.5):
         return None
 
+    # الفلتر ده مهم ولسه نخليه قاتل
     if not strong_signal_filter(df, trend, trend_power, direction):
         return None
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
+    # ===== HTF / Trend sanity =====
     if is_paid:
-        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
+        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 1.5):
             return None
-        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
+        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 1.5):
             return None
     else:
-        if not htf_ok and abs(score) < 6:
+        if not htf_ok and abs(score) < 5.2:
             return None
-        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 6:
+        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 5.5:
             return None
-        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 6:
+        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 5.5:
             return None
 
-    if late_entry_filter(df, direction):
+    # ===== الفلاتر اللي كانت بتقتل الإشارات =====
+    late_entry_bad = late_entry_filter(df, direction)
+    sr_ok = support_resistance_filter(df, direction)
+    pullback_ok = pullback_entry_quality(df, direction)
+    wick_ok = rejection_wick_filter(df, direction)
+
+    if late_entry_bad:
+        score -= 1.0
+
+    if not sr_ok:
+        score -= 0.8
+
+    if not pullback_ok:
+        score -= 0.8
+
+    if not wick_ok:
+        score -= 0.7
+
+    # بعد الخصومات الإضافية
+    if abs(score) < MIN_SCORE_TO_TRADE:
         return None
 
-    if not support_resistance_filter(df, direction):
-        return None
-
-    if not pullback_entry_quality(df, direction):
-        return None
-
-    if not rejection_wick_filter(df, direction):
-        return None
-
-    entry = float(df["close"].iloc[-1])
+    # ===== Entry / Targets =====
+    entry = df["close"].iloc[-1]
     tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
 
     if tp is None or sl is None:
         return None
 
-    tp = float(tp)
-    sl = float(sl)
-
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
     if is_paid:
-        if tp_distance < 0.0085:
+        if tp_distance < 0.0065:
             return None
-        if sl_distance < 0.0035:
+        if sl_distance < 0.0028:
             return None
     else:
-        if tp_distance < 0.0075:
+        if tp_distance < 0.0055:
             return None
-        if sl_distance < 0.003:
+        if sl_distance < 0.0025:
             return None
 
-    momentum_ok = strong_momentum(df)
+    # ===== Confidence =====
     confidence = calculate_confidence(
         score, volume, smc, trend_power, structure, momentum_ok, htf_ok
     )
 
     if not news_ok:
-        confidence -= 4
+        confidence -= 3
+
+    if late_entry_bad:
+        confidence -= 3
+
+    if not sr_ok:
+        confidence -= 2
+
+    if not pullback_ok:
+        confidence -= 2
+
+    if not wick_ok:
+        confidence -= 2
+
+    if choppy:
+        confidence -= 2
+
+    if not momentum_ok:
+        confidence -= 3
 
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    min_conf = (74 + (5 if not htf_ok else 0)) if is_paid else (66 + (5 if not htf_ok else 0))
+    min_conf = (72 + (4 if not htf_ok else 0)) if is_paid else (64 + (4 if not htf_ok else 0))
     if confidence < min_conf:
         return None
 
+    # ===== Trade type =====
     if (
         direction == "LONG"
         and trend == "UP"
@@ -1153,38 +1201,63 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     else:
         trade_type = "FUTURES"
 
-    # Ranking score أساسي قبل AI
-    ranking_score = abs(score) * 10
+    # ===== Ranking Score =====
+    rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
+
+    ranking_score = (
+        abs(score) * 8
+        + confidence * 0.7
+        + rr * 12
+    )
+
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+        ranking_score += 6
+
+    if htf_ok:
+        ranking_score += 5
+
+    if volume == "STRONG":
+        ranking_score += 4
+
+    if smc in ["BOS", "CHOCH", "BREAKOUT"]:
+        ranking_score += 4
+
+    if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
+        ranking_score += 3
+
+    ranking_score = round(float(ranking_score), 2)
+
+    from datetime import datetime, timezone
 
     signal = {
         "pair": symbol,
         "timeframe": interval,
         "type": trade_type,
         "direction": direction,
-        "entry": entry,
-        "tp": tp,
-        "sl": sl,
-        "confidence": float(confidence),
+        "entry": float(entry),
+        "tp": float(tp),
+        "sl": float(sl),
+        "confidence": float(round(confidence, 2)),
         "trend": trend,
+        "trend_power": trend_power,
         "volume": volume,
         "smc": smc,
-        "trend_power": trend_power,
         "structure": structure,
-        "score": float(score),
+        "score": float(round(score, 2)),
         "ranking_score": float(ranking_score),
         "signal_time": datetime.now(timezone.utc).isoformat()
     }
 
+    # ===== AI Final Approval =====
     try:
         ai_result = predict_trade(signal)
 
         if not ai_result.get("approved"):
             return None
 
-        # تحديث القيم من AI
         signal["confidence"] = float(ai_result.get("confidence", signal["confidence"]))
-        signal["ai_score"] = float(ai_result.get("score", 0))
         signal["ranking_score"] = float(ai_result.get("ranking_score", signal["ranking_score"]))
+        signal["ai_score"] = float(ai_result.get("score", 0))
 
     except Exception as e:
         log(f"AI model error in _build_signal {symbol} {interval}: {e}")
