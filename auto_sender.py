@@ -39,7 +39,7 @@ DUPLICATE_WINDOW_SECONDS = 300
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
-MAX_ENTRY_DEVIATION_PERCENT = 0.75    # كان 0.35 وخانق الدنيا
+MAX_ENTRY_DEVIATION_PERCENT = 0.75
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -68,7 +68,6 @@ def log(msg):
 def db():
     database_url = os.environ.get("DATABASE_URL")
 
-
     if not database_url:
         raise Exception("DATABASE_URL not found in environment variables")
 
@@ -81,6 +80,7 @@ def db():
 
 # ================= TELEGRAM =================
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
+
 def send(chat_id, text):
     try:
         if not TOKEN or not chat_id:
@@ -107,7 +107,7 @@ def send(chat_id, text):
     except Exception as e:
         log(f"Telegram Error: {e}")
         return False
-    
+
 def send_channel(text):
     try:
         if not TOKEN:
@@ -137,7 +137,7 @@ def send_channel(text):
 
     except Exception as e:
         log(f"❌ Channel send error: {e}")
-        return False    
+        return False
 
 # ================= SYMBOL HELPERS =================
 def normalize_symbol_for_ccxt(symbol):
@@ -237,11 +237,9 @@ def elite_trade_filter(signal):
         structure = signal.get("structure")
         timeframe = signal.get("timeframe")
 
-        # أعلى مستوى
         if confidence >= 90 and score >= 6:
             return True
 
-        # احترافي جدًا
         if (
             confidence >= 85
             and score >= 5
@@ -252,7 +250,6 @@ def elite_trade_filter(signal):
         ):
             return True
 
-        # جيد جدًا
         if (
             confidence >= 82
             and score >= 5
@@ -679,14 +676,12 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
 
         if trade_type == "futures":
             try:
-                # hedge mode
                 exchange.set_position_mode(True)
                 log(f"Hedge mode enabled for {chat_id}")
             except Exception as e:
                 log(f"Hedge mode warning: {e}")
 
             try:
-                # leverage
                 exchange.set_leverage(leverage, symbol)
                 log(f"Leverage set to {leverage}x for {symbol}")
             except Exception as e:
@@ -705,8 +700,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             return None, "رصيد USDT أقل من الحد الأدنى"
 
         # ================= حجم الصفقة الفعلي =================
-        capital_to_use = float(risk_percent or 10)
-
+        capital_to_use = float(trade_amount or 10)
         if capital_to_use < 5:
             return None, "قيمة الصفقة أقل من الحد الأدنى"
 
@@ -810,22 +804,27 @@ def update_closed_trades():
 
                 pnl = 0
                 should_close = False
+                close_reason = None
 
                 if direction == "LONG":
                     if current_price >= tp:
                         pnl = (tp - entry) * amount
                         should_close = True
+                        close_reason = "TP HIT 🎯"
                     elif current_price <= sl:
                         pnl = (sl - entry) * amount
                         should_close = True
+                        close_reason = "SL HIT 🛑"
 
                 elif direction == "SHORT":
                     if current_price <= tp:
                         pnl = (entry - tp) * amount
                         should_close = True
+                        close_reason = "TP HIT 🎯"
                     elif current_price >= sl:
                         pnl = (entry - sl) * amount
                         should_close = True
+                        close_reason = "SL HIT 🛑"
 
                 if should_close:
                     c.execute("""
@@ -841,13 +840,16 @@ def update_closed_trades():
                     """, (round(pnl, 4), chat_id))
 
                     conn.commit()
-                    write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)}")
+                    write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)} reason={close_reason}")
+
+                    result_emoji = "✅" if pnl > 0 else "❌" if pnl < 0 else "➖"
 
                     send(chat_id, f"""📌 تم إغلاق الصفقة
 
 🔥 {pair}
 📊 Direction: {direction}
-💰 PNL: {round(pnl, 4)} USDT
+📍 Result: {close_reason}
+{result_emoji} PNL: {round(pnl, 4)} USDT
 """)
 
             except Exception as e:
@@ -917,11 +919,11 @@ def is_recent_memory_duplicate(signal):
         now = datetime.now()
 
         # مدة منع التكرار حسب الفريم
-        cooldown_seconds = 3600  # ساعة كاملة افتراضي
+        cooldown_seconds = 3600
         if timeframe == "15m":
-            cooldown_seconds = 7200   # ساعتين
+            cooldown_seconds = 7200
         elif timeframe == "1h":
-            cooldown_seconds = 14400  # 4 ساعات
+            cooldown_seconds = 14400
 
         if key in RECENT_SIGNAL_MEMORY:
             old_entry, old_time = RECENT_SIGNAL_MEMORY[key]
@@ -930,7 +932,6 @@ def is_recent_memory_duplicate(signal):
             if age < cooldown_seconds:
                 diff = abs(entry - old_entry) / old_entry * 100
 
-                # لو نفس العملة ونفس الاتجاه والسعر قريب = تجاهل
                 if diff < 0.8:
                     return True
 
@@ -949,7 +950,7 @@ def get_monster_signals():
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT)
         log(f"🔥 RAW SIGNALS => {signals}")
 
-        # لو السوق ضعيف جدًا، نحاول نجيب fallback paid
+        # fallback لو السوق ضعيف
         if not signals:
             log("❌ No signals from analyzer — using fallback")
             fallback_candidates = []
@@ -977,7 +978,7 @@ def get_monster_signals():
                 )
 
                 if fallback_candidates:
-                    signals = fallback_candidates[:2]
+                    signals = fallback_candidates[:3]
                     log(f"🔥 Fallback signals used: {signals}")
 
             except Exception as e:
@@ -1011,7 +1012,7 @@ def get_monster_signals():
             log(f"Market mode detection error: {e}")
             market_mode = "normal"
 
-        # ===== شروط ديناميكية حسب السوق =====
+        # ===== فلترة ذكية حسب السوق =====
         if market_mode == "strong":
             min_conf = 82
             min_score = 6.5
@@ -1023,10 +1024,10 @@ def get_monster_signals():
             min_rank = 90
             min_rr = 1.6
         else:
-            min_conf = 77
-            min_score = 5.5
-            min_rank = 82
-            min_rr = 1.4
+            min_conf = 75
+            min_score = 5.0
+            min_rank = 80
+            min_rr = 1.3
 
         log(
             f"🎯 Filter mode => conf>={min_conf}, score>={min_score}, "
@@ -1077,7 +1078,6 @@ def get_monster_signals():
                 log(f"❌ Recent memory duplicate skipped: {s.get('pair')}")
                 continue
 
-            # ===== Smart premium filter =====
             try:
                 pair = s.get("pair")
                 direction = str(s.get("direction", "")).upper()
@@ -1103,45 +1103,27 @@ def get_monster_signals():
                     continue
 
                 if confidence < min_conf:
-                    log(
-                        f"❌ Premium rejected {pair} => low_confidence | "
-                        f"tf={timeframe} | conf={confidence} | needed={min_conf}"
-                    )
+                    log(f"❌ Premium rejected {pair} => low_confidence | tf={timeframe} | conf={confidence} | needed={min_conf}")
                     continue
 
                 if score < min_score:
-                    log(
-                        f"❌ Premium rejected {pair} => low_score | "
-                        f"tf={timeframe} | score={score} | needed={min_score}"
-                    )
+                    log(f"❌ Premium rejected {pair} => low_score | tf={timeframe} | score={score} | needed={min_score}")
                     continue
 
                 if ranking_score < min_rank:
-                    log(
-                        f"❌ Premium rejected {pair} => low_ranking | "
-                        f"tf={timeframe} | rank={ranking_score} | needed={min_rank}"
-                    )
+                    log(f"❌ Premium rejected {pair} => low_ranking | tf={timeframe} | rank={ranking_score} | needed={min_rank}")
                     continue
 
                 if volume not in ["STRONG", "MEDIUM"]:
-                    log(
-                        f"❌ Premium rejected {pair} => weak_volume | "
-                        f"tf={timeframe} | volume={volume}"
-                    )
+                    log(f"❌ Premium rejected {pair} => weak_volume | tf={timeframe} | volume={volume}")
                     continue
 
                 if trend not in ["UP", "DOWN"]:
-                    log(
-                        f"❌ Premium rejected {pair} => bad_trend | "
-                        f"tf={timeframe} | trend={trend}"
-                    )
+                    log(f"❌ Premium rejected {pair} => bad_trend | tf={timeframe} | trend={trend}")
                     continue
 
                 if market_mode != "dead" and trend_power == "WEAK":
-                    log(
-                        f"❌ Premium rejected {pair} => weak_trend_power | "
-                        f"tf={timeframe} | trend_power={trend_power}"
-                    )
+                    log(f"❌ Premium rejected {pair} => weak_trend_power | tf={timeframe} | trend_power={trend_power}")
                     continue
 
                 allowed_structures = [
@@ -1152,10 +1134,7 @@ def get_monster_signals():
                     "CONTINUATION"
                 ]
                 if structure and structure not in allowed_structures:
-                    log(
-                        f"❌ Premium rejected {pair} => bad_structure:{structure} | "
-                        f"tf={timeframe}"
-                    )
+                    log(f"❌ Premium rejected {pair} => bad_structure:{structure} | tf={timeframe}")
                     continue
 
                 allowed_smc = [
@@ -1167,10 +1146,7 @@ def get_monster_signals():
                     "FVG"
                 ]
                 if smc and smc not in allowed_smc:
-                    log(
-                        f"❌ Premium rejected {pair} => bad_smc:{smc} | "
-                        f"tf={timeframe}"
-                    )
+                    log(f"❌ Premium rejected {pair} => bad_smc:{smc} | tf={timeframe}")
                     continue
 
                 if direction == "LONG":
@@ -1181,21 +1157,14 @@ def get_monster_signals():
                     reward = entry - tp
 
                 if risk <= 0 or reward <= 0:
-                    log(
-                        f"❌ Premium rejected {pair} => bad_rr | "
-                        f"tf={timeframe} | entry={entry} | tp={tp} | sl={sl}"
-                    )
+                    log(f"❌ Premium rejected {pair} => bad_rr | tf={timeframe} | entry={entry} | tp={tp} | sl={sl}")
                     continue
 
                 rr = reward / risk
                 if rr < min_rr:
-                    log(
-                        f"❌ Premium rejected {pair} => low_rr:{round(rr, 2)} | "
-                        f"tf={timeframe} | needed={min_rr}"
-                    )
+                    log(f"❌ Premium rejected {pair} => low_rr:{round(rr, 2)} | tf={timeframe} | needed={min_rr}")
                     continue
 
-                # فلترة إضافية حسب الفريم
                 if market_mode == "strong":
                     if timeframe == "5m" and confidence < 83:
                         log(f"❌ Premium rejected {pair} => strong_market_5m_too_weak")
@@ -1210,8 +1179,7 @@ def get_monster_signals():
                         continue
 
                 else:
-                    # السوق ميت: نسمح شوية لكن مش أي هبل
-                    if timeframe == "5m" and confidence < 78:
+                    if timeframe == "5m" and confidence < 76:
                         log(f"❌ Premium rejected {pair} => dead_market_5m_too_weak")
                         continue
 
@@ -1219,7 +1187,6 @@ def get_monster_signals():
                 log(f"Premium filter error for {s.get('pair')}: {premium_e}")
                 continue
 
-            # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
                     if market_mode == "strong":
@@ -1227,7 +1194,7 @@ def get_monster_signals():
                             log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
                     else:
-                        if float(s.get("confidence", 0)) < 75:
+                        if float(s.get("confidence", 0)) < 74:
                             log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
                 except:
@@ -1247,7 +1214,6 @@ def get_monster_signals():
 
             final_signals.append(s)
 
-        # ترتيب الأقوى أولًا
         final_signals = sorted(
             final_signals,
             key=lambda x: (
@@ -1265,6 +1231,29 @@ def get_monster_signals():
         log(f"get_monster_signals error: {e}")
         return []
 
+def should_notify_no_signal(chat_id):
+    try:
+        now = datetime.now()
+
+        if chat_id not in LAST_NO_SIGNAL_NOTIFY:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        last_time = LAST_NO_SIGNAL_NOTIFY.get(chat_id)
+        if not last_time:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        diff_minutes = (now - last_time).total_seconds() / 60
+
+        if diff_minutes >= NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES:
+            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            return True
+
+        return False
+    except Exception as e:
+        log(f"should_notify_no_signal error: {e}")
+        return False
 
 def notify_users_no_signal(users):
     try:
@@ -1274,7 +1263,6 @@ def notify_users_no_signal(users):
 
                 log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
 
-                # ===== ACCESS CHECK =====
                 if plan == "trial":
                     if not is_trial_allowed(trades):
                         continue
@@ -1307,7 +1295,7 @@ def notify_users_no_signal(users):
                 log(f"notify_users_no_signal inner error: {inner_e}")
 
     except Exception as e:
-        log(f"notify_users_no_signal error: {e}")    
+        log(f"notify_users_no_signal error: {e}")
 
 # ================= MAIN =================
 def run():
@@ -1332,17 +1320,16 @@ def run():
             if not signals:
                 log("No signals found")
 
-    # ===== Notify users market is not safe now =====
                 notify_users_no_signal(users)
 
                 time.sleep(30)
                 continue
 
-            for signal in signals:
+            for signal in signals[:MAX_SIGNALS_PER_CYCLE]:
                 log(f"Processing signal: {signal}")
 
                 for user in users:
-                    chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid = user
+                    chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active = user
 
                     log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
 
@@ -1369,7 +1356,6 @@ def run():
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
-                    # بدل ما نرفضها نهائيًا، نديها فرصة طالما لسه كويسة
                     if not signal_is_fresh(signal):
                         log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
 
