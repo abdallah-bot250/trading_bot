@@ -982,36 +982,201 @@ def get_monster_signals():
             s = attach_signal_timestamp(s)
 
             if not valid_signal(s):
+                log(f"❌ Invalid signal skipped: {s}")
                 continue
 
             if not logical_signal(s):
-                log(f"Logical invalid signal skipped: {s}")
+                log(
+                    f"❌ Logical invalid signal skipped: {s.get('pair')} | "
+                    f"dir={s.get('direction')} | "
+                    f"entry={s.get('entry')} | "
+                    f"tp={s.get('tp')} | "
+                    f"sl={s.get('sl')}"
+                )
                 continue
 
             if not signal_not_expired(s):
-                log(f"Expired signal skipped: {s.get('pair')}")
+                log(
+                    f"❌ Expired signal skipped: {s.get('pair')} | "
+                    f"tf={s.get('timeframe')} | "
+                    f"signal_time={s.get('signal_time')}"
+                )
                 continue
 
             if not signal_is_fresh(s):
-                log(f"Freshness check failed: {s.get('pair')}")
+                log(
+                    f"❌ Freshness check failed: {s.get('pair')} | "
+                    f"tf={s.get('timeframe')} | "
+                    f"signal_time={s.get('signal_time')} | "
+                    f"confidence={s.get('confidence')} | "
+                    f"score={s.get('score')} | "
+                    f"rank={s.get('ranking_score')}"
+                )
                 continue
 
             if is_duplicate_signal(s):
-                log(f"Duplicate signal skipped: {s.get('pair')}")
+                log(f"❌ Duplicate signal skipped: {s.get('pair')}")
                 continue
 
             if is_recent_memory_duplicate(s):
-                log(f"Recent memory duplicate skipped: {s.get('pair')}")
+                log(f"❌ Recent memory duplicate skipped: {s.get('pair')}")
+                continue
+
+            # 🔥 Premium smart filter
+            try:
+                pair = s.get("pair")
+                direction = str(s.get("direction", "")).upper()
+                entry = float(s.get("entry", 0))
+                tp = float(s.get("tp", 0))
+                sl = float(s.get("sl", 0))
+                confidence = float(s.get("confidence", 0))
+                score = float(s.get("score", 0))
+                ranking_score = float(s.get("ranking_score", 0))
+                volume = str(s.get("volume", "")).upper()
+                trend = str(s.get("trend", "")).upper()
+                trend_power = str(s.get("trend_power", "")).upper()
+                structure = str(s.get("structure", "")).upper()
+                smc = str(s.get("smc", "")).upper()
+                timeframe = str(s.get("timeframe", "")).lower()
+
+                if not pair or not entry or not tp or not sl:
+                    log(f"❌ Premium rejected {pair} => missing_data")
+                    continue
+
+                if direction not in ["LONG", "SHORT"]:
+                    log(f"❌ Premium rejected {pair} => bad_direction")
+                    continue
+
+                if confidence < 80:
+                    log(
+                        f"❌ Premium rejected {pair} => low_confidence | "
+                        f"tf={timeframe} | conf={confidence}"
+                    )
+                    continue
+
+                if score < 6:
+                    log(
+                        f"❌ Premium rejected {pair} => low_score | "
+                        f"tf={timeframe} | score={score}"
+                    )
+                    continue
+
+                if ranking_score < 90:
+                    log(
+                        f"❌ Premium rejected {pair} => low_ranking | "
+                        f"tf={timeframe} | rank={ranking_score}"
+                    )
+                    continue
+
+                if volume not in ["STRONG", "MEDIUM"]:
+                    log(
+                        f"❌ Premium rejected {pair} => weak_volume | "
+                        f"tf={timeframe} | volume={volume}"
+                    )
+                    continue
+
+                if trend not in ["UP", "DOWN"]:
+                    log(
+                        f"❌ Premium rejected {pair} => bad_trend | "
+                        f"tf={timeframe} | trend={trend}"
+                    )
+                    continue
+
+                if trend_power == "WEAK":
+                    log(
+                        f"❌ Premium rejected {pair} => weak_trend_power | "
+                        f"tf={timeframe} | trend_power={trend_power}"
+                    )
+                    continue
+
+                allowed_structures = [
+                    "NEAR_BREAKOUT_HIGH",
+                    "NEAR_BREAKOUT_LOW",
+                    "BREAKOUT",
+                    "PULLBACK",
+                    "CONTINUATION"
+                ]
+                if structure and structure not in allowed_structures:
+                    log(
+                        f"❌ Premium rejected {pair} => bad_structure:{structure} | "
+                        f"tf={timeframe}"
+                    )
+                    continue
+
+                allowed_smc = [
+                    "LIQUIDITY_BREAK_UP",
+                    "LIQUIDITY_BREAK_DOWN",
+                    "BOS",
+                    "CHOCH",
+                    "ORDER_BLOCK",
+                    "FVG"
+                ]
+                if smc and smc not in allowed_smc:
+                    log(
+                        f"❌ Premium rejected {pair} => bad_smc:{smc} | "
+                        f"tf={timeframe}"
+                    )
+                    continue
+
+                if direction == "LONG":
+                    risk = entry - sl
+                    reward = tp - entry
+                else:
+                    risk = sl - entry
+                    reward = entry - tp
+
+                if risk <= 0 or reward <= 0:
+                    log(
+                        f"❌ Premium rejected {pair} => bad_rr | "
+                        f"tf={timeframe} | entry={entry} | tp={tp} | sl={sl}"
+                    )
+                    continue
+
+                rr = reward / risk
+                if rr < 1.6:
+                    log(
+                        f"❌ Premium rejected {pair} => low_rr:{round(rr, 2)} | "
+                        f"tf={timeframe} | entry={entry} | tp={tp} | sl={sl}"
+                    )
+                    continue
+
+                if timeframe == "5m" and confidence < 82:
+                    log(
+                        f"❌ Premium rejected {pair} => 5m_too_weak | "
+                        f"conf={confidence}"
+                    )
+                    continue
+
+                if timeframe == "15m" and confidence < 80:
+                    log(
+                        f"❌ Premium rejected {pair} => 15m_too_weak | "
+                        f"conf={confidence}"
+                    )
+                    continue
+
+            except Exception as premium_e:
+                log(f"Premium filter error for {s.get('pair')}: {premium_e}")
                 continue
 
             # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
                     if float(s.get("confidence", 0)) < 75:
-                        log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                        log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                         continue
                 except:
                     continue
+
+            log(
+                f"✅ Signal approved => {s.get('pair')} | "
+                f"tf={s.get('timeframe')} | "
+                f"dir={s.get('direction')} | "
+                f"conf={s.get('confidence')} | "
+                f"score={s.get('score')} | "
+                f"rank={s.get('ranking_score')} | "
+                f"volume={s.get('volume')} | "
+                f"trend={s.get('trend')}"
+            )
 
             final_signals.append(s)
 
