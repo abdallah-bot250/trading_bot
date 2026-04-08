@@ -9,7 +9,7 @@ import psycopg2
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 
-# ================= NEW SAFE IMPORTS =================
+# ================= SAFE IMPORTS =================
 import logging
 from contextlib import contextmanager
 from requests.adapters import HTTPAdapter
@@ -54,6 +54,7 @@ def decrypt_text(value):
         return None
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -109,15 +110,14 @@ def get_db():
     finally:
         try:
             conn.close()
-        except:
+        except Exception:
             pass
 
 def normalize_pair(pair):
     try:
         return str(pair).upper().replace("/", "").replace("-", "").strip()
-    except:
+    except Exception:
         return str(pair).upper().strip()
-
 
 def is_duplicate_open_trade(conn, username, pair, timeframe, direction, cooldown_minutes=25):
     """
@@ -125,7 +125,6 @@ def is_duplicate_open_trade(conn, username, pair, timeframe, direction, cooldown
     1) نفس الصفقة لو لسه OPEN
     2) أو لو اتفتحت قريب جدًا (cooldown)
     """
-
     try:
         c = conn.cursor()
 
@@ -136,32 +135,30 @@ def is_duplicate_open_trade(conn, username, pair, timeframe, direction, cooldown
         # ================= 1) OPEN DUPLICATE =================
         c.execute("""
             SELECT id
-            FROM trades
-            WHERE username = %s
+            FROM trades_log
+            WHERE chat_id = %s
               AND UPPER(REPLACE(REPLACE(pair, '/', ''), '-', '')) = %s
-              AND LOWER(COALESCE(timeframe, '')) = %s
-              AND UPPER(COALESCE(direction, '')) = %s
+              AND LOWER(COALESCE(direction, '')) = %s
               AND UPPER(COALESCE(status, 'OPEN')) = 'OPEN'
             ORDER BY id DESC
             LIMIT 1
-        """, (username, pair, timeframe, direction))
+        """, (str(username), pair, direction.lower()))
 
         open_trade = c.fetchone()
         if open_trade:
             return True
 
         # ================= 2) RECENT DUPLICATE COOLDOWN =================
-        c.execute("""
+        c.execute(f"""
             SELECT id
-            FROM trades
-            WHERE username = %s
+            FROM trades_log
+            WHERE chat_id = %s
               AND UPPER(REPLACE(REPLACE(pair, '/', ''), '-', '')) = %s
-              AND LOWER(COALESCE(timeframe, '')) = %s
-              AND UPPER(COALESCE(direction, '')) = %s
-              AND created_at >= NOW() - INTERVAL '%s minutes'
+              AND LOWER(COALESCE(direction, '')) = %s
+              AND created_at >= NOW() - INTERVAL '{int(cooldown_minutes)} minutes'
             ORDER BY id DESC
             LIMIT 1
-        """ % cooldown_minutes, (username, pair, timeframe, direction))
+        """, (str(username), pair, direction.lower()))
 
         recent_trade = c.fetchone()
         if recent_trade:
@@ -170,8 +167,8 @@ def is_duplicate_open_trade(conn, username, pair, timeframe, direction, cooldown
         return False
 
     except Exception as e:
-        print(f"is_duplicate_open_trade error: {e}")
-        return False        
+        log(f"is_duplicate_open_trade error: {e}")
+        return False
 
 # ================= TELEGRAM =================
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
@@ -227,11 +224,11 @@ def send_channel(text):
             log(f"Channel API Error: {data}")
             return False
 
-        log("📢 Signal sent to channel successfully")
+        log("Signal sent to channel successfully")
         return True
 
     except Exception as e:
-        log(f"❌ Channel send error: {e}")
+        log(f"Channel send error: {e}")
         return False
 
 # ================= SYMBOL HELPERS =================
@@ -248,7 +245,7 @@ def normalize_symbol_for_ccxt(symbol):
             return f"{base}/USDT"
 
         return symbol
-    except:
+    except Exception:
         return symbol
 
 def normalize_symbol_for_rest(symbol):
@@ -256,7 +253,7 @@ def normalize_symbol_for_rest(symbol):
         if not symbol:
             return symbol
         return symbol.replace("/", "")
-    except:
+    except Exception:
         return symbol
 
 # ================= MARKET PRICE HELPERS =================
@@ -307,7 +304,7 @@ def attach_signal_timestamp(signal):
     try:
         signal["generated_at"] = datetime.now().isoformat()
         return signal
-    except:
+    except Exception:
         return signal
 
 def signal_not_expired(signal):
@@ -319,7 +316,7 @@ def signal_not_expired(signal):
         ts = datetime.fromisoformat(generated_at)
         age = (datetime.now() - ts).total_seconds()
         return age <= SIGNAL_FRESHNESS_SECONDS
-    except:
+    except Exception:
         return True
 
 # ================= ELITE FILTER =================
@@ -353,75 +350,73 @@ def elite_trade_filter(signal):
             return True
 
         return False
-    except:
+    except Exception:
         return False
 
 # ================= INIT TABLES =================
 def init_trade_tables():
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS trades_log (
-        id SERIAL PRIMARY KEY,
-        chat_id TEXT,
-        pair TEXT,
-        direction TEXT,
-        trade_type TEXT,
-        entry REAL,
-        tp REAL,
-        sl REAL,
-        amount REAL,
-        exchange_order_id TEXT,
-        status TEXT DEFAULT 'OPEN',
-        pnl REAL DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        closed_at TIMESTAMP
-    )
-    """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS trades_log (
+            id SERIAL PRIMARY KEY,
+            chat_id TEXT,
+            pair TEXT,
+            direction TEXT,
+            trade_type TEXT,
+            entry REAL,
+            tp REAL,
+            sl REAL,
+            amount REAL,
+            exchange_order_id TEXT,
+            status TEXT DEFAULT 'OPEN',
+            pnl REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP
+        )
+        """)
 
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS bot_logs (
-        id SERIAL PRIMARY KEY,
-        chat_id TEXT,
-        level TEXT,
-        message TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS bot_logs (
+            id SERIAL PRIMARY KEY,
+            chat_id TEXT,
+            level TEXT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+
     log("Trade tables initialized")
 
 def write_log(chat_id, level, message):
     try:
-        conn = db()
-        c = conn.cursor()
-        c.execute("""
-        INSERT INTO bot_logs (chat_id, level, message)
-        VALUES (%s, %s, %s)
-        """, (chat_id, level, message))
-        conn.commit()
-        conn.close()
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+            INSERT INTO bot_logs (chat_id, level, message)
+            VALUES (%s, %s, %s)
+            """, (str(chat_id), str(level), str(message)))
+            conn.commit()
     except Exception as e:
         log(f"DB log insert failed: {e}")
 
 # ================= USERS =================
 def get_users():
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-        SELECT chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active
-        FROM users
-        WHERE chat_id IS NOT NULL
-        AND chat_id <> ''
-    """)
+        c.execute("""
+            SELECT chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active
+            FROM users
+            WHERE chat_id IS NOT NULL
+            AND chat_id <> ''
+        """)
 
-    users = c.fetchall()
-    conn.close()
-    return users
+        users = c.fetchall()
+        return users
 
 # ================= VALIDATION =================
 def valid_signal(signal):
@@ -435,7 +430,7 @@ def valid_signal(signal):
             and signal.get("sl") is not None
             and float(signal.get("confidence", 0)) >= MIN_CONFIDENCE
         )
-    except:
+    except Exception:
         return False
 
 def logical_signal(signal):
@@ -450,7 +445,7 @@ def logical_signal(signal):
         elif direction == "SHORT":
             return tp < entry and sl > entry
         return False
-    except:
+    except Exception:
         return False
 
 # ================= FORMAT =================
@@ -535,7 +530,7 @@ def signal_allowed_for_plan(plan, signal):
             )
 
         return False
-    except:
+    except Exception:
         return False
 
 # ================= EXCHANGE =================
@@ -562,49 +557,44 @@ def today_bounds():
     return start, end
 
 def get_daily_trade_count(chat_id):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    start, end = today_bounds()
-    c.execute("""
-    SELECT COUNT(*) FROM trades_log
-    WHERE chat_id = %s
-    AND created_at >= %s
-    AND created_at < %s
-    """, (chat_id, start, end))
+        start, end = today_bounds()
+        c.execute("""
+        SELECT COUNT(*) FROM trades_log
+        WHERE chat_id = %s
+        AND created_at >= %s
+        AND created_at < %s
+        """, (str(chat_id), start, end))
 
-    count = c.fetchone()[0]
-    conn.close()
-    return count
+        return c.fetchone()[0]
 
 def get_open_trade_count(chat_id):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-    SELECT COUNT(*) FROM trades_log
-    WHERE chat_id = %s
-    AND status = 'OPEN'
-    """, (chat_id,))
+        c.execute("""
+        SELECT COUNT(*) FROM trades_log
+        WHERE chat_id = %s
+        AND status = 'OPEN'
+        """, (str(chat_id),))
 
-    count = c.fetchone()[0]
-    conn.close()
-    return count
+        return c.fetchone()[0]
 
 def get_consecutive_losses(chat_id):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    c.execute("""
-    SELECT pnl FROM trades_log
-    WHERE chat_id = %s
-    AND status = 'CLOSED'
-    ORDER BY created_at DESC
-    LIMIT 10
-    """, (chat_id,))
+        c.execute("""
+        SELECT pnl FROM trades_log
+        WHERE chat_id = %s
+        AND status = 'CLOSED'
+        ORDER BY created_at DESC
+        LIMIT 10
+        """, (str(chat_id),))
 
-    rows = c.fetchall()
-    conn.close()
+        rows = c.fetchall()
 
     losses = 0
     for row in rows:
@@ -617,59 +607,55 @@ def get_consecutive_losses(chat_id):
     return losses
 
 def get_daily_loss(chat_id):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    start, end = today_bounds()
-    c.execute("""
-    SELECT COALESCE(SUM(pnl), 0) FROM trades_log
-    WHERE chat_id = %s
-    AND status = 'CLOSED'
-    AND created_at >= %s
-    AND created_at < %s
-    """, (chat_id, start, end))
+        start, end = today_bounds()
+        c.execute("""
+        SELECT COALESCE(SUM(pnl), 0) FROM trades_log
+        WHERE chat_id = %s
+        AND status = 'CLOSED'
+        AND created_at >= %s
+        AND created_at < %s
+        """, (str(chat_id), start, end))
 
-    total = c.fetchone()[0] or 0
-    conn.close()
-    return total
+        return c.fetchone()[0] or 0
 
 def has_open_trade(chat_id, pair=None):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    if pair:
-        c.execute("""
-        SELECT id FROM trades_log
-        WHERE chat_id = %s AND pair = %s AND status = 'OPEN'
-        LIMIT 1
-        """, (chat_id, pair))
-    else:
-        c.execute("""
-        SELECT id FROM trades_log
-        WHERE chat_id = %s AND status = 'OPEN'
-        LIMIT 1
-        """, (chat_id,))
+        if pair:
+            c.execute("""
+            SELECT id FROM trades_log
+            WHERE chat_id = %s AND pair = %s AND status = 'OPEN'
+            LIMIT 1
+            """, (str(chat_id), pair))
+        else:
+            c.execute("""
+            SELECT id FROM trades_log
+            WHERE chat_id = %s AND status = 'OPEN'
+            LIMIT 1
+            """, (str(chat_id),))
 
-    row = c.fetchone()
-    conn.close()
-    return row is not None
+        row = c.fetchone()
+        return row is not None
 
 def pair_in_cooldown(chat_id, pair):
-    conn = db()
-    c = conn.cursor()
+    with get_db() as conn:
+        c = conn.cursor()
 
-    cooldown_time = datetime.now() - timedelta(minutes=PAIR_COOLDOWN_MINUTES)
+        cooldown_time = datetime.now() - timedelta(minutes=PAIR_COOLDOWN_MINUTES)
 
-    c.execute("""
-    SELECT id FROM trades_log
-    WHERE chat_id = %s AND pair = %s AND created_at >= %s
-    ORDER BY created_at DESC
-    LIMIT 1
-    """, (chat_id, pair, cooldown_time))
+        c.execute("""
+        SELECT id FROM trades_log
+        WHERE chat_id = %s AND pair = %s AND created_at >= %s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """, (str(chat_id), pair, cooldown_time))
 
-    row = c.fetchone()
-    conn.close()
-    return row is not None
+        row = c.fetchone()
+        return row is not None
 
 def can_trade_user(chat_id, trade_amount):
     if get_daily_trade_count(chat_id) >= MAX_DAILY_TRADES:
@@ -688,6 +674,7 @@ def can_trade_user(chat_id, trade_amount):
         return False, "🚫 تم إيقاف التداول بسبب الوصول لحد الخسارة اليومية"
 
     return True, "OK"
+
 # ================= ORDER HELPERS =================
 def validate_symbol_amount(exchange, symbol, amount):
     try:
@@ -722,7 +709,8 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
                     params={
                         "stopPrice": tp_price,
                         "reduceOnly": True,
-                        "positionSide": "LONG" if direction == "LONG" else "SHORT"
+                        "positionSide": "LONG" if direction == "LONG" else "SHORT",
+                        "workingType": "MARK_PRICE"
                     }
                 )
             except Exception as e:
@@ -737,7 +725,8 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
                     params={
                         "stopPrice": sl_price,
                         "reduceOnly": True,
-                        "positionSide": "LONG" if direction == "LONG" else "SHORT"
+                        "positionSide": "LONG" if direction == "LONG" else "SHORT",
+                        "workingType": "MARK_PRICE"
                     }
                 )
             except Exception as e:
@@ -757,6 +746,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
     - بدون كميات غلط
     - بدون أوامر حماية مضروبة
     """
+    conn = None
     try:
         api_key = decrypt_text(api_key)
         api_secret = decrypt_text(api_secret)
@@ -811,7 +801,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if usdt_balance < 10:
             return None, "رصيد USDT أقل من الحد الأدنى"
 
-        capital_to_use = float(risk_percent or 10)
+        capital_to_use = min(float(risk_percent or 10), usdt_balance * 0.25)
 
         if capital_to_use < 5:
             return None, "قيمة الصفقة أقل من الحد الأدنى"
@@ -840,7 +830,6 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
-        # ================= SECOND VALIDATION =================
         valid_amount, amount_msg = validate_symbol_amount(exchange, symbol, amount)
         if not valid_amount:
             return None, f"فشل التحقق من الكمية: {amount_msg}"
@@ -858,9 +847,9 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
                 "positionSide": "LONG" if signal["direction"] == "LONG" else "SHORT"
             }
 
-        # ================= SAVE TO DB =================
         conn = db()
         c = conn.cursor()
+
         # ================= DUPLICATE TRADE PROTECTION =================
         if is_duplicate_open_trade(
             conn,
@@ -869,18 +858,32 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             timeframe=signal.get("timeframe", ""),
             direction=signal["direction"]
         ):
-            log(f"⛔ Duplicate trade blocked: {raw_symbol} {signal['direction']} {signal.get('timeframe')}")
+            log(f"Duplicate trade blocked: {raw_symbol} {signal['direction']} {signal.get('timeframe')}")
             try:
                 conn.close()
-            except:
-                 pass    
+            except Exception:
+                pass
             return None, "Duplicate trade blocked"
 
         # ================= MAIN ORDER =================
         order = exchange.create_market_order(symbol, side, amount, params=params)
 
         if not order or not order.get("id"):
+            try:
+                conn.close()
+            except Exception:
+                pass
             return None, "فشل تنفيذ أمر السوق"
+
+        # ================= REAL FILLED ENTRY =================
+        real_entry = entry
+        try:
+            if order.get("average"):
+                real_entry = float(order.get("average"))
+            elif order.get("price"):
+                real_entry = float(order.get("price"))
+        except Exception:
+            real_entry = entry
 
         # ================= PROTECTION =================
         protection_ok, protection_msg = place_protection_orders(
@@ -894,11 +897,11 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         )
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            chat_id,
+            str(chat_id),
             raw_symbol,
             signal["direction"],
             trade_type,
-            entry,
+            real_entry,
             tp,
             sl,
             amount,
@@ -913,86 +916,106 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
 
     except ccxt.InsufficientFunds as e:
         log(f"execute_trade insufficient funds: {e}")
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return None, "رصيد غير كافي لتنفيذ الصفقة"
 
     except ccxt.InvalidOrder as e:
         log(f"execute_trade invalid order: {e}")
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return None, f"أمر غير صالح: {e}"
 
     except ccxt.AuthenticationError as e:
         log(f"execute_trade auth error: {e}")
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return None, "API Key / Secret غير صالحين أو لا يوجد صلاحيات"
 
     except Exception as e:
         log(f"execute_trade full error: {e}")
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
         return None, f"Trade Error: {e}"
 
 # ================= TRADE MONITOR =================
 def update_closed_trades():
     try:
-        conn = db()
-        c = conn.cursor()
+        with get_db() as conn:
+            c = conn.cursor()
 
-        c.execute("""
-        SELECT id, chat_id, pair, direction, entry, tp, sl, amount
-        FROM trades_log
-        WHERE status = 'OPEN'
-        """)
-        open_trades = c.fetchall()
+            c.execute("""
+            SELECT id, chat_id, pair, direction, entry, tp, sl, amount
+            FROM trades_log
+            WHERE status = 'OPEN'
+            """)
+            open_trades = c.fetchall()
 
-        for trade in open_trades:
-            trade_id, chat_id, pair, direction, entry, tp, sl, amount = trade
+            for trade in open_trades:
+                trade_id, chat_id, pair, direction, entry, tp, sl, amount = trade
 
-            try:
-                current_price = get_live_price(pair)
+                try:
+                    current_price = get_live_price(pair)
 
-                if current_price is None:
-                    write_log(chat_id, "ERROR", f"Price fetch failed for {pair}")
-                    continue
+                    if current_price is None:
+                        write_log(chat_id, "ERROR", f"Price fetch failed for {pair}")
+                        continue
 
-                pnl = 0
-                should_close = False
-                close_reason = None
+                    pnl = 0
+                    should_close = False
+                    close_reason = None
 
-                if direction == "LONG":
-                    if current_price >= tp:
-                        pnl = (tp - entry) * amount
-                        should_close = True
-                        close_reason = "TP HIT 🎯"
-                    elif current_price <= sl:
-                        pnl = (sl - entry) * amount
-                        should_close = True
-                        close_reason = "SL HIT 🛑"
+                    if direction == "LONG":
+                        if current_price >= tp:
+                            pnl = (tp - entry) * amount
+                            should_close = True
+                            close_reason = "TP HIT 🎯"
+                        elif current_price <= sl:
+                            pnl = (sl - entry) * amount
+                            should_close = True
+                            close_reason = "SL HIT 🛑"
 
-                elif direction == "SHORT":
-                    if current_price <= tp:
-                        pnl = (entry - tp) * amount
-                        should_close = True
-                        close_reason = "TP HIT 🎯"
-                    elif current_price >= sl:
-                        pnl = (entry - sl) * amount
-                        should_close = True
-                        close_reason = "SL HIT 🛑"
+                    elif direction == "SHORT":
+                        if current_price <= tp:
+                            pnl = (entry - tp) * amount
+                            should_close = True
+                            close_reason = "TP HIT 🎯"
+                        elif current_price >= sl:
+                            pnl = (entry - sl) * amount
+                            should_close = True
+                            close_reason = "SL HIT 🛑"
 
-                if should_close:
-                    c.execute("""
-                    UPDATE trades_log
-                    SET status = 'CLOSED', pnl = %s, closed_at = NOW()
-                    WHERE id = %s
-                    """, (round(pnl, 4), trade_id))
+                    if should_close:
+                        c.execute("""
+                        UPDATE trades_log
+                        SET status = 'CLOSED', pnl = %s, closed_at = NOW()
+                        WHERE id = %s
+                        """, (round(pnl, 4), trade_id))
 
-                    c.execute("""
-                    UPDATE users
-                    SET profit = COALESCE(profit, 0) + %s
-                    WHERE chat_id = %s
-                    """, (round(pnl, 4), chat_id))
+                        c.execute("""
+                        UPDATE users
+                        SET profit = COALESCE(profit, 0) + %s
+                        WHERE chat_id = %s
+                        """, (round(pnl, 4), str(chat_id)))
 
-                    conn.commit()
-                    write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)} reason={close_reason}")
+                        conn.commit()
+                        write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)} reason={close_reason}")
 
-                    result_emoji = "✅" if pnl > 0 else "❌" if pnl < 0 else "➖"
+                        result_emoji = "✅" if pnl > 0 else "❌" if pnl < 0 else "➖"
 
-                    send(chat_id, f"""📌 تم إغلاق الصفقة
+                        send(chat_id, f"""📌 تم إغلاق الصفقة
 
 🔥 {pair}
 📊 Direction: {direction}
@@ -1000,10 +1023,8 @@ def update_closed_trades():
 {result_emoji} PNL: {round(pnl, 4)} USDT
 """)
 
-            except Exception as e:
-                write_log(chat_id, "ERROR", f"Trade monitor error for {pair}: {e}")
-
-        conn.close()
+                except Exception as e:
+                    write_log(chat_id, "ERROR", f"Trade monitor error for {pair}: {e}")
 
     except Exception as e:
         log(f"update_closed_trades error: {e}")
@@ -1018,15 +1039,14 @@ def adjust_risk(profit):
 
 def increment_trade(chat_id):
     try:
-        conn = db()
-        c = conn.cursor()
-        c.execute("""
-            UPDATE users
-            SET trades = COALESCE(trades, 0) + 1
-            WHERE chat_id = %s
-        """, (chat_id,))
-        conn.commit()
-        conn.close()
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute("""
+                UPDATE users
+                SET trades = COALESCE(trades, 0) + 1
+                WHERE chat_id = %s
+            """, (str(chat_id),))
+            conn.commit()
     except Exception as e:
         log(f"increment_trade error: {e}")
 
@@ -1050,7 +1070,7 @@ def is_duplicate_signal(signal):
         LAST_SIGNAL_CACHE["time"] = now
 
         return False
-    except:
+    except Exception:
         return False
 
 def is_recent_memory_duplicate(signal):
@@ -1083,7 +1103,7 @@ def is_recent_memory_duplicate(signal):
 
         RECENT_SIGNAL_MEMORY[key] = (entry, now)
         return False
-    except:
+    except Exception:
         return False
 
 # ================= SIGNAL FETCHER =================
@@ -1094,10 +1114,10 @@ def get_monster_signals():
     """
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT)
-        log(f"🔥 RAW SIGNALS => {signals}")
+        log(f"RAW SIGNALS => {signals}")
 
         if not signals:
-            log("❌ No signals from analyzer — using fallback")
+            log("No signals from analyzer — using fallback")
             fallback_candidates = []
 
             try:
@@ -1108,8 +1128,18 @@ def get_monster_signals():
                         try:
                             s = generate_signal(symbol, tf)
                             if s:
+                                if "ranking_score" not in s:
+                                    s["ranking_score"] = (
+                                        float(s.get("confidence", 0))
+                                        + abs(float(s.get("score", 0)) * 2)
+                                        + (6 if s.get("volume") == "STRONG" else 0)
+                                        + (6 if s.get("trend_power") in ["STRONG_BULL", "STRONG_BEAR"] else 0)
+                                        + (5 if s.get("timeframe") == "15m" else 0)
+                                        + (4 if s.get("structure") in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"] else 0)
+                                        + (3 if s.get("smc") in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"] else 0)
+                                    )
                                 fallback_candidates.append(s)
-                        except:
+                        except Exception:
                             continue
 
                 fallback_candidates = sorted(
@@ -1124,7 +1154,7 @@ def get_monster_signals():
 
                 if fallback_candidates:
                     signals = fallback_candidates[:3]
-                    log(f"🔥 Fallback signals used: {signals}")
+                    log(f"Fallback signals used: {signals}")
 
             except Exception as e:
                 log(f"Fallback paid signal error: {e}")
@@ -1150,7 +1180,7 @@ def get_monster_signals():
             else:
                 market_mode = "dead"
 
-            log(f"📊 Market mode => {market_mode} | strong_candidates={strong_count}")
+            log(f"Market mode => {market_mode} | strong_candidates={strong_count}")
 
         except Exception as e:
             log(f"Market mode detection error: {e}")
@@ -1173,20 +1203,31 @@ def get_monster_signals():
             min_rr = 1.25
 
         log(
-            f"🎯 Filter mode => conf>={min_conf}, score>={min_score}, "
+            f"Filter mode => conf>={min_conf}, score>={min_score}, "
             f"rank>={min_rank}, rr>={min_rr}"
         )
 
         for s in signals or []:
             s = attach_signal_timestamp(s)
 
+            ai_result = predict_trade(s)
+
+            if not ai_result.get("approved"):
+                log(f"❌ AI rejected signal: {s.get('pair')}")
+                continue
+
+# تحديث البيانات
+            s["confidence"] = ai_result.get("confidence", s.get("confidence"))
+            s["ranking_score"] = ai_result.get("ranking_score", s.get("ranking_score"))
+            s["ai_score"] = ai_result.get("score", 0)
+
             if not valid_signal(s):
-                log(f"❌ Invalid signal skipped: {s}")
+                log(f"Invalid signal skipped: {s}")
                 continue
 
             if not logical_signal(s):
                 log(
-                    f"❌ Logical invalid signal skipped: {s.get('pair')} | "
+                    f"Logical invalid signal skipped: {s.get('pair')} | "
                     f"dir={s.get('direction')} | "
                     f"entry={s.get('entry')} | "
                     f"tp={s.get('tp')} | "
@@ -1196,17 +1237,15 @@ def get_monster_signals():
 
             if not signal_not_expired(s):
                 log(
-                    f"❌ Expired signal skipped: {s.get('pair')} | "
-                    f"tf={s.get('timeframe')} | "
-                    f"signal_time={s.get('signal_time')}"
+                    f"Expired signal skipped: {s.get('pair')} | "
+                    f"tf={s.get('timeframe')}"
                 )
                 continue
 
             if not signal_is_fresh(s):
                 log(
-                    f"❌ Freshness check failed: {s.get('pair')} | "
+                    f"Freshness check failed: {s.get('pair')} | "
                     f"tf={s.get('timeframe')} | "
-                    f"signal_time={s.get('signal_time')} | "
                     f"confidence={s.get('confidence')} | "
                     f"score={s.get('score')} | "
                     f"rank={s.get('ranking_score')}"
@@ -1214,11 +1253,11 @@ def get_monster_signals():
                 continue
 
             if is_duplicate_signal(s):
-                log(f"❌ Duplicate signal skipped: {s.get('pair')}")
+                log(f"Duplicate signal skipped: {s.get('pair')}")
                 continue
 
             if is_recent_memory_duplicate(s):
-                log(f"❌ Recent memory duplicate skipped: {s.get('pair')}")
+                log(f"Recent memory duplicate skipped: {s.get('pair')}")
                 continue
 
             try:
@@ -1228,8 +1267,8 @@ def get_monster_signals():
                 tp = float(s.get("tp", 0))
                 sl = float(s.get("sl", 0))
                 confidence = float(s.get("confidence", 0))
-                score = float(s.get("score", 0))
-                ranking_score = float(s.get("ranking_score", 0))
+                score = abs(float(s.get("score", 0)))
+                ranking_score = float(s.get("ranking_score", 0) or 0)
                 volume = str(s.get("volume", "")).upper()
                 trend = str(s.get("trend", "")).upper()
                 trend_power = str(s.get("trend_power", "")).upper()
@@ -1238,35 +1277,31 @@ def get_monster_signals():
                 timeframe = str(s.get("timeframe", "")).lower()
 
                 if not pair or not entry or not tp or not sl:
-                    log(f"❌ Premium rejected {pair} => missing_data")
+                    log(f"Premium rejected {pair} => missing_data")
                     continue
 
                 if direction not in ["LONG", "SHORT"]:
-                    log(f"❌ Premium rejected {pair} => bad_direction")
+                    log(f"Premium rejected {pair} => bad_direction")
                     continue
 
                 if confidence < min_conf:
-                    log(f"❌ Premium rejected {pair} => low_confidence | tf={timeframe} | conf={confidence} | needed={min_conf}")
+                    log(f"Premium rejected {pair} => low_confidence | tf={timeframe} | conf={confidence} | needed={min_conf}")
                     continue
 
                 if score < min_score:
-                    log(f"❌ Premium rejected {pair} => low_score | tf={timeframe} | score={score} | needed={min_score}")
+                    log(f"Premium rejected {pair} => low_score | tf={timeframe} | score={score} | needed={min_score}")
                     continue
 
                 if ranking_score < min_rank:
-                    log(f"❌ Premium rejected {pair} => low_ranking | tf={timeframe} | rank={ranking_score} | needed={min_rank}")
+                    log(f"Premium rejected {pair} => low_ranking | tf={timeframe} | rank={ranking_score} | needed={min_rank}")
                     continue
 
                 if volume not in ["STRONG", "MEDIUM", "WEAK"]:
-                    log(f"❌ Premium rejected {pair} => weak_volume | tf={timeframe} | volume={volume}")
+                    log(f"Premium rejected {pair} => weak_volume | tf={timeframe} | volume={volume}")
                     continue
 
                 if trend not in ["UP", "DOWN"]:
-                    log(f"❌ Premium rejected {pair} => bad_trend | tf={timeframe} | trend={trend}")
-                    continue
-
-                if market_mode == "strong" and trend_power == "WEAK":
-                    log(f"❌ Premium rejected {pair} => weak_trend_power | tf={timeframe} | trend_power={trend_power}")
+                    log(f"Premium rejected {pair} => bad_trend | tf={timeframe} | trend={trend}")
                     continue
 
                 allowed_structures = [
@@ -1275,10 +1310,11 @@ def get_monster_signals():
                     "BREAKOUT",
                     "PULLBACK",
                     "CONTINUATION",
-                    "MID_RANGE"
+                    "MID_RANGE",
+                    "UNKNOWN"
                 ]
                 if structure and structure not in allowed_structures:
-                    log(f"❌ Premium rejected {pair} => bad_structure:{structure} | tf={timeframe}")
+                    log(f"Premium rejected {pair} => bad_structure:{structure} | tf={timeframe}")
                     continue
 
                 allowed_smc = [
@@ -1287,10 +1323,11 @@ def get_monster_signals():
                     "BOS",
                     "CHOCH",
                     "ORDER_BLOCK",
-                    "FVG"
+                    "FVG",
+                    "RANGE"
                 ]
                 if smc and smc not in allowed_smc:
-                    log(f"❌ Premium rejected {pair} => bad_smc:{smc} | tf={timeframe}")
+                    log(f"Premium rejected {pair} => bad_smc:{smc} | tf={timeframe}")
                     continue
 
                 if direction == "LONG":
@@ -1301,25 +1338,25 @@ def get_monster_signals():
                     reward = entry - tp
 
                 if risk <= 0 or reward <= 0:
-                    log(f"❌ Premium rejected {pair} => bad_rr | tf={timeframe} | entry={entry} | tp={tp} | sl={sl}")
+                    log(f"Premium rejected {pair} => bad_rr | tf={timeframe} | entry={entry} | tp={tp} | sl={sl}")
                     continue
 
                 rr = reward / risk
                 if rr < min_rr:
-                    log(f"❌ Premium rejected {pair} => low_rr:{round(rr, 2)} | tf={timeframe} | needed={min_rr}")
+                    log(f"Premium rejected {pair} => low_rr:{round(rr, 2)} | tf={timeframe} | needed={min_rr}")
                     continue
 
                 if market_mode == "strong":
                     if timeframe == "5m" and confidence < 83:
-                        log(f"❌ Premium rejected {pair} => strong_market_5m_too_weak")
+                        log(f"Premium rejected {pair} => strong_market_5m_too_weak")
                         continue
                 elif market_mode == "normal":
                     if timeframe == "5m" and confidence < 79:
-                        log(f"❌ Premium rejected {pair} => normal_market_5m_too_weak")
+                        log(f"Premium rejected {pair} => normal_market_5m_too_weak")
                         continue
                 else:
                     if timeframe == "5m" and confidence < 72:
-                        log(f"❌ Premium rejected {pair} => dead_market_5m_too_weak")
+                        log(f"Premium rejected {pair} => dead_market_5m_too_weak")
                         continue
 
             except Exception as premium_e:
@@ -1330,21 +1367,21 @@ def get_monster_signals():
                 try:
                     if market_mode == "strong":
                         if float(s.get("confidence", 0)) < 80:
-                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
                     elif market_mode == "normal":
                         if float(s.get("confidence", 0)) < 76:
-                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
                     else:
                         if float(s.get("confidence", 0)) < 70:
-                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
-                except:
+                except Exception:
                     continue
 
             log(
-                f"✅ Signal approved => {s.get('pair')} | "
+                f"Signal approved => {s.get('pair')} | "
                 f"tf={s.get('timeframe')} | "
                 f"dir={s.get('direction')} | "
                 f"conf={s.get('confidence')} | "
@@ -1367,7 +1404,7 @@ def get_monster_signals():
             reverse=True
         )
 
-        log(f"🔥 FINAL SIGNALS => {final_signals[:3]}")
+        log(f"FINAL SIGNALS => {final_signals[:3]}")
         return final_signals[:3]
 
     except Exception as e:
@@ -1444,7 +1481,7 @@ def notify_users_no_signal(users):
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
-    log("🚀 BOT STARTED - MONSTER MODE")
+    log("BOT STARTED - MONSTER MODE")
     log("Entering main bot loop...")
 
     while True:
@@ -1469,8 +1506,7 @@ def run():
                 time.sleep(30)
                 continue
 
-            # ================= IMPORTANT FIX =================
-            # إرسال القناة مرة واحدة فقط لكل إشارة
+            # إرسال القناة مرة واحدة فقط لكل إشارة في نفس الدورة
             sent_to_channel_pairs = set()
 
             for signal in signals[:MAX_SIGNALS_PER_CYCLE]:
@@ -1535,23 +1571,19 @@ def run():
                             and api_secret
                         ):
                             try:
-                                # حماية أولية
                                 can_trade, reason = can_trade_user(chat_id, trade_amount)
                                 if not can_trade:
                                     log(f"VIP trade blocked for {chat_id}: {reason}")
                                     continue
 
-                                # منع صفقة مفتوحة على نفس الزوج
                                 if has_open_trade(chat_id, signal["pair"]):
                                     log(f"VIP skipped: already open trade on {signal['pair']} for {chat_id}")
                                     continue
 
-                                # cooldown
                                 if pair_in_cooldown(chat_id, signal["pair"]):
                                     log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
                                     continue
 
-                                # نوع الصفقة
                                 signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
 
                                 order, result_msg = execute_trade(

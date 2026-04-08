@@ -37,7 +37,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret")
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
+BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
 
@@ -1199,7 +1199,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret")
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
+BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
 FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()

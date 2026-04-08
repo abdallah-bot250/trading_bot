@@ -3,7 +3,17 @@ import pandas as pd
 import numpy as np
 import random
 import time
+import logging
 from ai_model import predict_trade
+
+# ================= LOGGING =================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+def log(msg):
+    logging.info(msg)
 
 # ================= SETTINGS =================
 SYMBOLS = [
@@ -101,7 +111,7 @@ def parse_kucoin_klines_to_df(rows):
         df = df.sort_values("time").reset_index(drop=True)
         return df
     except Exception as e:
-        print(f"parse_kucoin_klines_to_df error: {e}")
+        log(f"parse_kucoin_klines_to_df error: {e}")
         return None
 
 
@@ -126,7 +136,7 @@ def parse_binance_klines_to_df(data):
         df = df.sort_values("time").reset_index(drop=True)
         return df
     except Exception as e:
-        print(f"parse_binance_klines_to_df error: {e}")
+        log(f"parse_binance_klines_to_df error: {e}")
         return None
 
 
@@ -143,7 +153,7 @@ def get_market_data(symbol, interval="5m", limit=250):
 
     cache_key = f"{symbol}_{interval}_{limit}"
 
-    # ================= NEW: SAFE CACHE TTL =================
+    # ================= SAFE CACHE TTL =================
     if cache_key in MARKET_DATA_CACHE:
         try:
             cached = MARKET_DATA_CACHE[cache_key]
@@ -153,12 +163,11 @@ def get_market_data(symbol, interval="5m", limit=250):
                 if cache_age <= MARKET_CACHE_TTL_SECONDS:
                     return cached["data"].copy()
             else:
-                # fallback for old cache format if exists
                 return cached.copy()
-        except:
+        except Exception:
             try:
                 return MARKET_DATA_CACHE[cache_key]
-            except:
+            except Exception:
                 pass
 
     KUCOIN_TF_MAP = {
@@ -184,26 +193,24 @@ def get_market_data(symbol, interval="5m", limit=250):
     for source_name, url in endpoints:
         try:
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
-            print(f"🌐 {source_name} STATUS {symbol} {interval}: {response.status_code}")
+            log(f"{source_name} STATUS {symbol} {interval}: {response.status_code}")
 
-            # لو Binance restricted / blocked
             if response.status_code == 451:
-                print(f"⚠️ {source_name} restricted for {symbol} {interval}")
+                log(f"{source_name} restricted for {symbol} {interval}")
                 continue
 
-            # لو مش 200
             if response.status_code != 200:
-                print(f"⚠️ {source_name} bad status for {symbol} {interval}: {response.status_code}")
+                log(f"{source_name} bad status for {symbol} {interval}: {response.status_code}")
                 continue
 
             try:
                 data = response.json()
             except Exception:
-                print(f"❌ {source_name} invalid JSON for {symbol} {interval}")
+                log(f"{source_name} invalid JSON for {symbol} {interval}")
                 data = None
 
             if isinstance(data, dict):
-                print(f"⚠️ {source_name} API error for {symbol} {interval}: {data}")
+                log(f"{source_name} API error for {symbol} {interval}: {data}")
                 continue
 
             df = parse_binance_klines_to_df(data)
@@ -214,13 +221,13 @@ def get_market_data(symbol, interval="5m", limit=250):
                 }
                 return df.copy()
 
-            print(f"❌ {source_name} no kline data for {symbol} {interval}")
+            log(f"{source_name} no kline data for {symbol} {interval}")
 
         except Exception as e:
-            print(f"❌ {source_name} request failed for {symbol} {interval}: {e}")
+            log(f"{source_name} request failed for {symbol} {interval}: {e}")
             continue
 
-    # ===================== FALLBACK TO KUCOIN =====================
+    # ================= FALLBACK TO KUCOIN =================
     try:
         kucoin_interval = KUCOIN_TF_MAP.get(interval, interval)
         kucoin_symbol = symbol.replace("USDT", "-USDT")
@@ -228,22 +235,22 @@ def get_market_data(symbol, interval="5m", limit=250):
         kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
         response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
 
-        print(f"🌐 KUCOIN STATUS {symbol} {interval}: {response.status_code}")
+        log(f"KUCOIN STATUS {symbol} {interval}: {response.status_code}")
 
         if response.status_code != 200:
-            print(f"⚠️ KUCOIN bad status for {symbol} {interval}: {response.status_code}")
+            log(f"KUCOIN bad status for {symbol} {interval}: {response.status_code}")
             return None
 
         data = response.json()
 
         if not isinstance(data, dict) or "data" not in data:
-            print(f"⚠️ KUCOIN invalid response for {symbol} {interval}: {data}")
+            log(f"KUCOIN invalid response for {symbol} {interval}: {data}")
             return None
 
         candles = data["data"]
 
         if not candles:
-            print(f"❌ KUCOIN no candles for {symbol} {interval}")
+            log(f"KUCOIN no candles for {symbol} {interval}")
             return None
 
         df = parse_kucoin_klines_to_df(candles)
@@ -254,11 +261,11 @@ def get_market_data(symbol, interval="5m", limit=250):
             }
             return df.copy()
 
-        print(f"❌ KUCOIN parsed empty df for {symbol} {interval}")
+        log(f"KUCOIN parsed empty df for {symbol} {interval}")
         return None
 
     except Exception as e:
-        print(f"❌ KUCOIN API error for {symbol} {interval}: {e}")
+        log(f"KUCOIN API error for {symbol} {interval}: {e}")
         return None
 
 
@@ -388,7 +395,7 @@ def is_choppy(df):
             return True
 
         return (diff / price) < 0.0012
-    except:
+    except Exception:
         return True
 
 
@@ -407,11 +414,11 @@ def strong_momentum(df):
         change = abs(last - prev) / prev
 
         return change > 0.0018
-    except:
+    except Exception:
         return False
 
 
-# ================= NEW: LATE ENTRY FILTER =================
+# ================= LATE ENTRY FILTER =================
 def late_entry_filter(df, direction):
     try:
         if df is None or len(df) < 30:
@@ -432,7 +439,6 @@ def late_entry_filter(df, direction):
         candle_body = abs(close - open_price)
         candle_range = abs(high - low)
 
-        # نمنع فقط لو الشمعة انفجارية جدًا جدًا
         if candle_range > (atr_val * 3.1):
             return True
 
@@ -442,14 +448,12 @@ def late_entry_filter(df, direction):
         dist_ema20 = abs(close - ema20v) / close
         dist_ema50 = abs(close - ema50v) / close
 
-        # نسمح ببعد أكبر شوية عشان ندخل بدري
         if dist_ema20 > 0.017:
             return True
 
         if dist_ema50 > 0.028:
             return True
 
-        # نمنع فقط لو الحركة فعلاً خلصت
         if direction == "LONG":
             recent_push = (close - df["close"].iloc[-4]) / df["close"].iloc[-4]
             if recent_push > 0.017:
@@ -462,11 +466,11 @@ def late_entry_filter(df, direction):
 
         return False
     except Exception as e:
-        print(f"late_entry_filter error: {e}")
+        log(f"late_entry_filter error: {e}")
         return False
 
 
-# ================= NEW: SUPPORT / RESISTANCE FILTER =================
+# ================= SUPPORT / RESISTANCE FILTER =================
 def support_resistance_filter(df, direction):
     try:
         if df is None or len(df) < 40:
@@ -484,23 +488,21 @@ def support_resistance_filter(df, direction):
         resistance_distance = abs(recent_high - close)
         support_distance = abs(close - recent_low)
 
-        # LONG تحت مقاومة قريبة جدًا
         if direction == "LONG":
             if recent_high > close and resistance_distance < (atr_val * 1.15):
                 return False
 
-        # SHORT فوق دعم قريب جدًا
         if direction == "SHORT":
             if recent_low < close and support_distance < (atr_val * 1.15):
                 return False
 
         return True
     except Exception as e:
-        print(f"support_resistance_filter error: {e}")
+        log(f"support_resistance_filter error: {e}")
         return True
 
 
-# ================= NEW: PULLBACK ENTRY QUALITY =================
+# ================= PULLBACK ENTRY QUALITY =================
 def pullback_entry_quality(df, direction):
     try:
         if df is None or len(df) < 25:
@@ -516,7 +518,6 @@ def pullback_entry_quality(df, direction):
         dist_ema20 = abs(close - ema20v) / close
         dist_ema50 = abs(close - ema50v) / close
 
-        # تخفيف بسيط علشان مانخنقش الإشارات
         if dist_ema20 > 0.016:
             return False
 
@@ -525,7 +526,6 @@ def pullback_entry_quality(df, direction):
 
         closes = df["close"].tail(5).tolist()
 
-        # لو السوق جري زيادة قوي = دخول متأخر
         if direction == "LONG":
             if closes[-1] > closes[-2] > closes[-3]:
                 recent_push = (closes[-1] - closes[-4]) / closes[-4]
@@ -538,7 +538,6 @@ def pullback_entry_quality(df, direction):
                 if recent_push > 0.0085:
                     return False
 
-        # لو الشمعة الأخيرة رجعت قريب من المتوسط فده أحسن دخول
         last_low = float(df["low"].iloc[-1])
         last_high = float(df["high"].iloc[-1])
 
@@ -552,11 +551,11 @@ def pullback_entry_quality(df, direction):
 
         return True
     except Exception as e:
-        print(f"pullback_entry_quality error: {e}")
+        log(f"pullback_entry_quality error: {e}")
         return False
 
 
-# ================= NEW: REJECTION WICK FILTER =================
+# ================= REJECTION WICK FILTER =================
 def rejection_wick_filter(df, direction):
     try:
         if df is None or len(df) < 5:
@@ -576,19 +575,17 @@ def rejection_wick_filter(df, direction):
         if body <= 0:
             body = 0.0000001
 
-        # LONG: لو فيه رفض علوي قوي جدًا → خطر
         if direction == "LONG":
             if upper_wick > body * 2.2 and close < high:
                 return False
 
-        # SHORT: لو فيه رفض سفلي قوي جدًا → خطر
         if direction == "SHORT":
             if lower_wick > body * 2.2 and close > low:
                 return False
 
         return True
     except Exception as e:
-        print(f"rejection_wick_filter error: {e}")
+        log(f"rejection_wick_filter error: {e}")
         return True
 
 
@@ -621,7 +618,7 @@ def higher_timeframe_confirmation(symbol, direction, current_interval):
 
         return False
     except Exception as e:
-        print(f"higher_timeframe_confirmation error for {symbol} {current_interval}: {e}")
+        log(f"higher_timeframe_confirmation error for {symbol} {current_interval}: {e}")
         return False
 
 
@@ -636,7 +633,7 @@ def volatility_ok(df):
 
         ratio = atr_val / close_val
         return 0.0007 <= ratio <= 0.06
-    except:
+    except Exception:
         return True
 
 
@@ -647,7 +644,6 @@ def news_filter():
     try:
         now = time.time()
 
-        # ================= NEW: USE CACHE =================
         if (now - NEWS_CACHE["time"]) <= NEWS_CACHE_TTL_SECONDS:
             return NEWS_CACHE["value"]
 
@@ -671,9 +667,8 @@ def news_filter():
         NEWS_CACHE["value"] = result
         NEWS_CACHE["time"] = now
 
-        # بدل ما نمنع السوق تمامًا، نرجع حالة فقط
         return result
-    except:
+    except Exception:
         return True
 
 
@@ -681,7 +676,6 @@ def news_filter():
 def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, structure):
     score = 0
 
-    # RSI (أعدل بين LONG و SHORT)
     if rsi_val < 32:
         score += 2
     elif rsi_val > 68:
@@ -691,35 +685,29 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
     elif 38 <= rsi_val <= 48:
         score -= 1
 
-    # MACD
     if macd_val > signal_val:
         score += 2
     else:
         score -= 2
 
-    # TREND
     if trend == "UP":
         score += 2
     elif trend == "DOWN":
         score -= 2
 
-    # VOLUME
     if volume == "STRONG":
         score += 2
 
-    # SMC
     if smc == "LIQUIDITY_BREAK_UP":
         score += 2
     elif smc == "LIQUIDITY_BREAK_DOWN":
         score -= 2
 
-    # TREND POWER
     if trend_power == "STRONG_BULL":
         score += 2
     elif trend_power == "STRONG_BEAR":
         score -= 2
 
-    # STRUCTURE
     if structure == "NEAR_BREAKOUT_HIGH":
         score += 1
     elif structure == "NEAR_BREAKOUT_LOW":
@@ -733,25 +721,21 @@ def smart_target_multiplier(interval, trend_power, volume, structure, direction)
     tp_mult = 1.0
     sl_mult = 1.0
 
-    # ===== Timeframe =====
     if interval == "15m":
         tp_mult += 0.30
         sl_mult += 0.10
     elif interval == "5m":
         tp_mult += 0.10
 
-    # ===== Trend strength =====
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         tp_mult += 0.35
         sl_mult += 0.10
     elif trend_power == "MIXED":
         tp_mult -= 0.10
 
-    # ===== Volume =====
     if volume == "STRONG":
         tp_mult += 0.25
 
-    # ===== Structure =====
     if direction == "LONG" and structure == "NEAR_BREAKOUT_HIGH":
         tp_mult += 0.20
 
@@ -766,13 +750,12 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     try:
         entry = float(entry)
         atr_value = float(atr_value) if atr_value is not None else 0
-    except:
+    except Exception:
         atr_value = 0
 
     if entry <= 0:
         return None, None
 
-    # ================= BASE MIN TARGETS =================
     if timeframe == "15m":
         min_tp_percent = 0.012
         min_sl_percent = 0.0062
@@ -783,13 +766,12 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         min_sl_percent = 0.008
         atr_tp_multiplier = 3.4
         atr_sl_multiplier = 1.7
-    else:  # 5m
+    else:
         min_tp_percent = 0.009
         min_sl_percent = 0.0052
         atr_tp_multiplier = 2.4
         atr_sl_multiplier = 1.35
 
-    # ================= BOOSTS =================
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         min_tp_percent += 0.0025
         atr_tp_multiplier += 0.5
@@ -798,7 +780,6 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         min_tp_percent += 0.002
         atr_tp_multiplier += 0.4
 
-    # ================= LOW PRICE COIN PROTECTION =================
     if entry < 1:
         min_tp_percent += 0.004
         min_sl_percent += 0.0012
@@ -807,7 +788,6 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         min_tp_percent += 0.004
         min_sl_percent += 0.0012
 
-    # ================= SMART TARGET SYSTEM =================
     extra_tp_mult, extra_sl_mult = smart_target_multiplier(
         timeframe, trend_power, volume, structure, direction
     )
@@ -815,7 +795,6 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     atr_tp_multiplier *= extra_tp_mult
     atr_sl_multiplier *= extra_sl_mult
 
-    # ================= ATR MOVE =================
     if pd.isna(atr_value) or atr_value <= 0:
         atr_based_tp = entry * min_tp_percent
         atr_based_sl = entry * min_sl_percent
@@ -823,16 +802,12 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         atr_based_tp = atr_value * atr_tp_multiplier
         atr_based_sl = atr_value * atr_sl_multiplier
 
-    # ================= FINAL ENFORCED DISTANCE =================
     tp_move = max(atr_based_tp, entry * min_tp_percent)
     sl_move = max(atr_based_sl, entry * min_sl_percent)
 
-    # ================= RR ENFORCEMENT =================
     min_rr_tp = sl_move * 2.25
     tp_move = max(tp_move, min_rr_tp)
 
-    # ================= EXTRA EARLY ENTRY BOOST =================
-    # بما إننا دخلنا أبكر شوية، ندي الهدف مساحة أنضف
     if timeframe == "5m":
         tp_move = max(tp_move, entry * 0.0105)
     elif timeframe == "15m":
@@ -840,7 +815,6 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     elif timeframe == "1h":
         tp_move = max(tp_move, entry * 0.018)
 
-    # ================= ANTI-TINY TARGETS =================
     if entry < 0.1:
         tp_move = max(tp_move, entry * 0.015)
         sl_move = max(sl_move, entry * 0.006)
@@ -854,7 +828,6 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
         tp_move = max(tp_move, entry * 0.007)
         sl_move = max(sl_move, entry * 0.0033)
 
-    # ================= FINAL LEVELS =================
     if direction == "LONG":
         tp = entry + tp_move
         sl = entry - sl_move
@@ -867,26 +840,15 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
 # ================= CONFIDENCE =================
 def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok=False, htf_ok=False):
-    """
-    Confidence واقعي:
-    - المتوسط يبقى 60~72
-    - القوي 73~82
-    - النادر جدًا 83~88
-    - بدون أرقام مبالغ فيها
-    """
-
     confidence = 52
 
-    # ================= SCORE CORE =================
     confidence += abs(score) * 2.2
 
-    # ================= VOLUME =================
     if volume == "STRONG":
         confidence += 5
     else:
         confidence -= 4
 
-    # ================= SMART MONEY =================
     if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
         confidence += 6
     elif smc == "RANGE":
@@ -894,13 +856,11 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
     else:
         confidence -= 2
 
-    # ================= TREND POWER =================
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         confidence += 6
     elif trend_power == "MIXED":
         confidence -= 7
 
-    # ================= STRUCTURE =================
     if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
         confidence += 5
     elif structure == "MID_RANGE":
@@ -908,13 +868,11 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
     elif structure == "UNKNOWN":
         confidence -= 3
 
-    # ================= MOMENTUM =================
     if momentum_ok:
         confidence += 5
     else:
         confidence -= 5
 
-    # ================= HTF =================
     if htf_ok:
         confidence += 6
     else:
@@ -922,7 +880,6 @@ def calculate_confidence(score, volume, smc, trend_power, structure, momentum_ok
 
     confidence = int(round(confidence))
 
-    # ================= HARD REALISTIC CAP =================
     if confidence >= 89:
         confidence = 88
 
@@ -951,7 +908,7 @@ def format_price(price):
             return round(price, 7)
         else:
             return round(price, 8)
-    except:
+    except Exception:
         return price
 
 
@@ -984,7 +941,6 @@ def signal_levels_valid(entry, tp, sl, direction):
         if reward <= 0 or risk <= 0:
             return False
 
-        # ===== Minimum distance حسب نوع العملة =====
         if entry < 0.1:
             min_reward = entry * 0.015
             min_risk = entry * 0.006
@@ -1009,7 +965,7 @@ def signal_levels_valid(entry, tp, sl, direction):
             return False
 
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -1022,7 +978,6 @@ def strong_signal_filter(df, trend, trend_power, direction):
         if is_choppy(df):
             return False
 
-        # منع عكس الترند القوي
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
 
@@ -1037,16 +992,13 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
         move = abs(last - prev) / prev
 
-        # لازم حركة محترمة
         if move < 0.003:
             return False
 
-        # لازم آخر 3 شموع مايبقوش ضعاف
         recent_range = (df["high"].tail(3) - df["low"].tail(3)).mean()
         if recent_range <= 0:
             return False
 
-        # ATR لازم يبقى محترم
         atr_val = atr(df).iloc[-1]
         if pd.isna(atr_val) or atr_val <= 0:
             return False
@@ -1056,14 +1008,16 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
         return True
 
-    except:
+    except Exception:
         return False
 
 
-# ================= GENERATE PAID SIGNAL =================
-def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
+# ================= INTERNAL SIGNAL BUILDER =================
+def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None):
+    from datetime import datetime, timezone
+
     df = get_market_data(symbol, interval)
-    if df is None or len(df) < 100:
+    if df is None or len(df) < (100 if is_paid else 60):
         return None
 
     if is_choppy(df):
@@ -1106,11 +1060,9 @@ def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
         structure
     )
 
-    # بدل ما نمنع الصفقة، نضعفها فقط
     if not news_ok:
         score -= 2
 
-    # صارم لكن عملي
     if score >= MIN_SCORE_TO_TRADE:
         direction = "LONG"
     elif score <= -MIN_SCORE_TO_TRADE:
@@ -1126,14 +1078,19 @@ def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
-    # منع العكس القوي جدًا فقط
-    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
-        return None
+    if is_paid:
+        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
+            return None
+        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
+            return None
+    else:
+        if not htf_ok and abs(score) < 6:
+            return None
+        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 6:
+            return None
+        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 6:
+            return None
 
-    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 2):
-        return None
-
-    # ================= NEW FILTERS =================
     if late_entry_filter(df, direction):
         return None
 
@@ -1146,21 +1103,28 @@ def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
     if not rejection_wick_filter(df, direction):
         return None
 
-    entry = df["close"].iloc[-1]
+    entry = float(df["close"].iloc[-1])
     tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
 
     if tp is None or sl is None:
         return None
 
-    # ===== Reject dead / tiny targets =====
+    tp = float(tp)
+    sl = float(sl)
+
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
 
-    if tp_distance < 0.0085:
-        return None
-
-    if sl_distance < 0.0035:
-        return None
+    if is_paid:
+        if tp_distance < 0.0085:
+            return None
+        if sl_distance < 0.0035:
+            return None
+    else:
+        if tp_distance < 0.0075:
+            return None
+        if sl_distance < 0.003:
+            return None
 
     momentum_ok = strong_momentum(df)
     confidence = calculate_confidence(
@@ -1173,13 +1137,10 @@ def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
 
-    # مدفوع = لازم يكون نضيف
-    min_paid_conf = 74 + (5 if not htf_ok else 0)
-
-    if confidence < min_paid_conf:
+    min_conf = (74 + (5 if not htf_ok else 0)) if is_paid else (66 + (5 if not htf_ok else 0))
+    if confidence < min_conf:
         return None
 
-    # ================= TRADE TYPE SMART DECISION =================
     if (
         direction == "LONG"
         and trend == "UP"
@@ -1192,218 +1153,79 @@ def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
     else:
         trade_type = "FUTURES"
 
+    # Ranking score أساسي قبل AI
+    ranking_score = abs(score) * 10
+
     signal = {
         "pair": symbol,
         "timeframe": interval,
         "type": trade_type,
         "direction": direction,
-        "entry": format_price(entry),
-        "tp": format_price(tp),
-        "sl": format_price(sl),
-        "confidence": confidence,
+        "entry": entry,
+        "tp": tp,
+        "sl": sl,
+        "confidence": float(confidence),
         "trend": trend,
         "volume": volume,
         "smc": smc,
         "trend_power": trend_power,
         "structure": structure,
-        "score": score
+        "score": float(score),
+        "ranking_score": float(ranking_score),
+        "signal_time": datetime.now(timezone.utc).isoformat()
     }
 
     try:
-        if not predict_trade(signal):
+        ai_result = predict_trade(signal)
+
+        if not ai_result.get("approved"):
             return None
+
+        # تحديث القيم من AI
+        signal["confidence"] = float(ai_result.get("confidence", signal["confidence"]))
+        signal["ai_score"] = float(ai_result.get("score", 0))
+        signal["ranking_score"] = float(ai_result.get("ranking_score", signal["ranking_score"]))
+
     except Exception as e:
-        print(f"AI model error in generate_signal {symbol} {interval}: {e}")
+        log(f"AI model error in _build_signal {symbol} {interval}: {e}")
         return None
 
     return signal
+
+
+# ================= GENERATE PAID SIGNAL =================
+def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
+    return _build_signal(symbol, interval, is_paid=True, prechecked_news_ok=prechecked_news_ok)
 
 
 # ================= GENERATE FREE SIGNAL =================
 def generate_free_signal(symbol, interval="5m", prechecked_news_ok=None):
-    df = get_market_data(symbol, interval)
-    if df is None or len(df) < 60:
-        return None
-
-    if is_choppy(df):
-        return None
-
-    if not strong_momentum(df):
-        return None
-
-    if not volatility_ok(df):
-        return None
-
-    df["rsi"] = rsi(df)
-    macd_line, signal_line = macd(df)
-    df["atr"] = atr(df)
-
-    trend = detect_trend(df)
-    trend_power = trend_strength(df)
-    volume = volume_strength(df)
-    smc = detect_smc(df)
-    structure = market_structure(df)
-
-    news_ok = prechecked_news_ok if prechecked_news_ok is not None else news_filter()
-
-    rsi_val = df["rsi"].iloc[-1]
-    macd_val = macd_line.iloc[-1]
-    signal_val = signal_line.iloc[-1]
-    atr_val = df["atr"].iloc[-1]
-
-    if pd.isna(rsi_val) or pd.isna(macd_val) or pd.isna(signal_val):
-        return None
-
-    score = ai_score(
-        rsi_val,
-        macd_val,
-        signal_val,
-        trend,
-        volume,
-        smc,
-        trend_power,
-        structure
-    )
-
-    if not news_ok:
-        score -= 2
-
-    if score >= 5:
-        direction = "LONG"
-    elif score <= -5:
-        direction = "SHORT"
-    else:
-        return None
-
-    if trend_power == "MIXED" and abs(score) < 7:
-        return None
-
-    if not strong_signal_filter(df, trend, trend_power, direction):
-        return None
-
-    htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-
-    if not htf_ok and abs(score) < 6:
-        return None
-
-    if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 6:
-        return None
-
-    if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 6:
-        return None
-
-    # ================= NEW FILTERS =================
-    if late_entry_filter(df, direction):
-        return None
-
-    if not support_resistance_filter(df, direction):
-        return None
-
-    if not pullback_entry_quality(df, direction):
-        return None
-
-    if not rejection_wick_filter(df, direction):
-        return None
-
-    entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
-
-    if tp is None or sl is None:
-        return None
-
-    tp_distance = abs(tp - entry) / entry
-    sl_distance = abs(sl - entry) / entry
-
-    if tp_distance < 0.0075:
-        return None
-
-    if sl_distance < 0.003:
-        return None
-
-    momentum_ok = strong_momentum(df)
-    confidence = calculate_confidence(
-        score, volume, smc, trend_power, structure, momentum_ok, htf_ok
-    )
-
-    if not news_ok:
-        confidence -= 4
-
-    if not signal_levels_valid(entry, tp, sl, direction):
-        return None
-
-    min_free_conf = 66 + (5 if not htf_ok else 0)
-
-    if confidence < min_free_conf:
-        return None
-
-    # ================= TRADE TYPE SMART DECISION =================
-    if (
-        direction == "LONG"
-        and trend == "UP"
-        and trend_power == "STRONG_BULL"
-        and htf_ok
-        and confidence >= 78
-        and structure in ["NEAR_BREAKOUT_HIGH", "MID_RANGE"]
-    ):
-        trade_type = "SPOT"
-    else:
-        trade_type = "FUTURES"
-
-    signal = {
-        "pair": symbol,
-        "timeframe": interval,
-        "type": trade_type,
-        "direction": direction,
-        "entry": format_price(entry),
-        "tp": format_price(tp),
-        "sl": format_price(sl),
-        "confidence": confidence,
-        "trend": trend,
-        "volume": volume,
-        "smc": smc,
-        "trend_power": trend_power,
-        "structure": structure,
-        "score": score
-    }
-
-    try:
-        if not predict_trade(signal):
-            return None
-    except Exception as e:
-        print(f"AI model error in generate_free_signal {symbol} {interval}: {e}")
-        return None
-
-    return signal
+    return _build_signal(symbol, interval, is_paid=False, prechecked_news_ok=prechecked_news_ok)
 
 
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     global LAST_USED_PAIRS, MARKET_DATA_CACHE
 
-    # تصفير الكاش مع كل دورة تحليل جديدة
-    # مانصفرش الكاش كله علشان نستفيد من الـ TTL
-    # تنظيف ذكي فقط للعناصر القديمة
     now = time.time()
     expired_keys = []
 
-    for k, v in MARKET_DATA_CACHE.items():
+    for k, v in list(MARKET_DATA_CACHE.items()):
         try:
             if isinstance(v, dict) and "time" in v:
                 if (now - v["time"]) > MARKET_CACHE_TTL_SECONDS:
                     expired_keys.append(k)
-        except:
+        except Exception:
             continue
 
     for k in expired_keys:
         MARKET_DATA_CACHE.pop(k, None)
 
     candidates = []
-    # نجيب حالة الأخبار مرة واحدة فقط للدورة كلها
     cycle_news_ok = news_filter()
 
-    print(f"Dynamic symbols loaded: {SYMBOLS}")
+    log(f"Dynamic symbols loaded: {SYMBOLS}")
 
-    # أولوية للأقوى سيولة
     priority_symbols = [
         "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
         "BNBUSDT", "AVAXUSDT", "LINKUSDT", "ADAUSDT", "APTUSDT"
@@ -1417,25 +1239,31 @@ def get_top_free_signals(limit=2):
                 signal = generate_free_signal(symbol, tf, prechecked_news_ok=cycle_news_ok)
                 if signal:
                     signal["ranking_score"] = (
-                        signal["confidence"]
-                        + abs(signal["score"] * 2)
-                        + (6 if signal["volume"] == "STRONG" else 0)
-                        + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
-                        + (5 if signal["timeframe"] == "15m" else 0)
-                        + (4 if signal["structure"] in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"] else 0)
-                        + (3 if signal["smc"] in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"] else 0)
+                       signal.get("ranking_score", 0)
+                       + signal["confidence"]
+                       + abs(signal["score"] * 2)
+                       + (6 if signal["volume"] == "STRONG" else 0)
+                       + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
+                       + (5 if signal["timeframe"] == "15m" else 0)
+                       + (4 if signal["structure"] in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"] else 0)
+                       + (3 if signal["smc"] in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"] else 0)
                     )
 
                     candidates.append(signal)
-                    print(
-                        f"✅ Candidate: {signal['pair']} {signal['timeframe']} "
+                    log(
+                        f"Candidate: {signal['pair']} {signal['timeframe']} "
+                        f"{signal['direction']} conf={signal['confidence']} score={signal['score']}"
+                    ) 
+
+                    candidates.append(signal)
+                    log(
+                        f"Candidate: {signal['pair']} {signal['timeframe']} "
                         f"{signal['direction']} conf={signal['confidence']} score={signal['score']}"
                     )
             except Exception as e:
-                print(f"Signal generation error for {symbol} {tf}: {e}")
+                log(f"Signal generation error for {symbol} {tf}: {e}")
                 continue
 
-    # ================= KEEP BEST SIGNAL ONLY PER PAIR =================
     best_per_pair = {}
 
     for s in candidates:
@@ -1446,14 +1274,13 @@ def get_top_free_signals(limit=2):
     candidates = list(best_per_pair.values())
 
     if not candidates:
-        print("Top signals selected: []")
+        log("Top signals selected: []")
         return []
 
     candidates = sorted(candidates, key=lambda x: x["ranking_score"], reverse=True)
 
     top_pool = candidates[:6] if len(candidates) >= 6 else candidates[:]
 
-    # تنويع بسيط بدون تدمير الجودة
     if len(top_pool) > 2:
         shuffled_tail = top_pool[1:]
         random.shuffle(shuffled_tail)
@@ -1465,7 +1292,6 @@ def get_top_free_signals(limit=2):
     best = []
     used_pairs = set()
 
-    # أول محاولة: استبعاد الأزواج المستخدمة مؤخرًا
     for s in candidates:
         if s["pair"] in LAST_USED_PAIRS:
             continue
@@ -1481,7 +1307,6 @@ def get_top_free_signals(limit=2):
         if len(best) >= limit:
             break
 
-    # لو ماكفوش، رجّع من الباقي عادي
     if len(best) < limit:
         for s in candidates:
             if s["pair"] not in used_pairs:
@@ -1491,5 +1316,5 @@ def get_top_free_signals(limit=2):
             if len(best) >= limit:
                 break
 
-    print(f"Top signals selected: {best}")
+    log(f"Top signals selected: {best}")
     return best
