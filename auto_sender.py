@@ -946,10 +946,12 @@ def get_monster_signals():
     المدفوع: نضيف paid 15m القوية
     """
     try:
-        signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
+        signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT)
+        log(f"🔥 RAW SIGNALS => {signals}")
 
-        # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
+        # لو السوق ضعيف جدًا، نحاول نجيب fallback paid
         if not signals:
+            log("❌ No signals from analyzer — using fallback")
             fallback_candidates = []
 
             try:
@@ -966,19 +968,72 @@ def get_monster_signals():
 
                 fallback_candidates = sorted(
                     fallback_candidates,
-                    key=lambda x: (x.get("confidence", 0), abs(x.get("score", 0))),
+                    key=lambda x: (
+                        float(x.get("confidence", 0)),
+                        float(x.get("ranking_score", 0)),
+                        abs(float(x.get("score", 0)))
+                    ),
                     reverse=True
                 )
 
                 if fallback_candidates:
-                    signals = fallback_candidates[:1]
+                    signals = fallback_candidates[:2]
+                    log(f"🔥 Fallback signals used: {signals}")
 
             except Exception as e:
                 log(f"Fallback paid signal error: {e}")
 
         final_signals = []
 
-        for s in signals:
+        # ===== تحديد حالة السوق =====
+        market_mode = "dead"
+        try:
+            strong_count = 0
+            for x in signals or []:
+                conf = float(x.get("confidence", 0))
+                score = float(x.get("score", 0))
+                rank = float(x.get("ranking_score", 0))
+                volume = str(x.get("volume", "")).upper()
+
+                if conf >= 82 and score >= 6 and rank >= 90 and volume in ["STRONG", "MEDIUM"]:
+                    strong_count += 1
+
+            if strong_count >= 3:
+                market_mode = "strong"
+            elif strong_count >= 1:
+                market_mode = "normal"
+            else:
+                market_mode = "dead"
+
+            log(f"📊 Market mode => {market_mode} | strong_candidates={strong_count}")
+
+        except Exception as e:
+            log(f"Market mode detection error: {e}")
+            market_mode = "normal"
+
+        # ===== شروط ديناميكية حسب السوق =====
+        if market_mode == "strong":
+            min_conf = 82
+            min_score = 6.5
+            min_rank = 95
+            min_rr = 1.8
+        elif market_mode == "normal":
+            min_conf = 80
+            min_score = 6
+            min_rank = 90
+            min_rr = 1.6
+        else:
+            min_conf = 77
+            min_score = 5.5
+            min_rank = 82
+            min_rr = 1.4
+
+        log(
+            f"🎯 Filter mode => conf>={min_conf}, score>={min_score}, "
+            f"rank>={min_rank}, rr>={min_rr}"
+        )
+
+        for s in signals or []:
             s = attach_signal_timestamp(s)
 
             if not valid_signal(s):
@@ -1022,7 +1077,7 @@ def get_monster_signals():
                 log(f"❌ Recent memory duplicate skipped: {s.get('pair')}")
                 continue
 
-            # 🔥 Premium smart filter
+            # ===== Smart premium filter =====
             try:
                 pair = s.get("pair")
                 direction = str(s.get("direction", "")).upper()
@@ -1047,24 +1102,24 @@ def get_monster_signals():
                     log(f"❌ Premium rejected {pair} => bad_direction")
                     continue
 
-                if confidence < 80:
+                if confidence < min_conf:
                     log(
                         f"❌ Premium rejected {pair} => low_confidence | "
-                        f"tf={timeframe} | conf={confidence}"
+                        f"tf={timeframe} | conf={confidence} | needed={min_conf}"
                     )
                     continue
 
-                if score < 6:
+                if score < min_score:
                     log(
                         f"❌ Premium rejected {pair} => low_score | "
-                        f"tf={timeframe} | score={score}"
+                        f"tf={timeframe} | score={score} | needed={min_score}"
                     )
                     continue
 
-                if ranking_score < 90:
+                if ranking_score < min_rank:
                     log(
                         f"❌ Premium rejected {pair} => low_ranking | "
-                        f"tf={timeframe} | rank={ranking_score}"
+                        f"tf={timeframe} | rank={ranking_score} | needed={min_rank}"
                     )
                     continue
 
@@ -1082,7 +1137,7 @@ def get_monster_signals():
                     )
                     continue
 
-                if trend_power == "WEAK":
+                if market_mode != "dead" and trend_power == "WEAK":
                     log(
                         f"❌ Premium rejected {pair} => weak_trend_power | "
                         f"tf={timeframe} | trend_power={trend_power}"
@@ -1133,26 +1188,32 @@ def get_monster_signals():
                     continue
 
                 rr = reward / risk
-                if rr < 1.6:
+                if rr < min_rr:
                     log(
                         f"❌ Premium rejected {pair} => low_rr:{round(rr, 2)} | "
-                        f"tf={timeframe} | entry={entry} | tp={tp} | sl={sl}"
+                        f"tf={timeframe} | needed={min_rr}"
                     )
                     continue
 
-                if timeframe == "5m" and confidence < 82:
-                    log(
-                        f"❌ Premium rejected {pair} => 5m_too_weak | "
-                        f"conf={confidence}"
-                    )
-                    continue
+                # فلترة إضافية حسب الفريم
+                if market_mode == "strong":
+                    if timeframe == "5m" and confidence < 83:
+                        log(f"❌ Premium rejected {pair} => strong_market_5m_too_weak")
+                        continue
+                    if timeframe == "15m" and confidence < 82:
+                        log(f"❌ Premium rejected {pair} => strong_market_15m_too_weak")
+                        continue
 
-                if timeframe == "15m" and confidence < 80:
-                    log(
-                        f"❌ Premium rejected {pair} => 15m_too_weak | "
-                        f"conf={confidence}"
-                    )
-                    continue
+                elif market_mode == "normal":
+                    if timeframe == "5m" and confidence < 81:
+                        log(f"❌ Premium rejected {pair} => normal_market_5m_too_weak")
+                        continue
+
+                else:
+                    # السوق ميت: نسمح شوية لكن مش أي هبل
+                    if timeframe == "5m" and confidence < 78:
+                        log(f"❌ Premium rejected {pair} => dead_market_5m_too_weak")
+                        continue
 
             except Exception as premium_e:
                 log(f"Premium filter error for {s.get('pair')}: {premium_e}")
@@ -1161,9 +1222,14 @@ def get_monster_signals():
             # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
-                    if float(s.get("confidence", 0)) < 75:
-                        log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
-                        continue
+                    if market_mode == "strong":
+                        if float(s.get("confidence", 0)) < 80:
+                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            continue
+                    else:
+                        if float(s.get("confidence", 0)) < 75:
+                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            continue
                 except:
                     continue
 
@@ -1175,7 +1241,8 @@ def get_monster_signals():
                 f"score={s.get('score')} | "
                 f"rank={s.get('ranking_score')} | "
                 f"volume={s.get('volume')} | "
-                f"trend={s.get('trend')}"
+                f"trend={s.get('trend')} | "
+                f"market_mode={market_mode}"
             )
 
             final_signals.append(s)
@@ -1185,38 +1252,18 @@ def get_monster_signals():
             final_signals,
             key=lambda x: (
                 float(x.get("confidence", 0)),
+                float(x.get("ranking_score", 0)),
                 abs(float(x.get("score", 0)))
             ),
             reverse=True
         )
 
-        return final_signals
+        log(f"🔥 FINAL SIGNALS => {final_signals[:3]}")
+        return final_signals[:3]
+
     except Exception as e:
         log(f"get_monster_signals error: {e}")
         return []
-    
-def should_notify_no_signal(chat_id):
-    try:
-        now = datetime.now()
-
-        if chat_id not in LAST_NO_SIGNAL_NOTIFY:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
-            return True
-
-        last_time = LAST_NO_SIGNAL_NOTIFY.get(chat_id)
-        if not last_time:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
-            return True
-
-        diff_minutes = (now - last_time).total_seconds() / 60
-
-        if diff_minutes >= NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
-            return True
-
-        return False
-    except:
-        return False
 
 
 def notify_users_no_signal(users):
