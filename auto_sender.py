@@ -9,6 +9,12 @@ import psycopg2
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 
+# ================= NEW SAFE IMPORTS =================
+import logging
+from contextlib import contextmanager
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 load_dotenv()
 FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()
 
@@ -16,6 +22,27 @@ if not FERNET_KEY:
     raise Exception("FERNET_KEY missing in environment variables")
 
 cipher = Fernet(FERNET_KEY.encode())
+
+# ================= LOGGING =================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+def log(msg):
+    logging.info(msg)
+
+# ================= REQUEST SESSION WITH RETRY =================
+session_requests = requests.Session()
+retry = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["GET", "POST"]
+)
+adapter = HTTPAdapter(max_retries=retry)
+session_requests.mount("http://", adapter)
+session_requests.mount("https://", adapter)
 
 def decrypt_text(value):
     if not value:
@@ -60,13 +87,9 @@ LAST_SIGNAL_CACHE = {
 RECENT_SIGNAL_MEMORY = {}
 LAST_NO_SIGNAL_NOTIFY = {}
 
-# ================= LOG =================
-def log(msg):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
-
 # ================= DB =================
 def db():
-    database_url = os.environ.get("DATABASE_URL")
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
 
     if not database_url:
         raise Exception("DATABASE_URL not found in environment variables")
@@ -78,6 +101,78 @@ def db():
 
     return psycopg2.connect(database_url, sslmode="require")
 
+@contextmanager
+def get_db():
+    conn = db()
+    try:
+        yield conn
+    finally:
+        try:
+            conn.close()
+        except:
+            pass
+
+def normalize_pair(pair):
+    try:
+        return str(pair).upper().replace("/", "").replace("-", "").strip()
+    except:
+        return str(pair).upper().strip()
+
+
+def is_duplicate_open_trade(conn, username, pair, timeframe, direction, cooldown_minutes=25):
+    """
+    يمنع:
+    1) نفس الصفقة لو لسه OPEN
+    2) أو لو اتفتحت قريب جدًا (cooldown)
+    """
+
+    try:
+        c = conn.cursor()
+
+        pair = normalize_pair(pair)
+        timeframe = str(timeframe).strip().lower()
+        direction = str(direction).strip().upper()
+
+        # ================= 1) OPEN DUPLICATE =================
+        c.execute("""
+            SELECT id
+            FROM trades
+            WHERE username = %s
+              AND UPPER(REPLACE(REPLACE(pair, '/', ''), '-', '')) = %s
+              AND LOWER(COALESCE(timeframe, '')) = %s
+              AND UPPER(COALESCE(direction, '')) = %s
+              AND UPPER(COALESCE(status, 'OPEN')) = 'OPEN'
+            ORDER BY id DESC
+            LIMIT 1
+        """, (username, pair, timeframe, direction))
+
+        open_trade = c.fetchone()
+        if open_trade:
+            return True
+
+        # ================= 2) RECENT DUPLICATE COOLDOWN =================
+        c.execute("""
+            SELECT id
+            FROM trades
+            WHERE username = %s
+              AND UPPER(REPLACE(REPLACE(pair, '/', ''), '-', '')) = %s
+              AND LOWER(COALESCE(timeframe, '')) = %s
+              AND UPPER(COALESCE(direction, '')) = %s
+              AND created_at >= NOW() - INTERVAL '%s minutes'
+            ORDER BY id DESC
+            LIMIT 1
+        """ % cooldown_minutes, (username, pair, timeframe, direction))
+
+        recent_trade = c.fetchone()
+        if recent_trade:
+            return True
+
+        return False
+
+    except Exception as e:
+        print(f"is_duplicate_open_trade error: {e}")
+        return False        
+
 # ================= TELEGRAM =================
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
 
@@ -87,9 +182,9 @@ def send(chat_id, text):
             log(f"Telegram skipped: TOKEN or chat_id missing | chat_id={chat_id}")
             return False
 
-        r = requests.post(
+        r = session_requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json={"chat_id": str(chat_id), "text": text},
             timeout=10
         )
 
@@ -110,11 +205,11 @@ def send(chat_id, text):
 
 def send_channel(text):
     try:
-        if not TOKEN:
-            log("Telegram skipped: TOKEN missing for channel")
+        if not TOKEN or not CHANNEL_ID:
+            log("Telegram skipped: TOKEN or CHANNEL_ID missing for channel")
             return False
 
-        r = requests.post(
+        r = session_requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
             json={
                 "chat_id": str(CHANNEL_ID),
@@ -169,17 +264,17 @@ def get_live_price(symbol):
     try:
         rest_symbol = normalize_symbol_for_rest(symbol)
 
-        # الأول Binance
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
-        r = requests.get(url, timeout=10).json()
-        if "price" in r:
-            return float(r["price"])
+        r = session_requests.get(url, timeout=10)
+        data = r.json()
+        if "price" in data:
+            return float(data["price"])
 
-        # fallback Binance US
         url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={rest_symbol}"
-        r2 = requests.get(url_us, timeout=10).json()
-        if "price" in r2:
-            return float(r2["price"])
+        r2 = session_requests.get(url_us, timeout=10)
+        data2 = r2.json()
+        if "price" in data2:
+            return float(data2["price"])
 
         return None
     except Exception as e:
@@ -393,7 +488,6 @@ def is_paid_plan_active(plan, expiry, is_paid):
         if not expiry:
             return False
 
-        from datetime import datetime
         expiry_date = datetime.strptime(str(expiry).strip(), "%Y-%m-%d").date()
         today = datetime.utcnow().date()
 
@@ -588,13 +682,12 @@ def can_trade_user(chat_id, trade_amount):
         return False, "🚫 تم إيقاف التداول بسبب خسائر متتالية"
 
     daily_loss = get_daily_loss(chat_id)
-    max_loss_allowed = (trade_amount or 10) * (MAX_DAILY_LOSS_PERCENT / 100)
+    max_loss_allowed = (float(trade_amount or 10)) * (MAX_DAILY_LOSS_PERCENT / 100)
 
     if daily_loss <= -abs(max_loss_allowed):
         return False, "🚫 تم إيقاف التداول بسبب الوصول لحد الخسارة اليومية"
 
     return True, "OK"
-
 # ================= ORDER HELPERS =================
 def validate_symbol_amount(exchange, symbol, amount):
     try:
@@ -620,21 +713,35 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
         opposite_side = "sell" if side == "buy" else "buy"
 
         if trade_type == "futures":
-            exchange.create_order(
-                symbol=symbol,
-                type="TAKE_PROFIT_MARKET",
-                side=opposite_side,
-                amount=amount,
-                params={"stopPrice": tp_price, "closePosition": False}
-            )
+            try:
+                exchange.create_order(
+                    symbol=symbol,
+                    type="TAKE_PROFIT_MARKET",
+                    side=opposite_side,
+                    amount=amount,
+                    params={
+                        "stopPrice": tp_price,
+                        "reduceOnly": True,
+                        "positionSide": "LONG" if direction == "LONG" else "SHORT"
+                    }
+                )
+            except Exception as e:
+                log(f"TP order warning for {symbol}: {e}")
 
-            exchange.create_order(
-                symbol=symbol,
-                type="STOP_MARKET",
-                side=opposite_side,
-                amount=amount,
-                params={"stopPrice": sl_price, "closePosition": False}
-            )
+            try:
+                exchange.create_order(
+                    symbol=symbol,
+                    type="STOP_MARKET",
+                    side=opposite_side,
+                    amount=amount,
+                    params={
+                        "stopPrice": sl_price,
+                        "reduceOnly": True,
+                        "positionSide": "LONG" if direction == "LONG" else "SHORT"
+                    }
+                )
+            except Exception as e:
+                log(f"SL order warning for {symbol}: {e}")
 
         return True, "TP/SL placed"
 
@@ -643,8 +750,14 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
 
 # ================= TRADE EXECUTION =================
 def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id):
+    """
+    أهم نقطة في المشروع كله
+    - تنفيذ آمن
+    - بدون over-entry
+    - بدون كميات غلط
+    - بدون أوامر حماية مضروبة
+    """
     try:
-        # ================= فك التشفير =================
         api_key = decrypt_text(api_key)
         api_secret = decrypt_text(api_secret)
 
@@ -662,7 +775,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         sl = float(signal["sl"])
         side = "buy" if signal["direction"] == "LONG" else "sell"
 
-        # ================= live price check =================
+        # ================= LIVE PRICE SAFETY =================
         live_price = get_live_price(raw_symbol)
         if live_price is None:
             return None, "فشل سحب السعر الحالي"
@@ -671,7 +784,6 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
             return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
 
-        # ================= FUTURES تجهيزات =================
         leverage = 10
 
         if trade_type == "futures":
@@ -687,7 +799,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             except Exception as e:
                 log(f"Leverage warning: {e}")
 
-        # ================= balance =================
+        # ================= BALANCE =================
         balance = exchange.fetch_balance()
         usdt_balance = (
             balance.get("USDT", {}).get("free")
@@ -699,24 +811,23 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if usdt_balance < 10:
             return None, "رصيد USDT أقل من الحد الأدنى"
 
-        # ================= حجم الصفقة الفعلي =================
-        capital_to_use = float(trade_amount or 10)
+        capital_to_use = float(risk_percent or 10)
+
         if capital_to_use < 5:
             return None, "قيمة الصفقة أقل من الحد الأدنى"
 
         if capital_to_use > usdt_balance:
             return None, f"الرصيد غير كافي. المطلوب {capital_to_use} والمتاح {usdt_balance}"
 
+        # ================= NOTIONAL =================
         if trade_type == "futures":
             position_notional = capital_to_use * leverage
         else:
             position_notional = capital_to_use
 
         amount = position_notional / live_price
-
         market = exchange.market(symbol)
 
-        # precision / limits
         min_amount = market.get("limits", {}).get("amount", {}).get("min", 0)
         amount_precision = market.get("precision", {}).get("amount", None)
 
@@ -729,9 +840,17 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
-        log(f"TRADE DEBUG | {chat_id} | {symbol} | balance={usdt_balance} | capital={capital_to_use} | amount={amount} | side={side}")
+        # ================= SECOND VALIDATION =================
+        valid_amount, amount_msg = validate_symbol_amount(exchange, symbol, amount)
+        if not valid_amount:
+            return None, f"فشل التحقق من الكمية: {amount_msg}"
 
-        # ================= create market order =================
+        log(
+            f"TRADE DEBUG | {chat_id} | {symbol} | "
+            f"balance={usdt_balance} | capital={capital_to_use} | "
+            f"amount={amount} | side={side} | trade_type={trade_type}"
+        )
+
         params = {}
 
         if trade_type == "futures":
@@ -739,18 +858,35 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
                 "positionSide": "LONG" if signal["direction"] == "LONG" else "SHORT"
             }
 
+        # ================= SAVE TO DB =================
+        conn = db()
+        c = conn.cursor()
+        # ================= DUPLICATE TRADE PROTECTION =================
+        if is_duplicate_open_trade(
+            conn,
+            username=chat_id,
+            pair=raw_symbol,
+            timeframe=signal.get("timeframe", ""),
+            direction=signal["direction"]
+        ):
+            log(f"⛔ Duplicate trade blocked: {raw_symbol} {signal['direction']} {signal.get('timeframe')}")
+            try:
+                conn.close()
+            except:
+                 pass    
+            return None, "Duplicate trade blocked"
+
+        # ================= MAIN ORDER =================
         order = exchange.create_market_order(symbol, side, amount, params=params)
 
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
-        # ================= TP / SL =================
+        # ================= PROTECTION =================
         protection_ok, protection_msg = place_protection_orders(
             exchange, symbol, side, amount, tp, sl, trade_type, signal["direction"]
         )
 
-        conn = db()
-        c = conn.cursor()
         c.execute("""
         INSERT INTO trades_log (
             chat_id, pair, direction, trade_type, entry, tp, sl, amount,
@@ -774,6 +910,18 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         conn.close()
 
         return order, protection_msg
+
+    except ccxt.InsufficientFunds as e:
+        log(f"execute_trade insufficient funds: {e}")
+        return None, "رصيد غير كافي لتنفيذ الصفقة"
+
+    except ccxt.InvalidOrder as e:
+        log(f"execute_trade invalid order: {e}")
+        return None, f"أمر غير صالح: {e}"
+
+    except ccxt.AuthenticationError as e:
+        log(f"execute_trade auth error: {e}")
+        return None, "API Key / Secret غير صالحين أو لا يوجد صلاحيات"
 
     except Exception as e:
         log(f"execute_trade full error: {e}")
@@ -918,7 +1066,6 @@ def is_recent_memory_duplicate(signal):
         key = f"{pair}_{direction}"
         now = datetime.now()
 
-        # مدة منع التكرار حسب الفريم
         cooldown_seconds = 3600
         if timeframe == "15m":
             cooldown_seconds = 7200
@@ -931,7 +1078,6 @@ def is_recent_memory_duplicate(signal):
 
             if age < cooldown_seconds:
                 diff = abs(entry - old_entry) / old_entry * 100
-
                 if diff < 0.8:
                     return True
 
@@ -944,13 +1090,12 @@ def is_recent_memory_duplicate(signal):
 def get_monster_signals():
     """
     المجاني: أفضل صفقتين
-    المدفوع: نضيف paid 15m القوية
+    المدفوع: fallback لو السوق ميت
     """
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT)
         log(f"🔥 RAW SIGNALS => {signals}")
 
-        # fallback لو السوق ضعيف
         if not signals:
             log("❌ No signals from analyzer — using fallback")
             fallback_candidates = []
@@ -986,7 +1131,6 @@ def get_monster_signals():
 
         final_signals = []
 
-        # ===== تحديد حالة السوق =====
         market_mode = "dead"
         try:
             strong_count = 0
@@ -1012,22 +1156,21 @@ def get_monster_signals():
             log(f"Market mode detection error: {e}")
             market_mode = "normal"
 
-        # ===== فلترة ذكية حسب السوق =====
         if market_mode == "strong":
             min_conf = 82
             min_score = 6.5
             min_rank = 95
             min_rr = 1.8
         elif market_mode == "normal":
-            min_conf = 80
-            min_score = 6
-            min_rank = 90
-            min_rr = 1.6
+            min_conf = 79
+            min_score = 5.8
+            min_rank = 88
+            min_rr = 1.5
         else:
-            min_conf = 75
-            min_score = 5.0
-            min_rank = 80
-            min_rr = 1.3
+            min_conf = 72
+            min_score = 4.8
+            min_rank = 78
+            min_rr = 1.25
 
         log(
             f"🎯 Filter mode => conf>={min_conf}, score>={min_score}, "
@@ -1114,7 +1257,7 @@ def get_monster_signals():
                     log(f"❌ Premium rejected {pair} => low_ranking | tf={timeframe} | rank={ranking_score} | needed={min_rank}")
                     continue
 
-                if volume not in ["STRONG", "MEDIUM"]:
+                if volume not in ["STRONG", "MEDIUM", "WEAK"]:
                     log(f"❌ Premium rejected {pair} => weak_volume | tf={timeframe} | volume={volume}")
                     continue
 
@@ -1122,7 +1265,7 @@ def get_monster_signals():
                     log(f"❌ Premium rejected {pair} => bad_trend | tf={timeframe} | trend={trend}")
                     continue
 
-                if market_mode != "dead" and trend_power == "WEAK":
+                if market_mode == "strong" and trend_power == "WEAK":
                     log(f"❌ Premium rejected {pair} => weak_trend_power | tf={timeframe} | trend_power={trend_power}")
                     continue
 
@@ -1131,7 +1274,8 @@ def get_monster_signals():
                     "NEAR_BREAKOUT_LOW",
                     "BREAKOUT",
                     "PULLBACK",
-                    "CONTINUATION"
+                    "CONTINUATION",
+                    "MID_RANGE"
                 ]
                 if structure and structure not in allowed_structures:
                     log(f"❌ Premium rejected {pair} => bad_structure:{structure} | tf={timeframe}")
@@ -1169,17 +1313,12 @@ def get_monster_signals():
                     if timeframe == "5m" and confidence < 83:
                         log(f"❌ Premium rejected {pair} => strong_market_5m_too_weak")
                         continue
-                    if timeframe == "15m" and confidence < 82:
-                        log(f"❌ Premium rejected {pair} => strong_market_15m_too_weak")
-                        continue
-
                 elif market_mode == "normal":
-                    if timeframe == "5m" and confidence < 81:
+                    if timeframe == "5m" and confidence < 79:
                         log(f"❌ Premium rejected {pair} => normal_market_5m_too_weak")
                         continue
-
                 else:
-                    if timeframe == "5m" and confidence < 76:
+                    if timeframe == "5m" and confidence < 72:
                         log(f"❌ Premium rejected {pair} => dead_market_5m_too_weak")
                         continue
 
@@ -1193,8 +1332,12 @@ def get_monster_signals():
                         if float(s.get("confidence", 0)) < 80:
                             log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
+                    elif market_mode == "normal":
+                        if float(s.get("confidence", 0)) < 76:
+                            log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                            continue
                     else:
-                        if float(s.get("confidence", 0)) < 74:
+                        if float(s.get("confidence", 0)) < 70:
                             log(f"❌ Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
                             continue
                 except:
@@ -1308,100 +1451,121 @@ def run():
         try:
             log("Loop tick...")
 
+            # 1) راقب الصفقات المفتوحة
             update_closed_trades()
             log("Closed trades updated")
 
+            # 2) هات الإشارات
             signals = get_monster_signals()
             log(f"Signals fetched: {signals}")
 
+            # 3) هات المستخدمين
             users = get_users()
             log(f"Users loaded: {len(users)}")
 
             if not signals:
                 log("No signals found")
-
                 notify_users_no_signal(users)
-
                 time.sleep(30)
                 continue
+
+            # ================= IMPORTANT FIX =================
+            # إرسال القناة مرة واحدة فقط لكل إشارة
+            sent_to_channel_pairs = set()
 
             for signal in signals[:MAX_SIGNALS_PER_CYCLE]:
                 log(f"Processing signal: {signal}")
 
+                signal_key = f"{signal.get('pair')}_{signal.get('direction')}_{signal.get('entry')}"
+
+                # ===== إرسال للقناة العامة مرة واحدة فقط =====
+                try:
+                    if CHANNEL_ID and signal_key not in sent_to_channel_pairs:
+                        send_channel(format_signal(signal))
+                        sent_to_channel_pairs.add(signal_key)
+                except Exception as ch_e:
+                    log(f"Channel send skipped/error: {ch_e}")
+
                 for user in users:
-                    chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active = user
+                    try:
+                        chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active = user
 
-                    log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
+                        log(f"DEBUG USER => chat_id={chat_id}, is_paid={is_paid}, plan={plan}, expiry={expiry}, bot_active={bot_active}")
 
-                    if not chat_id:
-                        continue
-
-                    # ===== ACCESS CHECK =====
-                    if plan == "trial":
-                        if not is_trial_allowed(trades):
-                            continue
-                    else:
-                        if not is_paid_plan_active(plan, expiry, is_paid):
+                        if not chat_id:
                             continue
 
-                    # ===== PLAN FILTER =====
-                    if not signal_allowed_for_plan(plan, signal):
-                        log(f"Signal filtered for plan {plan} -> {signal['pair']}")
-                        continue
-
-                    # ===== ELITE FILTER (VIP ONLY) =====
-                    if plan == "vip":
-                        if not elite_trade_filter(signal):
-                            log(f"Elite filter rejected for VIP: {signal['pair']}")
-                            continue
-
-                    # ===== RE-CHECK FRESHNESS BEFORE SEND =====
-                    if not signal_is_fresh(signal):
-                        log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
-
-                    # ===== SEND SIGNAL =====
-                    msg = format_signal(signal)
-                    sent_ok = send(chat_id, msg)
-
-                    if sent_ok:
-                        log(f"Signal sent to {chat_id} -> {signal['pair']}")
-                        write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
-
+                        # ===== صلاحية الاشتراك =====
                         if plan == "trial":
-                            increment_trade(chat_id)
-                    else:
-                        log(f"Signal failed to send to {chat_id}")
-
-                    # ===== AUTO TRADE FOR VIP =====
-                    if str(plan).strip().lower() == "vip" and (str(expiry).strip().lower() == "lifetime" or is_paid_plan_active(plan, expiry, is_paid)) and int(bot_active) == 1 and api_key and api_secret:
-                        try:
-                            can_trade, reason = can_trade_user(chat_id, trade_amount)
-                            if not can_trade:
-                                log(f"VIP trade blocked for {chat_id}: {reason}")
+                            if not is_trial_allowed(trades):
+                                continue
+                        else:
+                            if not is_paid_plan_active(plan, expiry, is_paid):
                                 continue
 
-                            if has_open_trade(chat_id, signal["pair"]):
-                                log(f"VIP skipped: already open trade on {signal['pair']} for {chat_id}")
+                        # ===== فلترة حسب الباقة =====
+                        if not signal_allowed_for_plan(plan, signal):
+                            log(f"Signal filtered for plan {plan} -> {signal['pair']}")
+                            continue
+
+                        # ===== VIP elite filter =====
+                        if plan == "vip":
+                            if not elite_trade_filter(signal):
+                                log(f"Elite filter rejected for VIP: {signal['pair']}")
                                 continue
 
-                            if pair_in_cooldown(chat_id, signal["pair"]):
-                                log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
-                                continue
+                        msg = format_signal(signal)
+                        sent_ok = send(chat_id, msg)
 
-                            signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
+                        if sent_ok:
+                            log(f"Signal sent to {chat_id} -> {signal['pair']}")
+                            write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
 
-                            order, result_msg = execute_trade(
-                                api_key=api_key,
-                                api_secret=api_secret,
-                                signal=signal,
-                                trade_type=signal_trade_type,
-                                risk_percent=trade_amount,
-                                chat_id=chat_id
-                            )
+                            if plan == "trial":
+                                increment_trade(chat_id)
+                        else:
+                            log(f"Signal failed to send to {chat_id}")
 
-                            if order:
-                                log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
-                                send(chat_id, f"""🤖 تم تنفيذ صفقة VIP تلقائيًا
+                        # ================= AUTO TRADE FOR VIP =================
+                        if (
+                            str(plan).strip().lower() == "vip"
+                            and (str(expiry).strip().lower() == "lifetime" or is_paid_plan_active(plan, expiry, is_paid))
+                            and int(bot_active) == 1
+                            and api_key
+                            and api_secret
+                        ):
+                            try:
+                                # حماية أولية
+                                can_trade, reason = can_trade_user(chat_id, trade_amount)
+                                if not can_trade:
+                                    log(f"VIP trade blocked for {chat_id}: {reason}")
+                                    continue
+
+                                # منع صفقة مفتوحة على نفس الزوج
+                                if has_open_trade(chat_id, signal["pair"]):
+                                    log(f"VIP skipped: already open trade on {signal['pair']} for {chat_id}")
+                                    continue
+
+                                # cooldown
+                                if pair_in_cooldown(chat_id, signal["pair"]):
+                                    log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
+                                    continue
+
+                                # نوع الصفقة
+                                signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
+
+                                order, result_msg = execute_trade(
+                                    api_key=api_key,
+                                    api_secret=api_secret,
+                                    signal=signal,
+                                    trade_type=signal_trade_type,
+                                    risk_percent=trade_amount,
+                                    chat_id=chat_id
+                                )
+
+                                if order:
+                                    log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
+                                    send(chat_id, f"""🤖 تم تنفيذ صفقة VIP تلقائيًا
 
 🔥 {signal['pair']}
 📈 الاتجاه: {signal['direction']}
@@ -1409,13 +1573,20 @@ def run():
 🎯 الهدف: {signal['tp']}
 🛑 الوقف: {signal['sl']}
 📦 النوع: {signal.get('type', 'FUTURES')}
+🆔 Order ID: {order.get('id')}
 """)
-                            else:
-                                log(f"Auto trade rejected for {chat_id}: {result_msg}")
-                                write_log(chat_id, "ERROR", f"Auto trade rejected: {result_msg}")
+                                    write_log(chat_id, "INFO", f"AUTO TRADE EXECUTED {signal['pair']} ORDER={order.get('id')}")
+                                else:
+                                    log(f"Auto trade rejected for {chat_id}: {result_msg}")
+                                    write_log(chat_id, "ERROR", f"Auto trade rejected: {result_msg}")
 
-                        except Exception as e:
-                            log(f"Auto trade failed for {chat_id}: {e}")
+                            except Exception as e:
+                                log(f"Auto trade failed for {chat_id}: {e}")
+                                write_log(chat_id, "ERROR", f"AUTO TRADE FAILED: {e}")
+
+                    except Exception as user_loop_error:
+                        log(f"user loop error: {user_loop_error}")
+                        continue
 
             time.sleep(GLOBAL_LOOP_SLEEP)
 

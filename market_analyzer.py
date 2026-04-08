@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import numpy as np
 import random
+import time
 from ai_model import predict_trade
 
 # ================= SETTINGS =================
@@ -16,6 +17,9 @@ SYMBOLS = [
     "AXSUSDT", "SANDUSDT", "MANAUSDT", "GALAUSDT", "APEUSDT"
 ]
 
+# إزالة التكرارات تلقائيًا
+SYMBOLS = list(dict.fromkeys(SYMBOLS))
+
 TIMEFRAMES = ["5m", "15m", "1h"]
 
 REQUEST_TIMEOUT = 12
@@ -24,6 +28,19 @@ MIN_CONFIDENCE = 70
 
 # منع تكرار نفس الأزواج دايمًا
 LAST_USED_PAIRS = []
+
+# كاش لتسريع سحب الداتا ومنع الضغط على الـ API
+MARKET_DATA_CACHE = {}
+
+# ================= NEW: CACHE TTL =================
+MARKET_CACHE_TTL_SECONDS = 70
+
+# ================= NEW: NEWS CACHE =================
+NEWS_CACHE = {
+    "value": True,
+    "time": 0
+}
+NEWS_CACHE_TTL_SECONDS = 300
 
 
 # ================= MARKET DATA HELPERS =================
@@ -122,6 +139,28 @@ def get_market_data(symbol, interval="5m", limit=250):
     3) KuCoin
     """
 
+    global MARKET_DATA_CACHE
+
+    cache_key = f"{symbol}_{interval}_{limit}"
+
+    # ================= NEW: SAFE CACHE TTL =================
+    if cache_key in MARKET_DATA_CACHE:
+        try:
+            cached = MARKET_DATA_CACHE[cache_key]
+
+            if isinstance(cached, dict) and "data" in cached and "time" in cached:
+                cache_age = time.time() - cached["time"]
+                if cache_age <= MARKET_CACHE_TTL_SECONDS:
+                    return cached["data"].copy()
+            else:
+                # fallback for old cache format if exists
+                return cached.copy()
+        except:
+            try:
+                return MARKET_DATA_CACHE[cache_key]
+            except:
+                pass
+
     KUCOIN_TF_MAP = {
         "1m": "1min",
         "3m": "3min",
@@ -169,7 +208,11 @@ def get_market_data(symbol, interval="5m", limit=250):
 
             df = parse_binance_klines_to_df(data)
             if df is not None and not df.empty:
-                return df
+                MARKET_DATA_CACHE[cache_key] = {
+                    "data": df.copy(),
+                    "time": time.time()
+                }
+                return df.copy()
 
             print(f"❌ {source_name} no kline data for {symbol} {interval}")
 
@@ -203,24 +246,13 @@ def get_market_data(symbol, interval="5m", limit=250):
             print(f"❌ KUCOIN no candles for {symbol} {interval}")
             return None
 
-        # KuCoin بيرجع الشموع بالعكس، نقلبها
-        candles = candles[::-1]
-
-        import pandas as pd
-
-        df = pd.DataFrame(candles, columns=[
-            "time", "open", "close", "high", "low", "volume", "turnover"
-        ])
-
-        df["time"] = pd.to_datetime(df["time"].astype(int), unit="s")
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        df = df[["time", "open", "high", "low", "close", "volume"]]
-        df.dropna(inplace=True)
-
+        df = parse_kucoin_klines_to_df(candles)
         if df is not None and not df.empty:
-            return df
+            MARKET_DATA_CACHE[cache_key] = {
+                "data": df.copy(),
+                "time": time.time()
+            }
+            return df.copy()
 
         print(f"❌ KUCOIN parsed empty df for {symbol} {interval}")
         return None
@@ -484,11 +516,11 @@ def pullback_entry_quality(df, direction):
         dist_ema20 = abs(close - ema20v) / close
         dist_ema50 = abs(close - ema50v) / close
 
-        # لازم يكون قريب من منطقة ارتداد من غير chase
-        if dist_ema20 > 0.013:
+        # تخفيف بسيط علشان مانخنقش الإشارات
+        if dist_ema20 > 0.016:
             return False
 
-        if dist_ema50 > 0.022:
+        if dist_ema50 > 0.028:
             return False
 
         closes = df["close"].tail(5).tolist()
@@ -511,11 +543,11 @@ def pullback_entry_quality(df, direction):
         last_high = float(df["high"].iloc[-1])
 
         if direction == "LONG":
-            if last_low > ema20v * 1.012:
+            if last_low > ema20v * 1.014:
                 return False
 
         if direction == "SHORT":
-            if last_high < ema20v * 0.988:
+            if last_high < ema20v * 0.986:
                 return False
 
         return True
@@ -610,11 +642,19 @@ def volatility_ok(df):
 
 # ================= NEWS FILTER =================
 def news_filter():
+    global NEWS_CACHE
+
     try:
+        now = time.time()
+
+        # ================= NEW: USE CACHE =================
+        if (now - NEWS_CACHE["time"]) <= NEWS_CACHE_TTL_SECONDS:
+            return NEWS_CACHE["value"]
+
         url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
         data = requests.get(url, timeout=REQUEST_TIMEOUT).json()
 
-        titles = [x["title"].lower() for x in data.get("Data", [])[:6]]
+        titles = [x["title"].lower() for x in data.get("Data", [])[:8]]
         danger = [
             "crash", "hack", "ban", "sec", "regulation",
             "lawsuit", "exploit", "liquidation", "collapse"
@@ -626,7 +666,13 @@ def news_filter():
                 if k in t:
                     hits += 1
 
-        return hits < 4
+        result = hits < 4
+
+        NEWS_CACHE["value"] = result
+        NEWS_CACHE["time"] = now
+
+        # بدل ما نمنع السوق تمامًا، نرجع حالة فقط
+        return result
     except:
         return True
 
@@ -635,13 +681,15 @@ def news_filter():
 def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, structure):
     score = 0
 
-    # RSI
+    # RSI (أعدل بين LONG و SHORT)
     if rsi_val < 32:
         score += 2
     elif rsi_val > 68:
         score -= 2
-    elif 45 <= rsi_val <= 58:
+    elif 52 <= rsi_val <= 62:
         score += 1
+    elif 38 <= rsi_val <= 48:
+        score -= 1
 
     # MACD
     if macd_val > signal_val:
@@ -780,18 +828,17 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
     sl_move = max(atr_based_sl, entry * min_sl_percent)
 
     # ================= RR ENFORCEMENT =================
-    # ================= RR ENFORCEMENT =================
     min_rr_tp = sl_move * 2.25
     tp_move = max(tp_move, min_rr_tp)
 
-# ================= EXTRA EARLY ENTRY BOOST =================
-# بما إننا دخلنا أبكر شوية، ندي الهدف مساحة أنضف
+    # ================= EXTRA EARLY ENTRY BOOST =================
+    # بما إننا دخلنا أبكر شوية، ندي الهدف مساحة أنضف
     if timeframe == "5m":
-     tp_move = max(tp_move, entry * 0.0105)
+        tp_move = max(tp_move, entry * 0.0105)
     elif timeframe == "15m":
-     tp_move = max(tp_move, entry * 0.0135)
+        tp_move = max(tp_move, entry * 0.0135)
     elif timeframe == "1h":
-     tp_move = max(tp_move, entry * 0.018)
+        tp_move = max(tp_move, entry * 0.018)
 
     # ================= ANTI-TINY TARGETS =================
     if entry < 0.1:
@@ -975,10 +1022,6 @@ def strong_signal_filter(df, trend, trend_power, direction):
         if is_choppy(df):
             return False
 
-        # منع السوق المكسّر
-        if trend_power == "MIXED":
-            return False
-
         # منع عكس الترند القوي
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False
@@ -1018,7 +1061,7 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
 
 # ================= GENERATE PAID SIGNAL =================
-def generate_signal(symbol, interval="5m"):
+def generate_signal(symbol, interval="5m", prechecked_news_ok=None):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 100:
         return None
@@ -1042,7 +1085,7 @@ def generate_signal(symbol, interval="5m"):
     smc = detect_smc(df)
     structure = market_structure(df)
 
-    news_ok = news_filter()
+    news_ok = prechecked_news_ok if prechecked_news_ok is not None else news_filter()
 
     rsi_val = df["rsi"].iloc[-1]
     macd_val = macd_line.iloc[-1]
@@ -1063,8 +1106,9 @@ def generate_signal(symbol, interval="5m"):
         structure
     )
 
+    # بدل ما نمنع الصفقة، نضعفها فقط
     if not news_ok:
-        return None
+        score -= 2
 
     # صارم لكن عملي
     if score >= MIN_SCORE_TO_TRADE:
@@ -1072,6 +1116,9 @@ def generate_signal(symbol, interval="5m"):
     elif score <= -MIN_SCORE_TO_TRADE:
         direction = "SHORT"
     else:
+        return None
+
+    if trend_power == "MIXED" and abs(score) < 7:
         return None
 
     if not strong_signal_filter(df, trend, trend_power, direction):
@@ -1119,6 +1166,9 @@ def generate_signal(symbol, interval="5m"):
     confidence = calculate_confidence(
         score, volume, smc, trend_power, structure, momentum_ok, htf_ok
     )
+
+    if not news_ok:
+        confidence -= 4
 
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
@@ -1170,7 +1220,7 @@ def generate_signal(symbol, interval="5m"):
 
 
 # ================= GENERATE FREE SIGNAL =================
-def generate_free_signal(symbol, interval="5m"):
+def generate_free_signal(symbol, interval="5m", prechecked_news_ok=None):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 60:
         return None
@@ -1194,6 +1244,8 @@ def generate_free_signal(symbol, interval="5m"):
     smc = detect_smc(df)
     structure = market_structure(df)
 
+    news_ok = prechecked_news_ok if prechecked_news_ok is not None else news_filter()
+
     rsi_val = df["rsi"].iloc[-1]
     macd_val = macd_line.iloc[-1]
     signal_val = signal_line.iloc[-1]
@@ -1213,11 +1265,17 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
+    if not news_ok:
+        score -= 2
+
     if score >= 5:
         direction = "LONG"
     elif score <= -5:
         direction = "SHORT"
     else:
+        return None
+
+    if trend_power == "MIXED" and abs(score) < 7:
         return None
 
     if not strong_signal_filter(df, trend, trend_power, direction):
@@ -1266,6 +1324,9 @@ def generate_free_signal(symbol, interval="5m"):
     confidence = calculate_confidence(
         score, volume, smc, trend_power, structure, momentum_ok, htf_ok
     )
+
+    if not news_ok:
+        confidence -= 4
 
     if not signal_levels_valid(entry, tp, sl, direction):
         return None
@@ -1317,16 +1378,43 @@ def generate_free_signal(symbol, interval="5m"):
 
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
-    global LAST_USED_PAIRS
+    global LAST_USED_PAIRS, MARKET_DATA_CACHE
+
+    # تصفير الكاش مع كل دورة تحليل جديدة
+    # مانصفرش الكاش كله علشان نستفيد من الـ TTL
+    # تنظيف ذكي فقط للعناصر القديمة
+    now = time.time()
+    expired_keys = []
+
+    for k, v in MARKET_DATA_CACHE.items():
+        try:
+            if isinstance(v, dict) and "time" in v:
+                if (now - v["time"]) > MARKET_CACHE_TTL_SECONDS:
+                    expired_keys.append(k)
+        except:
+            continue
+
+    for k in expired_keys:
+        MARKET_DATA_CACHE.pop(k, None)
 
     candidates = []
+    # نجيب حالة الأخبار مرة واحدة فقط للدورة كلها
+    cycle_news_ok = news_filter()
 
     print(f"Dynamic symbols loaded: {SYMBOLS}")
 
-    for symbol in SYMBOLS:
+    # أولوية للأقوى سيولة
+    priority_symbols = [
+        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT",
+        "BNBUSDT", "AVAXUSDT", "LINKUSDT", "ADAUSDT", "APTUSDT"
+    ]
+
+    sorted_symbols = priority_symbols + [s for s in SYMBOLS if s not in priority_symbols]
+
+    for symbol in sorted_symbols:
         for tf in TIMEFRAMES:
             try:
-                signal = generate_free_signal(symbol, tf)
+                signal = generate_free_signal(symbol, tf, prechecked_news_ok=cycle_news_ok)
                 if signal:
                     signal["ranking_score"] = (
                         signal["confidence"]
