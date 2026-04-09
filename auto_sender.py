@@ -960,6 +960,16 @@ def increment_trade(chat_id):
 # ================= MAIN LOOP =================
 def run():
     log("AUTO FILE STARTED")
+
+    # 🔥 اطبع IP الحقيقي
+    try:
+        import requests
+        ip = requests.get("https://api.ipify.org").text
+        log(f"🔥 REAL BOT IP: {ip}")
+    except Exception as e:
+        log(f"IP check failed: {e}")
+
+    init_trade_tables()
     init_trade_tables()
     log("BOT STARTED - FINAL SAFE MODE")
     log("Entering main bot loop...")
