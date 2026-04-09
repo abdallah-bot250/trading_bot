@@ -14,6 +14,17 @@ import string
 import re
 from cryptography.fernet import Fernet
 
+# ================= NEW SAFE IMPORTS =================
+import logging
+import time
+import threading
+from collections import defaultdict
+from contextlib import contextmanager
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+# ================= HELPERS =================
 def sanitize_trade_amount(value, default=10.0, min_value=5.0, max_value=1000.0):
     try:
         amount = float(value)
@@ -32,1167 +43,6 @@ def sanitize_trade_amount(value, default=10.0, min_value=5.0, max_value=1000.0):
     except:
         return default
 
-# ================= APP =================
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "secret")
-
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-
-
-FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()
-
-if not FERNET_KEY:
-    raise Exception("FERNET_KEY missing in Railway Variables")
-
-cipher = Fernet(FERNET_KEY.encode())
-
-# ================= HELPERS =================
-def log(msg):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
-
-def get_live_price(symbol):
-    try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-        r = requests.get(url, timeout=10)
-
-        if r.status_code == 200:
-            data = r.json()
-            if "price" in data:
-                return float(data["price"])
-
-        # fallback Binance US
-        url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={symbol}"
-        r2 = requests.get(url_us, timeout=10)
-
-        if r2.status_code == 200:
-            data2 = r2.json()
-            if "price" in data2:
-                return float(data2["price"])
-
-        return None
-
-    except Exception as e:
-        log(f"get_live_price error for {symbol}: {e}")
-        return None    
-
-def encrypt_text(value):
-    if not value:
-        return None
-    try:
-        return cipher.encrypt(value.encode()).decode()
-    except Exception as e:
-        log(f"encrypt_text error: {e}")
-        return None
-
-
-def decrypt_text(value):
-    if not value:
-        return None
-    try:
-        return cipher.decrypt(value.encode()).decode()
-    except Exception as e:
-        log(f"decrypt_text error: {e}")
-        return None
-
-def db():
-    """
-    Railway-safe Postgres connection
-    """
-    database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
-
-    if not database_url:
-        raise Exception("DATABASE_URL not found in Railway Variables")
-
-    database_url = database_url.strip()
-
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-    return psycopg2.connect(
-        database_url,
-        sslmode="require"
-    )
-
-
-def is_admin_email(email):
-    try:
-        return str(email or "").strip().lower() == ADMIN_EMAIL and ADMIN_EMAIL != ""
-    except:
-        return False
-
-
-def admin_required():
-    if not session.get("user"):
-        return False
-    return is_admin_email(session.get("user"))
-
-
-def generate_referral_code(chat_id):
-    random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-    return f"{chat_id}_{random_part}"
-
-
-def ensure_user_has_referral_code(chat_id, conn):
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT referral_code
-        FROM users
-        WHERE chat_id = %s
-        ORDER BY 
-            CASE 
-                WHEN is_admin = 1 THEN 1
-                WHEN lifetime_owner = 1 THEN 2
-                WHEN is_paid = 1 THEN 3
-                ELSE 4
-            END,
-            id DESC
-        LIMIT 1
-    """, (chat_id,))
-    result = cur.fetchone()
-
-    if result and result[0]:
-        return result[0]
-
-    new_code = generate_referral_code(chat_id)
-
-    cur.execute("""
-        UPDATE users
-        SET referral_code = %s
-        WHERE chat_id = %s
-    """, (new_code, chat_id))
-
-    conn.commit()
-    return new_code
-
-def send(chat_id, text):
-    if not TOKEN or not chat_id:
-        log(f"⚠️ TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
-        return False
-    
-
-    try:
-        user_link = f"{BASE_URL}/login?chat_id={chat_id}"
-
-        r = requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={
-                "chat_id": str(chat_id),
-                "text": text,
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": "🌐 الدخول إلى حسابك",
-                                "url": user_link
-                            }
-                        ]
-                    ]
-                }
-            },
-            timeout=10
-        )
-
-        if r.status_code != 200:
-            log(f"❌ Telegram send failed: {r.text}")
-            return False
-
-        data = r.json()
-        if not data.get("ok"):
-            log(f"❌ Telegram API error: {data}")
-            return False
-
-        return True
-
-    except Exception as e:
-        log(f"❌ Telegram Error: {e}")
-        return False
-
-    
-def format_signal(s):
-    if not s:
-        return "❌ لا توجد إشارة حالياً"
-
-    trade_type = s.get("type", "FUTURES")
-    return f"""
-🔥 {s.get('pair', 'N/A')}
-
-📊 Type: {trade_type}
-📈 Direction: {s.get('direction', 'N/A')}
-
-💰 Entry: {s.get('entry', 'N/A')}
-🎯 TP: {s.get('tp', 'N/A')}
-🛑 SL: {s.get('sl', 'N/A')}
-
-📊 Confidence: {s.get('confidence', 'N/A')}%
-📉 Trend: {s.get('trend', 'N/A')}
-📦 Volume: {s.get('volume', 'N/A')}
-🧠 Smart Money: {s.get('smc', 'N/A')}
-⏱ Timeframe: {s.get('timeframe', 'N/A')}
-"""
-
-
-def can_receive_signals(user):
-    """
-    user tuple columns:
-    0 id
-    1 email
-    2 password
-    3 chat_id
-    4 is_paid
-    5 plan
-    6 trial_start
-    7 trades
-    8 expiry
-    9 api_key
-    10 api_secret
-    11 profit
-    12 trade_amount
-    13 trade_type
-    14 bot_active
-    15 referral_code
-    16 referred_by
-    17 affiliate_balance
-    18 total_referrals
-    19 free_basic_unlocked
-    20 free_pro_unlocked
-    21 free_vip_unlocked
-    22 is_admin
-    23 lifetime_owner
-    """
-    try:
-        plan = user[5]
-        trades = user[7]
-        expiry = user[8]
-
-        if user[22] == 1 or user[23] == 1:
-            return True
-
-        # trial: أول إشارتين فقط
-        if plan == "trial":
-            return trades < 2
-
-        # باقات مدفوعة
-        if user[4] != 1:
-            return False
-
-        if not expiry:
-            return False
-
-        if str(expiry).lower() == "lifetime":
-            return True
-
-        expiry_date = datetime.strptime(str(expiry), "%Y-%m-%d")
-        return datetime.now() <= expiry_date
-
-    except Exception as e:
-        log(f"can_receive_signals error: {e}")
-        return False
-
-
-# ================= INIT DB =================
-def init_db():
-    try:
-        conn = db()
-        c = conn.cursor()
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email TEXT UNIQUE,
-            password TEXT,
-            chat_id TEXT,
-            is_paid INTEGER DEFAULT 0,
-            plan TEXT DEFAULT 'trial',
-            trial_start TEXT,
-            trades INTEGER DEFAULT 0,
-            expiry TEXT,
-            api_key TEXT,
-            api_secret TEXT,
-            profit REAL DEFAULT 0,
-            trade_amount REAL DEFAULT 10,
-            trade_type TEXT DEFAULT 'futures',
-            bot_active INTEGER DEFAULT 0,
-            referral_code TEXT,
-            referred_by TEXT,
-            affiliate_balance REAL DEFAULT 0,
-            total_referrals INTEGER DEFAULT 0,
-            free_basic_unlocked INTEGER DEFAULT 0,
-            free_pro_unlocked INTEGER DEFAULT 0,
-            free_vip_unlocked INTEGER DEFAULT 0,
-            is_admin INTEGER DEFAULT 0,
-            lifetime_owner INTEGER DEFAULT 0
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_referrals (
-            id SERIAL PRIMARY KEY,
-            referrer_chat_id TEXT,
-            referred_chat_id TEXT,
-            referred_email TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_commissions (
-            id SERIAL PRIMARY KEY,
-            referrer_chat_id TEXT,
-            referred_chat_id TEXT,
-            plan TEXT,
-            amount REAL DEFAULT 0,
-            status TEXT DEFAULT 'approved',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
-            id SERIAL PRIMARY KEY,
-            chat_id TEXT,
-            wallet_address TEXT,
-            amount REAL,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS telegram_referrals (
-            telegram_id TEXT PRIMARY KEY,
-            referral_code TEXT
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS processed_payments (
-            payment_id TEXT PRIMARY KEY,
-            order_id TEXT,
-            payment_status TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS trades_log (
-            id SERIAL PRIMARY KEY,
-            chat_id TEXT,
-            pair TEXT,
-            direction TEXT,
-            trade_type TEXT,
-            entry REAL,
-            tp REAL,
-            sl REAL,
-            amount REAL,
-            exchange_order_id TEXT,
-            status TEXT DEFAULT 'OPEN',
-            result TEXT DEFAULT NULL,
-            pnl REAL DEFAULT 0,
-            breakeven_sent INTEGER DEFAULT 0,
-            opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            closed_at TIMESTAMP DEFAULT NULL
-        )
-        """)
-
-        # إضافات أمان لو الجدول قديم
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_secret TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profit REAL DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trade_amount REAL DEFAULT 10")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT 'futures'")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_active INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_paid INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'trial'")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_start TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trades INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_id TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS affiliate_balance REAL DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_referrals INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_basic_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_pro_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_vip_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lifetime_owner INTEGER DEFAULT 0")
-
-        # تنظيف chat_id
-        c.execute("""
-            UPDATE users
-            SET chat_id = TRIM(chat_id)
-            WHERE chat_id IS NOT NULL
-        """)
-
-        # منع تكرار chat_id
-        try:
-            c.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
-                ON users (chat_id)
-                WHERE chat_id IS NOT NULL AND chat_id <> ''
-            """)
-        except Exception as idx_err:
-            log(f"⚠️ chat_id unique index warning: {idx_err}")
-
-        # فعّل الأدمن تلقائيًا لو الإيميل موجود
-        if ADMIN_EMAIL:
-            c.execute("""
-                UPDATE users
-                SET is_admin = 1
-                WHERE LOWER(email) = %s
-            """, (ADMIN_EMAIL,))
-
-        conn.commit()
-        conn.close()
-        log("✅ DB initialized successfully")
-
-    except Exception as e:
-        log(f"❌ init_db error: {e}")
-
-
-init_db()
-
-
-# ================= ROUTES =================
-@app.route("/")
-def landing():
-    return render_template("landing.html")
-
-
-@app.route("/health")
-def health():
-    return {
-        "status": "ok",
-        "service": "web",
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-
-@app.route("/success")
-def success():
-    return "✅ تم إنشاء الدفع بنجاح، انتظر تأكيد الشبكة"
-
-
-@app.route("/cancel")
-def cancel():
-    return "❌ تم إلغاء الدفع"
-
-
-@app.route("/debug-users")
-def debug_users():
-    try:
-        conn = db()
-        c = conn.cursor()
-
-        c.execute("""
-            SELECT id, email, chat_id, plan, is_paid, bot_active, expiry, referral_code, affiliate_balance
-            FROM users
-            ORDER BY id DESC
-        """)
-        users = c.fetchall()
-
-        conn.close()
-
-        return f"<pre>{users}</pre>"
-
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-
-@app.route("/test-db")
-def test_db():
-    try:
-        conn = db()
-        c = conn.cursor()
-        c.execute("SELECT NOW()")
-        now = c.fetchone()
-        conn.close()
-        return f"✅ DB OK: {now}"
-    except Exception as e:
-        return f"❌ DB ERROR: {str(e)}"
-
-
-@app.route("/test-telegram")
-def test_telegram():
-    try:
-        chat_id = request.args.get("chat_id", "").strip()
-
-        if not chat_id:
-            return "❌ لازم تحط chat_id في الرابط"
-
-        ok = send(chat_id, f"✅ TEST FROM WEB APP\n🕒 {datetime.now()}")
-
-        return "✅ تم الإرسال" if ok else "❌ فشل الإرسال"
-
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-
-# ================= REGISTER =================
-@app.route("/register", methods=["GET", "POST"])
-def register():
-    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
-    ref = (request.args.get("ref") or session.get("ref") or "").strip()
-
-    if request.args.get("chat_id"):
-        session["chat_id"] = request.args.get("chat_id").strip()
-
-    if request.args.get("ref"):
-        session["ref"] = request.args.get("ref").strip()
-
-    if request.method == "POST":
-        try:
-            email = (request.form.get("email") or "").strip().lower()
-            password_raw = (request.form.get("password") or "").strip()
-
-            if not email or not password_raw:
-                flash("❌ لازم تكتب الإيميل والباسورد", "error")
-                return redirect(url_for("register", chat_id=chat_id, ref=ref))
-
-            email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
-            if not re.match(email_pattern, email):
-                flash("❌ لازم تدخل إيميل صحيح", "error")
-                return redirect(url_for("register", chat_id=chat_id, ref=ref))
-
-            if len(password_raw) < 6:
-                flash("❌ الباسورد لازم يكون 6 أحرف أو أكثر", "error")
-                return redirect(url_for("register", chat_id=chat_id, ref=ref))
-
-            conn = db()
-            c = conn.cursor()
-
-            telegram_ref = None
-            if chat_id and not ref:
-                try:
-                    c.execute("""
-                        SELECT referral_code
-                        FROM telegram_referrals
-                        WHERE telegram_id = %s
-                        LIMIT 1
-                    """, (chat_id,))
-                    tg_ref = c.fetchone()
-                    if tg_ref and tg_ref[0]:
-                        telegram_ref = str(tg_ref[0]).strip()
-                        log(f"✅ Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
-                except Exception as tg_err:
-                    log(f"❌ Telegram referral fetch error in register: {tg_err}")
-
-            final_ref = ref or telegram_ref
-
-            c.execute("""
-                SELECT id, email, password, chat_id, is_admin, plan, is_paid
-                FROM users
-                WHERE LOWER(email) = %s
-                LIMIT 1
-            """, (email,))
-            existing = c.fetchone()
-
-            if existing:
-                user_id = existing[0]
-                stored_password = existing[2]
-
-                if not check_password_hash(stored_password, password_raw):
-                    conn.close()
-                    flash("❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة", "error")
-                    return redirect(url_for("register", chat_id=chat_id, ref=ref))
-
-                if chat_id:
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = NULL
-                        WHERE chat_id = %s AND id != %s
-                    """, (chat_id, user_id))
-
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = %s
-                        WHERE id = %s
-                    """, (chat_id, user_id))
-                    conn.commit()
-
-                    ensure_user_has_referral_code(chat_id, conn)
-
-                if final_ref:
-                    c.execute("""
-                        SELECT referred_by, chat_id
-                        FROM users
-                        WHERE id = %s
-                        LIMIT 1
-                    """, (user_id,))
-                    existing_user_data = c.fetchone()
-
-                    current_referred_by = existing_user_data[0] if existing_user_data else None
-                    current_chat_id = str(existing_user_data[1] or "").strip() if existing_user_data else ""
-
-                    c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
-                    ref_user = c.fetchone()
-
-                    if ref_user and not current_referred_by:
-                        ref_owner_chat_id = str(ref_user[0] or "").strip()
-                        if ref_owner_chat_id != current_chat_id:
-                            c.execute("""
-                                UPDATE users
-                                SET referred_by = %s
-                                WHERE id = %s
-                            """, (final_ref, user_id))
-                            conn.commit()
-                            log(f"✅ Existing user referred_by updated: {email} -> {final_ref}")
-
-                if is_admin_email(email):
-                    c.execute("""
-                        UPDATE users
-                        SET is_admin = 1
-                        WHERE id = %s
-                    """, (user_id,))
-                    conn.commit()
-
-                conn.close()
-
-                session["user"] = email
-                session["is_admin"] = True if is_admin_email(email) else False
-
-                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
-
-                flash("✅ تم تسجيل الدخول بنجاح", "success")
-                flash("📩 مهم جدًا: افتح البوت وابعت نفس الإيميل اللي سجلت بيه علشان توصلك الإشارات", "success")
-
-                return redirect("/dashboard")
-
-            password = generate_password_hash(password_raw)
-
-            referred_by = None
-            if final_ref:
-                c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
-                ref_user = c.fetchone()
-                if ref_user and str(ref_user[0] or "").strip() != str(chat_id).strip():
-                    referred_by = final_ref
-
-            c.execute("""
-            INSERT INTO users (
-                email, password, chat_id, is_paid, plan, trial_start, trades,
-                expiry, api_key, api_secret, profit, trade_amount, trade_type,
-                bot_active, referred_by, is_admin, lifetime_owner
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """, (
-                email,
-                password,
-                chat_id,
-                0,
-                "trial",
-                datetime.now().strftime("%Y-%m-%d"),
-                0,
-                None,
-                None,
-                None,
-                0,
-                10,
-                "futures",
-                0,
-                referred_by,
-                1 if is_admin_email(email) else 0,
-                0
-            ))
-
-            new_user = c.fetchone()
-            conn.commit()
-
-            if chat_id:
-                ensure_user_has_referral_code(chat_id, conn)
-
-            conn.close()
-
-            session["user"] = email
-            session["is_admin"] = True if is_admin_email(email) else False
-
-            log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
-
-            flash("✅ تم إنشاء الحساب بنجاح", "success")
-            flash("📩 مهم جدًا: افتح البوت وابعت نفس الإيميل اللي سجلت بيه علشان توصلك الإشارات", "success")
-
-            return redirect("/dashboard")
-
-        except Exception as e:
-            log(f"❌ Register error: {e}")
-            flash("❌ حصل خطأ أثناء التسجيل", "error")
-            return redirect(url_for("register", chat_id=chat_id, ref=ref))
-
-    return render_template("register.html", chat_id=chat_id, ref=ref, bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"))
-
-
-# ================= LOGIN =================
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
-
-    if request.args.get("chat_id"):
-        session["chat_id"] = request.args.get("chat_id").strip()
-
-    if request.method == "POST":
-        try:
-            email = (request.form.get("email") or "").strip().lower()
-            password = (request.form.get("password") or "").strip()
-
-            if not email or not password:
-                return "❌ لازم تكتب الإيميل والباسورد"
-
-            email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
-            if not re.match(email_pattern, email):
-                return "❌ لازم تدخل إيميل صحيح"
-
-            conn = db()
-            c = conn.cursor()
-
-            c.execute("""
-                SELECT * FROM users
-                WHERE LOWER(email) = %s
-                LIMIT 1
-            """, (email,))
-            user = c.fetchone()
-
-            if not user:
-              conn.close()
-              flash("❌ الإيميل غير موجود", "error")
-              return redirect("/login")
-
-            stored_password = str(user[2] or "").strip()
-
-            if check_password_hash(stored_password, password):
-                user_id = user[0]
-
-                if chat_id:
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = NULL
-                        WHERE chat_id = %s AND id != %s
-                    """, (chat_id, user_id))
-
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = %s
-                        WHERE id = %s
-                    """, (chat_id, user_id))
-                    conn.commit()
-
-                    ensure_user_has_referral_code(chat_id, conn)
-
-                session["user"] = email
-                session["is_admin"] = True if is_admin_email(email) else False
-                log(f"✅ Login success: {email} | chat_id={chat_id}")
-                conn.close()
-                return redirect("/dashboard")
-
-            conn.close()
-            flash("❌ الباسورد غير صحيح", "error")
-            return redirect("/login")
-
-        except Exception as e:
-         log(f"❌ Login error: {e}")
-         flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
-         return redirect("/login")
-
-    return render_template("login.html", bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"))
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
-
-# ================= SAVE API =================
-@app.route("/save-api", methods=["POST"])
-def save_api():
-    if not session.get("user"):
-        return redirect("/login")
-
-    try:
-        conn = db()
-        c = conn.cursor()
-
-        c.execute(
-            "SELECT plan FROM users WHERE email = %s",
-            (session["user"],)
-        )
-        user = c.fetchone()
-
-        if not user or user[0] != "vip":
-            conn.close()
-            return "❌ API متاح فقط لباقة VIP"
-
-        api_key = request.form.get("api_key", "").strip()
-        api_secret = request.form.get("api_secret", "").strip()
-
-        if not api_key or not api_secret:
-            conn.close()
-            return "❌ لازم تدخل API Key و Secret"
-        
-        encrypted_api_key = encrypt_text(api_key)
-        encrypted_api_secret = encrypt_text(api_secret)
-
-        if not encrypted_api_key or not encrypted_api_secret:
-            conn.close()
-            return "❌ حصل خطأ أثناء تشفير بيانات API"
-
-        c.execute("""
-            UPDATE users
-            SET api_key = %s, api_secret = %s
-            WHERE email = %s
-        """, (encrypted_api_key, encrypted_api_secret, session["user"]))
-
-        conn.commit()
-        conn.close()
-
-        return "✅ تم ربط الحساب بنجاح"
-
-    except Exception as e:
-        log(f"❌ save_api error: {e}")
-        return f"❌ حصل خطأ أثناء حفظ API: {str(e)}"
-
-
-# ================= SAVE SETTINGS =================
-@app.route("/save-settings", methods=["POST"])
-def save_settings():
-    if not session.get("user"):
-        return redirect("/login")
-
-    try:
-        trade_amount = request.form.get("trade_amount", "10").strip()
-        trade_type = request.form.get("trade_type", "futures").strip().lower()
-
-        try:
-            trade_amount = float(trade_amount)
-        except:
-            trade_amount = 10
-
-        if trade_amount <= 0:
-            trade_amount = 10
-
-        if trade_type not in ["spot", "futures"]:
-            trade_type = "futures"
-
-        conn = db()
-        c = conn.cursor()
-        c.execute("""
-            UPDATE users
-            SET trade_amount = %s, trade_type = %s
-            WHERE email = %s
-        """, (trade_amount, trade_type, session["user"]))
-        conn.commit()
-        conn.close()
-
-        return "✅ تم حفظ إعدادات التداول"
-
-    except Exception as e:
-        log(f"❌ save_settings error: {e}")
-        return f"❌ حصل خطأ أثناء حفظ الإعدادات: {str(e)}"
-
-
-# ================= DASHBOARD =================
-@app.route("/dashboard")
-def dashboard():
-    if not session.get("user"):
-        return redirect("/login")
-
-    try:
-        conn = db()
-        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-        c.execute("SELECT * FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
-        user = c.fetchone()
-
-        if not user:
-            conn.close()
-            session.clear()
-            return redirect("/login")
-
-        chat_id = str(user.get("chat_id") or "").strip()
-
-        referral_link = ""
-        if chat_id:
-            referral_code = user.get("referral_code")
-            if not referral_code:
-                referral_code = ensure_user_has_referral_code(chat_id, conn)
-                c.execute("SELECT * FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
-                user = c.fetchone()
-
-            bot_link = os.environ.get("BOT_LINK", "https://t.me/your_bot")
-            referral_link = f"{bot_link}?start=ref_{user['referral_code']}"
-
-        c.execute("""
-            SELECT COUNT(*) AS total_refs
-            FROM affiliate_referrals
-            WHERE referrer_chat_id = %s
-        """, (chat_id,))
-        refs_count = c.fetchone()["total_refs"] if chat_id else 0
-
-        c.execute("""
-            SELECT COALESCE(SUM(amount), 0) AS total_comm
-            FROM affiliate_commissions
-            WHERE referrer_chat_id = %s
-        """, (chat_id,))
-        total_comm = c.fetchone()["total_comm"] if chat_id else 0
-
-        c.execute("""
-            SELECT COALESCE(SUM(amount), 0) AS total_withdrawn
-            FROM affiliate_withdrawals
-            WHERE chat_id = %s AND status = 'paid'
-        """, (chat_id,))
-        total_withdrawn = c.fetchone()["total_withdrawn"] if chat_id else 0
-
-        conn.close()
-
-        is_linked = True if user.get("chat_id") else False
-
-        bot_link = os.environ.get("BOT_LINK", "https://t.me/your_bot")
-
-        return render_template(
-            "dashboard.html",
-            plan=user.get("plan"),
-            expiry=user.get("expiry"),
-            profit=user.get("profit", 0),
-            trades=user.get("trades", 0),
-            bot_active=user.get("bot_active", 0),
-            trade_amount=user.get("trade_amount", 10),
-            trade_type=user.get("trade_type", "futures"),
-            referral_link=referral_link,
-            affiliate_balance=round(float(user.get("affiliate_balance", 0) or 0), 2),
-            total_referrals=refs_count,
-            total_commissions=round(float(total_comm or 0), 2),
-            total_withdrawn=round(float(total_withdrawn or 0), 2),
-            is_admin=user.get("is_admin", 0),
-            free_basic_unlocked=user.get("free_basic_unlocked", 0),
-            free_pro_unlocked=user.get("free_pro_unlocked", 0),
-            free_vip_unlocked=user.get("free_vip_unlocked", 0),
-            chat_id=chat_id,
-            is_linked=is_linked,
-            bot_link=bot_link
-        )
-
-    except Exception as e:
-        log(f"❌ dashboard error: {e}")
-        return f"❌ حصل خطأ أثناء تحميل الداشبورد: {str(e)}"
-
-
-@app.route("/manual")
-def manual():
-    if "user" not in session:
-        return redirect("/login")
-    return render_template("manual.html")
-
-
-# ================= SIMPLE DATA API =================
-@app.route("/api/data")
-def api_data():
-    if not session.get("user"):
-        return jsonify({})
-
-    try:
-        conn = db()
-        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        c.execute("SELECT email, profit FROM users WHERE LOWER(email) = %s", (session["user"].lower(),))
-        user = c.fetchone()
-        conn.close()
-
-        if not user:
-            return jsonify({})
-
-        return jsonify({
-            user["email"]: {
-                "amount": float(user.get("profit", 0) or 0)
-            }
-        })
-
-    except Exception as e:
-        log(f"api_data error: {e}")
-        return jsonify({})
-
-
-# ================= TOGGLE BOT =================
-@app.route("/toggle-bot", methods=["POST"])
-def toggle_bot():
-    if not session.get("user"):
-        return redirect("/login")
-
-    try:
-        conn = db()
-        c = conn.cursor()
-
-        c.execute(
-            "SELECT plan, bot_active, api_key, api_secret FROM users WHERE LOWER(email) = %s",
-            (session["user"].lower(),)
-        )
-        user = c.fetchone()
-
-# تأكد إنه VIP
-        if not user or user[0] != "vip":
-            conn.close()
-            return "❌ الميزة متاحة لـ VIP فقط"
-
-# فك التشفير
-        saved_api_key = decrypt_text(user[2]) if user[2] else None
-        saved_api_secret = decrypt_text(user[3]) if user[3] else None
-
-# منع التشغيل بدون API
-        if user[1] == 0:
-            if not saved_api_key or not saved_api_secret:
-                 conn.close()
-                 return "❌ لازم تربط API أولاً قبل تشغيل البوت"
-
-# تغيير حالة البوت
-        new_status = 0 if user[1] == 1 else 1
-
-        c.execute("""
-            UPDATE users
-            SET bot_active = %s
-            WHERE LOWER(email) = %s
-        """, (new_status, session["user"].lower()))
-
-        conn.commit()
-        conn.close()
-
-        return "🟢 تم تشغيل البوت" if new_status == 1 else "🔴 تم إيقاف البوت"
-
-    except Exception as e:
-        log(f"❌ toggle_bot error: {e}")
-        return f"❌ حصل خطأ أثناء تشغيل/إيقاف البوت: {str(e)}"
-
-
-# ================= CREATE PAYMENT =================
-@app.route("/create-payment")
-def create_payment():
-    if not session.get("user"):
-        return redirect("/login")
-
-    plan = request.args.get("plan", "basic").strip().lower()
-
-    prices = {
-        "basic": 25,
-        "pro": 59.99,
-        "vip": 100
-    }
-
-    if plan not in prices:
-        return "❌ باقة غير صحيحة"
-
-    amount = prices[plan]
-
-    try:
-        nowpayments_key = os.environ.get("NOWPAYMENTS_API_KEY")
-        if not nowpayments_key:
-            return "❌ NOWPAYMENTS_API_KEY غير موجود في Railway Variables"
-
-        conn = db()
-        c = conn.cursor()
-
-        c.execute(
-            "SELECT chat_id FROM users WHERE LOWER(email) = %s",
-            (session["user"].lower(),)
-        )
-        user = c.fetchone()
-        conn.close()
-
-        if not user or not user[0]:
-            return "❌ لازم تربط حساب التليجرام الأول"
-
-        chat_id = str(user[0]).strip()
-
-        payload = {
-            "price_amount": amount,
-            "price_currency": "usd",
-            "pay_currency": "usdttrc20",
-            "order_id": chat_id,
-            "order_description": plan,
-            "success_url": f"{BASE_URL}/success",
-            "cancel_url": f"{BASE_URL}/cancel",
-            "ipn_callback_url": f"{BASE_URL}/payment-webhook"
-        }
-
-        headers = {
-            "x-api-key": nowpayments_key,
-            "Content-Type": "application/json"
-        }
-
-        r = requests.post(
-            "https://api.nowpayments.io/v1/invoice",
-            json=payload,
-            headers=headers,
-            timeout=20
-        )
-
-        try:
-            data = r.json()
-        except:
-            data = {"raw_response": r.text}
-
-        log(f"NOWPayments response: {data}")
-
-        if data.get("invoice_url"):
-            return redirect(data["invoice_url"])
-
-        return f"""
-        <html>
-        <head>
-        <title>Payment</title>
-        <style>
-        body {{
-            background: #0f172a;
-            color: white;
-            font-family: Arial;
-            text-align: center;
-            padding: 50px;
-        }}
-        .box {{
-            background: #1e293b;
-            padding: 30px;
-            border-radius: 15px;
-            width: 350px;
-            margin: auto;
-        }}
-        </style>
-        </head>
-        <body>
-        <div class="box">
-            <h2>💰 Payment Error</h2>
-            <p>حصل مشكلة في إنشاء صفحة الدفع</p>
-            <pre>{data}</pre>
-        </div>
-        </body>
-        </html>
-        """
-
-    except Exception as e:
-        log(f"❌ create_payment error: {e}")
-        return f"Error: {str(e)}"
-
-
-from flask import Flask, request, render_template, redirect, session, url_for, jsonify, flash
-import psycopg2
-import psycopg2.extras
-import os
-import requests
-from datetime import datetime, timedelta
-from werkzeug.security import generate_password_hash, check_password_hash
-import hashlib
-import hmac
-import json
-from market_analyzer import get_top_free_signals
-import random
-import string
-import re
-from cryptography.fernet import Fernet
-
-# ================= NEW SAFE IMPORTS =================
-import logging
-import time
-from collections import defaultdict
-from contextlib import contextmanager
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 # ================= APP =================
 app = Flask(__name__)
@@ -1201,13 +51,13 @@ app.secret_key = os.environ.get("SECRET_KEY", "secret")
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-
 FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()
 
 if not FERNET_KEY:
     raise Exception("FERNET_KEY missing in Railway Variables")
 
 cipher = Fernet(FERNET_KEY.encode())
+
 
 # ================= LOGGING =================
 logging.basicConfig(
@@ -1221,6 +71,7 @@ def log(msg):
 if app.secret_key == "secret":
     log("⚠️ WARNING: Using default SECRET_KEY (غير آمن للإنتاج)")
 
+
 # ================= REQUEST SESSION WITH RETRY =================
 session_requests = requests.Session()
 retry = Retry(
@@ -1232,6 +83,7 @@ retry = Retry(
 adapter = HTTPAdapter(max_retries=retry)
 session_requests.mount("http://", adapter)
 session_requests.mount("https://", adapter)
+
 
 # ================= RATE LIMIT =================
 rate_limit = defaultdict(list)
@@ -1246,6 +98,7 @@ def is_rate_limited(ip, limit=10, window=60):
 
     rate_limit[ip].append(now)
     return False
+
 
 # ================= SIGNAL CACHE =================
 signal_cache = {"data": None, "time": 0}
@@ -1263,6 +116,7 @@ def get_cached_signals(limit=2):
         log(f"get_cached_signals error: {e}")
         return []
 
+
 # ================= SECURITY HEADERS =================
 @app.after_request
 def apply_security_headers(response):
@@ -1271,11 +125,13 @@ def apply_security_headers(response):
     response.headers["X-XSS-Protection"] = "1; mode=block"
     return response
 
+
 # ================= GLOBAL ERROR HANDLER =================
 @app.errorhandler(Exception)
 def handle_exception(e):
     log(f"❌ Global Error: {e}")
     return "❌ حصل خطأ في السيرفر", 500
+
 
 # ================= HELPERS =================
 def get_live_price(symbol):
@@ -1303,6 +159,7 @@ def get_live_price(symbol):
         log(f"get_live_price error for {symbol}: {e}")
         return None
 
+
 def encrypt_text(value):
     if not value:
         return None
@@ -1312,6 +169,7 @@ def encrypt_text(value):
         log(f"encrypt_text error: {e}")
         return None
 
+
 def decrypt_text(value):
     if not value:
         return None
@@ -1320,6 +178,7 @@ def decrypt_text(value):
     except Exception as e:
         log(f"decrypt_text error: {e}")
         return None
+
 
 def db():
     """
@@ -1340,6 +199,7 @@ def db():
         sslmode="require"
     )
 
+
 @contextmanager
 def get_db():
     conn = db()
@@ -1351,20 +211,24 @@ def get_db():
         except:
             pass
 
+
 def is_admin_email(email):
     try:
         return str(email or "").strip().lower() == ADMIN_EMAIL and ADMIN_EMAIL != ""
     except:
         return False
 
+
 def admin_required():
     if not session.get("user"):
         return False
     return is_admin_email(session.get("user"))
 
+
 def generate_referral_code(chat_id):
     random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
     return f"{chat_id}_{random_part}"
+
 
 def ensure_user_has_referral_code(chat_id, conn):
     cur = conn.cursor()
@@ -1398,6 +262,7 @@ def ensure_user_has_referral_code(chat_id, conn):
 
     conn.commit()
     return new_code
+
 
 def send(chat_id, text):
     if not TOKEN or not chat_id:
@@ -1441,6 +306,7 @@ def send(chat_id, text):
         log(f"❌ Telegram Error: {e}")
         return False
 
+
 def format_signal(s):
     if not s:
         return "❌ لا توجد إشارة حالياً"
@@ -1462,6 +328,7 @@ def format_signal(s):
 🧠 Smart Money: {s.get('smc', 'N/A')}
 ⏱ Timeframe: {s.get('timeframe', 'N/A')}
 """
+
 
 def can_receive_signals(user):
     """
@@ -1519,6 +386,7 @@ def can_receive_signals(user):
     except Exception as e:
         log(f"can_receive_signals error: {e}")
         return False
+
 
 # ================= INIT DB =================
 def init_db():
@@ -1624,8 +492,9 @@ def init_db():
             closed_at TIMESTAMP DEFAULT NULL
         )
         """)
+
         c.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
+        CREATE TABLE IF NOT EXISTS trades (
             id SERIAL PRIMARY KEY,
             username TEXT NOT NULL,
             pair TEXT NOT NULL,
@@ -1633,7 +502,7 @@ def init_db():
             direction TEXT,
             trade_type TEXT,
             entry REAL,
-             tp REAL,
+            tp REAL,
             sl REAL,
             amount REAL DEFAULT 10,
             status TEXT DEFAULT 'OPEN',
@@ -1666,14 +535,16 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
         c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lifetime_owner INTEGER DEFAULT 0")
 
-        # تنظيف chat_id
+        c.execute("ALTER TABLE trades_log ADD COLUMN IF NOT EXISTS result TEXT DEFAULT NULL")
+        c.execute("ALTER TABLE trades_log ADD COLUMN IF NOT EXISTS breakeven_sent INTEGER DEFAULT 0")
+        c.execute("ALTER TABLE trades_log ADD COLUMN IF NOT EXISTS opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+
         c.execute("""
             UPDATE users
             SET chat_id = TRIM(chat_id)
             WHERE chat_id IS NOT NULL
         """)
 
-        # منع تكرار chat_id
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
@@ -1683,7 +554,6 @@ def init_db():
         except Exception as idx_err:
             log(f"⚠️ chat_id unique index warning: {idx_err}")
 
-        # فعّل الأدمن تلقائيًا لو الإيميل موجود
         if ADMIN_EMAIL:
             c.execute("""
                 UPDATE users
@@ -1698,12 +568,15 @@ def init_db():
     except Exception as e:
         log(f"❌ init_db error: {e}")
 
+
 init_db()
+
 
 # ================= ROUTES =================
 @app.route("/")
 def landing():
     return render_template("landing.html")
+
 
 @app.route("/health")
 def health():
@@ -1728,13 +601,16 @@ def health():
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }, 500
 
+
 @app.route("/success")
 def success():
     return "✅ تم إنشاء الدفع بنجاح، انتظر تأكيد الشبكة"
 
+
 @app.route("/cancel")
 def cancel():
     return "❌ تم إلغاء الدفع"
+
 
 @app.route("/debug-users")
 def debug_users():
@@ -1756,6 +632,7 @@ def debug_users():
     except Exception as e:
         return f"ERROR: {str(e)}"
 
+
 @app.route("/test-db")
 def test_db():
     try:
@@ -1767,6 +644,7 @@ def test_db():
         return f"✅ DB OK: {now}"
     except Exception as e:
         return f"❌ DB ERROR: {str(e)}"
+
 
 @app.route("/test-telegram")
 def test_telegram():
@@ -1782,6 +660,7 @@ def test_telegram():
 
     except Exception as e:
         return f"ERROR: {str(e)}"
+
 
 # ================= REGISTER =================
 @app.route("/register", methods=["GET", "POST"])
@@ -1954,7 +833,7 @@ def register():
                 0
             ))
 
-            new_user = c.fetchone()
+            c.fetchone()
             conn.commit()
 
             if chat_id:
@@ -1978,6 +857,7 @@ def register():
             return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
     return render_template("register.html", chat_id=chat_id, ref=ref, bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"))
+
 
 # ================= LOGIN =================
 @app.route("/login", methods=["GET", "POST"])
@@ -2056,10 +936,13 @@ def login():
 
     return render_template("login.html", bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"))
 
+
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
+
+
 # ================= SAVE API =================
 @app.route("/save-api", methods=["POST"])
 def save_api():
@@ -2119,7 +1002,7 @@ def save_settings():
     try:
         trade_amount = sanitize_trade_amount(
             request.form.get("trade_amount", "10").strip()
-    )
+        )
 
         trade_type = request.form.get("trade_type", "futures").strip().lower()
 
@@ -2131,8 +1014,8 @@ def save_settings():
         c.execute("""
             UPDATE users
             SET trade_amount = %s, trade_type = %s
-            WHERE username = %s
-        """, (trade_amount, trade_type, session["user"]))
+            WHERE LOWER(email) = %s
+        """, (trade_amount, trade_type, session["user"].lower()))
 
         conn.commit()
         conn.close()
@@ -2279,22 +1162,18 @@ def toggle_bot():
         )
         user = c.fetchone()
 
-        # تأكد إنه VIP
         if not user or user[0] != "vip":
             conn.close()
             return "❌ الميزة متاحة لـ VIP فقط"
 
-        # فك التشفير
         saved_api_key = decrypt_text(user[2]) if user[2] else None
         saved_api_secret = decrypt_text(user[3]) if user[3] else None
 
-        # منع التشغيل بدون API
         if user[1] == 0:
             if not saved_api_key or not saved_api_secret:
                 conn.close()
                 return "❌ لازم تربط API أولاً قبل تشغيل البوت"
 
-        # تغيير حالة البوت
         new_status = 0 if user[1] == 1 else 1
 
         c.execute("""
@@ -2311,9 +1190,7 @@ def toggle_bot():
     except Exception as e:
         log(f"❌ toggle_bot error: {e}")
         return f"❌ حصل خطأ أثناء تشغيل/إيقاف البوت: {str(e)}"
-
-
-# ================= CREATE PAYMENT =================
+    # ================= CREATE PAYMENT =================
 @app.route("/create-payment")
 def create_payment():
     if not session.get("user"):
@@ -2789,7 +1666,6 @@ def webhook():
 
                 if user:
                     user_id = user[0]
-                    email = user[1]
                     trades = int(user[2] or 0)
                     is_paid = bool(user[3])
                     referral_code = user[4]
@@ -2936,7 +1812,10 @@ def webhook():
                 log(f"❌ /start DB Error: {db_err}")
                 send(chat_id, "❌ حصل خطأ أثناء التحقق من حسابك. حاول تاني بعد شوية.")
             finally:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
 
             return "ok", 200
 
@@ -2959,6 +1838,8 @@ def webhook():
                         (chat_id, email)
                     )
                     conn.commit()
+
+                    ensure_user_has_referral_code(chat_id, conn)
 
                     send(chat_id, "✅ تم ربط حسابك بنجاح!\nهتوصلك الإشارات هنا 👌")
 
@@ -3020,7 +1901,10 @@ def webhook():
                 log(f"/affiliate error: {e}")
                 send(chat_id, "❌ حصل خطأ أثناء تحميل بيانات الأفلييت.")
             finally:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
 
         else:
             send(chat_id, """👋 الأوامر المتاحة:
@@ -3078,7 +1962,6 @@ def payment_webhook():
         conn = db()
         c = conn.cursor()
 
-        # ================= منع تكرار نفس الدفع =================
         c.execute("""
             SELECT payment_id
             FROM processed_payments
@@ -3092,7 +1975,6 @@ def payment_webhook():
             log(f"⚠️ Duplicate payment ignored: {payment_id}")
             return "already processed", 200
 
-        # خزّن العملية أولاً
         c.execute("""
             INSERT INTO processed_payments (payment_id, order_id, payment_status)
             VALUES (%s, %s, %s)
@@ -3285,7 +2167,6 @@ def check_open_trades():
                 chat_id = str(trade[1] or "").strip()
                 pair = trade[2]
                 direction = trade[3]
-                trade_type = trade[4]
                 entry = float(trade[5])
                 tp = float(trade[6])
                 sl = float(trade[7])
@@ -3442,19 +2323,41 @@ def check_open_trades():
         log(f"check_open_trades error: {e}")
 
 
-# ================= BOT THREAD =================
-import threading
+# ================= SAFE BOT THREAD =================
+_bot_thread_started = False
+_bot_thread_lock = threading.Lock()
+
 
 def start_bot():
-    from auto_sender import run
-    run()
+    try:
+        from auto_sender import run
+        log("🚀 Starting auto_sender thread...")
+        run()
+    except Exception as e:
+        log(f"❌ start_bot error: {e}")
 
+
+def start_bot_once():
+    global _bot_thread_started
+
+    with _bot_thread_lock:
+        if _bot_thread_started:
+            log("ℹ️ Bot thread already started, skipping duplicate launch")
+            return
+
+        _bot_thread_started = True
+        bot_thread = threading.Thread(target=start_bot, daemon=True)
+        bot_thread.start()
+        log("✅ Bot thread launched successfully")
+
+
+# ================= START BOT ONLY ON RAILWAY / MAIN PROCESS =================
 if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"):
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    bot_thread.start()
+    start_bot_once()
 
 
 # ================= RUN APP =================
 if __name__ == "__main__":
     log("🚀 Flask app started")
+    start_bot_once()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))

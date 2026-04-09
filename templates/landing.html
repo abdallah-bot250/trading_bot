@@ -14,15 +14,46 @@ html {
     scroll-behavior: smooth;
 }
 
+:root {
+    --bg-1: #020617;
+    --bg-2: #0f172a;
+    --bg-3: #111827;
+    --card: rgba(15,23,42,0.82);
+    --card-2: rgba(15,23,42,0.92);
+    --border: rgba(255,255,255,0.06);
+    --text: #f8fafc;
+    --muted: #cbd5e1;
+    --muted-2: #94a3b8;
+    --green: #22c55e;
+    --green-dark: #16a34a;
+    --blue: #38bdf8;
+    --yellow: #facc15;
+    --danger: #ef4444;
+    --shadow: 0 18px 40px rgba(0,0,0,0.28);
+}
+
 body {
     margin: 0;
     font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
     background:
-        radial-gradient(circle at top right, rgba(34,197,94,0.15), transparent 25%),
-        radial-gradient(circle at top left, rgba(56,189,248,0.12), transparent 28%),
-        linear-gradient(135deg, #020617, #0f172a 55%, #111827);
-    color: #f8fafc;
+        radial-gradient(circle at top right, rgba(34,197,94,0.16), transparent 25%),
+        radial-gradient(circle at top left, rgba(56,189,248,0.13), transparent 28%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2) 55%, var(--bg-3));
+    color: var(--text);
     overflow-x: hidden;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: radial-gradient(circle at center, black 45%, transparent 100%);
+    pointer-events: none;
+    z-index: -1;
 }
 
 a {
@@ -36,13 +67,14 @@ a {
     margin: auto;
 }
 
+/* NAVBAR */
 .navbar {
     position: sticky;
     top: 0;
     z-index: 999;
     backdrop-filter: blur(14px);
     background: rgba(2,6,23,0.72);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 1px solid var(--border);
 }
 
 .nav-inner {
@@ -56,8 +88,9 @@ a {
 .logo {
     font-size: 24px;
     font-weight: 800;
-    color: #22c55e;
+    color: var(--green);
     letter-spacing: 0.5px;
+    text-shadow: 0 0 22px rgba(34,197,94,0.18);
 }
 
 .nav-actions {
@@ -68,7 +101,7 @@ a {
 
 .nav-btn {
     padding: 12px 18px;
-    border-radius: 12px;
+    border-radius: 14px;
     font-weight: 700;
     border: 1px solid rgba(255,255,255,0.08);
     transition: 0.25s ease;
@@ -79,9 +112,10 @@ a {
 }
 
 .nav-btn.primary {
-    background: linear-gradient(90deg, #22c55e, #16a34a);
+    background: linear-gradient(90deg, var(--green), var(--green-dark));
     color: #04111f;
     border: none;
+    box-shadow: 0 12px 28px rgba(34,197,94,0.22);
 }
 
 .nav-btn.secondary {
@@ -89,8 +123,9 @@ a {
     color: #e2e8f0;
 }
 
+/* HERO */
 .hero {
-    padding: 90px 0 70px;
+    padding: 95px 0 75px;
     text-align: center;
     position: relative;
 }
@@ -109,27 +144,28 @@ a {
 }
 
 .hero h1 {
-    font-size: 56px;
-    line-height: 1.2;
-    margin: 0 auto 20px;
-    max-width: 950px;
+    font-size: 58px;
+    line-height: 1.18;
+    margin: 0 auto 22px;
+    max-width: 980px;
     color: white;
+    text-shadow: 0 8px 30px rgba(0,0,0,0.22);
 }
 
 .hero .accent {
-    color: #22c55e;
+    color: var(--green);
 }
 
 .hero p {
-    color: #cbd5e1;
+    color: var(--muted);
     font-size: 20px;
     line-height: 1.9;
-    max-width: 900px;
+    max-width: 920px;
     margin: auto;
 }
 
 .hero-cta {
-    margin-top: 35px;
+    margin-top: 38px;
     display: flex;
     justify-content: center;
     gap: 16px;
@@ -139,7 +175,7 @@ a {
 .btn {
     display: inline-block;
     padding: 16px 28px;
-    border-radius: 16px;
+    border-radius: 18px;
     font-weight: 800;
     transition: 0.28s ease;
     box-shadow: 0 12px 30px rgba(0,0,0,0.22);
@@ -150,7 +186,7 @@ a {
 }
 
 .btn-primary {
-    background: linear-gradient(90deg, #22c55e, #16a34a);
+    background: linear-gradient(90deg, var(--green), var(--green-dark));
     color: #04111f;
 }
 
@@ -160,8 +196,15 @@ a {
     color: white;
 }
 
+.hero-note {
+    margin-top: 18px;
+    color: var(--yellow);
+    font-weight: 700;
+    font-size: 15px;
+}
+
 .hero-stats {
-    margin-top: 45px;
+    margin-top: 50px;
     display: grid;
     grid-template-columns: repeat(4, minmax(180px, 1fr));
     gap: 18px;
@@ -170,7 +213,7 @@ a {
 .stat-card {
     background: rgba(15,23,42,0.72);
     border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 20px;
+    border-radius: 22px;
     padding: 22px 18px;
     box-shadow: 0 14px 35px rgba(0,0,0,0.25);
     backdrop-filter: blur(10px);
@@ -178,32 +221,34 @@ a {
 
 .stat-card h3 {
     margin: 0 0 10px;
-    color: #22c55e;
+    color: var(--green);
     font-size: 28px;
 }
 
 .stat-card p {
     margin: 0;
-    color: #cbd5e1;
+    color: var(--muted);
     font-size: 15px;
+    line-height: 1.8;
 }
 
+/* GENERAL */
 .section {
-    padding: 75px 0;
+    padding: 80px 0;
 }
 
 .section-title {
     text-align: center;
-    font-size: 38px;
+    font-size: 40px;
     margin-bottom: 14px;
-    color: #f8fafc;
+    color: var(--text);
 }
 
 .section-sub {
     text-align: center;
-    color: #94a3b8;
-    max-width: 800px;
-    margin: 0 auto 40px;
+    color: var(--muted-2);
+    max-width: 820px;
+    margin: 0 auto 42px;
     font-size: 18px;
     line-height: 1.9;
 }
@@ -215,12 +260,27 @@ a {
 }
 
 .feature-card {
-    background: rgba(15,23,42,0.82);
+    background: var(--card);
     border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 22px;
+    border-radius: 24px;
     padding: 28px 24px;
     box-shadow: 0 14px 35px rgba(0,0,0,0.25);
     transition: 0.28s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.feature-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(34,197,94,0.05), rgba(56,189,248,0.04));
+    opacity: 0;
+    transition: 0.3s ease;
+}
+
+.feature-card:hover::before {
+    opacity: 1;
 }
 
 .feature-card:hover {
@@ -231,20 +291,29 @@ a {
 .feature-icon {
     font-size: 34px;
     margin-bottom: 16px;
+    position: relative;
+    z-index: 1;
+}
+
+.feature-card h3,
+.feature-card p {
+    position: relative;
+    z-index: 1;
 }
 
 .feature-card h3 {
     margin-top: 0;
-    color: #22c55e;
+    color: var(--green);
     font-size: 22px;
 }
 
 .feature-card p {
-    color: #cbd5e1;
+    color: var(--muted);
     line-height: 1.9;
     margin-bottom: 0;
 }
 
+/* PROBLEM / SOLUTION */
 .problem-solution {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -252,24 +321,24 @@ a {
 }
 
 .ps-box {
-    background: rgba(15,23,42,0.82);
+    background: var(--card);
     border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 22px;
-    padding: 28px;
+    border-radius: 24px;
+    padding: 30px;
     box-shadow: 0 14px 35px rgba(0,0,0,0.25);
 }
 
 .ps-box h3 {
     margin-top: 0;
-    font-size: 26px;
+    font-size: 27px;
 }
 
 .ps-box.problem h3 {
-    color: #ef4444;
+    color: var(--danger);
 }
 
 .ps-box.solution h3 {
-    color: #22c55e;
+    color: var(--green);
 }
 
 .ps-box ul {
@@ -277,32 +346,34 @@ a {
     padding: 0;
     margin: 18px 0 0;
     line-height: 2;
-    color: #cbd5e1;
+    color: var(--muted);
 }
 
+/* HIGHLIGHT */
 .highlight {
     background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(56,189,248,0.12));
     border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 24px;
-    padding: 35px 28px;
+    border-radius: 28px;
+    padding: 40px 30px;
     text-align: center;
-    box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+    box-shadow: var(--shadow);
 }
 
 .highlight h2 {
     margin-top: 0;
-    color: #22c55e;
-    font-size: 34px;
+    color: var(--green);
+    font-size: 36px;
 }
 
 .highlight p {
     color: #e2e8f0;
     font-size: 19px;
     line-height: 2;
-    max-width: 900px;
+    max-width: 920px;
     margin: auto;
 }
 
+/* STEPS */
 .steps-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -310,9 +381,9 @@ a {
 }
 
 .step-card {
-    background: rgba(15,23,42,0.82);
+    background: var(--card);
     border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 22px;
+    border-radius: 24px;
     padding: 26px 22px;
     text-align: center;
     box-shadow: 0 14px 35px rgba(0,0,0,0.25);
@@ -325,30 +396,32 @@ a {
 }
 
 .step-number {
-    width: 54px;
-    height: 54px;
+    width: 56px;
+    height: 56px;
     margin: 0 auto 16px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #22c55e, #38bdf8);
+    background: linear-gradient(135deg, var(--green), var(--blue));
     display: flex;
     align-items: center;
     justify-content: center;
     color: #04111f;
     font-weight: 900;
     font-size: 22px;
+    box-shadow: 0 10px 25px rgba(34,197,94,0.2);
 }
 
 .step-card h3 {
     margin-top: 0;
-    color: #38bdf8;
+    color: var(--blue);
 }
 
 .step-card p {
-    color: #cbd5e1;
+    color: var(--muted);
     line-height: 1.9;
     margin-bottom: 0;
 }
 
+/* PLANS */
 .plan-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -356,13 +429,22 @@ a {
 }
 
 .plan-card {
-    background: rgba(15,23,42,0.92);
-    border-radius: 24px;
-    padding: 30px 26px;
-    border: 1px solid rgba(255,255,255,0.06);
-    box-shadow: 0 18px 40px rgba(0,0,0,0.28);
+    background: var(--card-2);
+    border-radius: 26px;
+    padding: 32px 26px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
     position: relative;
     transition: 0.28s ease;
+    overflow: hidden;
+}
+
+.plan-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent 35%);
+    pointer-events: none;
 }
 
 .plan-card:hover {
@@ -382,7 +464,7 @@ a {
     position: absolute;
     top: -12px;
     left: 20px;
-    background: #22c55e;
+    background: var(--green);
     color: #04111f;
     padding: 8px 14px;
     border-radius: 999px;
@@ -391,30 +473,45 @@ a {
 }
 
 .plan-card.vip .plan-badge {
-    background: linear-gradient(90deg, #facc15, #f59e0b);
+    background: linear-gradient(90deg, var(--yellow), #f59e0b);
     color: #111827;
 }
 
 .plan-card.pro .plan-badge {
-    background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+    background: linear-gradient(90deg, var(--blue), #0ea5e9);
     color: #04111f;
 }
 
 .plan-card h3 {
-    font-size: 28px;
+    font-size: 30px;
     margin-bottom: 10px;
 }
 
 .price {
-    font-size: 40px;
+    font-size: 42px;
     font-weight: 800;
-    margin: 14px 0 20px;
+    margin: 14px 0 10px;
     color: white;
 }
 
 .price span {
     font-size: 16px;
-    color: #94a3b8;
+    color: var(--muted-2);
+}
+
+.plan-tagline {
+    color: var(--green);
+    font-weight: 700;
+    margin-bottom: 20px;
+    font-size: 15px;
+}
+
+.plan-card.vip .plan-tagline {
+    color: var(--yellow);
+}
+
+.plan-card.pro .plan-tagline {
+    color: var(--blue);
 }
 
 .plan-card ul {
@@ -422,7 +519,7 @@ a {
     padding: 0;
     margin: 0;
     line-height: 2.05;
-    color: #cbd5e1;
+    color: var(--muted);
     min-height: 290px;
 }
 
@@ -436,6 +533,30 @@ a {
     margin-top: 18px;
 }
 
+/* TRUST BOXES */
+.warning-box,
+.guarantee-box {
+    margin-top: 28px;
+    padding: 18px;
+    border-radius: 18px;
+    line-height: 1.9;
+    font-size: 15px;
+}
+
+.warning-box {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.18);
+    color: #fecaca;
+}
+
+.guarantee-box {
+    background: rgba(34,197,94,0.08);
+    border: 1px solid rgba(34,197,94,0.25);
+    color: #bbf7d0;
+    text-align: center;
+}
+
+/* FAQ */
 .faq-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -443,27 +564,28 @@ a {
 }
 
 .faq-item {
-    background: rgba(15,23,42,0.82);
+    background: var(--card);
     border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 20px;
+    border-radius: 22px;
     padding: 24px;
 }
 
 .faq-item h3 {
     margin-top: 0;
-    color: #38bdf8;
+    color: var(--blue);
     font-size: 21px;
 }
 
 .faq-item p {
     margin-bottom: 0;
-    color: #cbd5e1;
+    color: var(--muted);
     line-height: 1.9;
 }
 
+/* CTA */
 .cta-final {
     text-align: center;
-    padding: 90px 20px;
+    padding: 95px 20px;
     background:
         radial-gradient(circle at center, rgba(34,197,94,0.12), transparent 40%),
         linear-gradient(135deg, #0b1220, #0f172a);
@@ -472,7 +594,7 @@ a {
 }
 
 .cta-final h2 {
-    font-size: 42px;
+    font-size: 44px;
     margin-top: 0;
     color: white;
 }
@@ -480,11 +602,12 @@ a {
 .cta-final p {
     max-width: 850px;
     margin: 18px auto 0;
-    color: #cbd5e1;
+    color: var(--muted);
     line-height: 2;
     font-size: 19px;
 }
 
+/* FOOTER */
 .footer {
     text-align: center;
     padding: 28px 20px;
@@ -492,17 +615,7 @@ a {
     font-size: 14px;
 }
 
-.warning-box {
-    margin-top: 28px;
-    background: rgba(239,68,68,0.08);
-    border: 1px solid rgba(239,68,68,0.18);
-    color: #fecaca;
-    padding: 18px;
-    border-radius: 18px;
-    line-height: 1.9;
-    font-size: 15px;
-}
-
+/* RESPONSIVE */
 @media (max-width: 1100px) {
     .hero h1 {
         font-size: 46px;
@@ -589,14 +702,18 @@ a {
         </h1>
 
         <p>
-            AI Crypto Trader ليس بوتًا يرسل عشرات الصفقات يوميًا بدون معنى.
+            AI Crypto Trader مش معمول علشان يخليك تتداول أكتر...
             <br>
-            بل نظام ذكي يفلتر السوق، يستبعد الفرص الضعيفة، ويعطيك فقط ما يراه مناسبًا للدخول.
+            بل علشان يخليك تدخل أقل — بس صح.
         </p>
 
         <div class="hero-cta">
             <a href="/register" class="btn btn-primary">🚀 ابدأ مجانًا الآن</a>
             <a href="#pricing" class="btn btn-secondary">💳 شاهد الباقات</a>
+        </div>
+
+        <div class="hero-note">
+            ⚠️ عدد الاشتراكات VIP محدود للحفاظ على جودة الإشارات
         </div>
 
         <div class="hero-stats">
@@ -756,6 +873,45 @@ a {
     </div>
 </section>
 
+<!-- TESTIMONIALS -->
+<section class="section">
+    <div class="container">
+        <h2 class="section-title">💬 آراء المستخدمين</h2>
+        <p class="section-sub">
+            ناس استخدمت البوت وبدأت تفهم السوق بشكل أهدى وأذكى.
+        </p>
+
+        <div class="grid-3">
+            <div class="feature-card">
+                <div class="feature-icon">🔥</div>
+                <h3>تجربة حقيقية</h3>
+                <p>
+                    "كنت بدخل صفقات عشوائي... دلوقتي بقيت بدخل أقل،
+                    بس بجودة أعلى بكتير."
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📈</div>
+                <h3>فرق واضح</h3>
+                <p>
+                    "أكتر حاجة عجبتني إن البوت مش بيبعت طول الوقت...
+                    وده خلاني أركز في الصفقات الصح بس."
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">💎</div>
+                <h3>انضباط أكبر</h3>
+                <p>
+                    "البوت خلاني ألتزم بإدارة رأس المال بدل الهوجة
+                    والدخول في أي فرصة قدامي."
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
 <!-- PLANS -->
 <section class="section" id="pricing">
     <div class="container">
@@ -769,6 +925,7 @@ a {
                 <div class="plan-badge">للمبتدئين</div>
                 <h3>Basic</h3>
                 <div class="price">$25 <span>/ شهر</span></div>
+                <div class="plan-tagline">🎯 مناسب كبداية قوية بدون تعقيد</div>
 
                 <ul>
                     <li>✔ إشارات Spot & Futures</li>
@@ -786,6 +943,7 @@ a {
                 <div class="plan-badge">الأكثر توازنًا</div>
                 <h3>Pro 🔥</h3>
                 <div class="price">$59.99 <span>/ شهر</span></div>
+                <div class="plan-tagline">⚡ مناسب للناس اللي عايزة جودة أعلى</div>
 
                 <ul>
                     <li>✔ فلترة أعلى من Basic</li>
@@ -803,6 +961,7 @@ a {
                 <div class="plan-badge">الأقوى</div>
                 <h3>VIP 💎</h3>
                 <div class="price">$99.99 <span>/ شهر</span></div>
+                <div class="plan-tagline">🔥 أفضل اختيار للمتداولين الجادين</div>
 
                 <ul>
                     <li>✔ أقوى فلترة داخل النظام</li>
@@ -815,6 +974,10 @@ a {
 
                 <a href="/register" class="btn btn-primary">ابدأ VIP الآن</a>
             </div>
+        </div>
+
+        <div class="guarantee-box">
+            ✅ جرب النظام بنفسك — لو مش مناسبك تقدر توقف الاشتراك في أي وقت
         </div>
 
         <div class="warning-box">
