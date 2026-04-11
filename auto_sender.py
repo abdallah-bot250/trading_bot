@@ -1,5 +1,4 @@
 import time
-import requests
 from datetime import datetime, timedelta
 from market_analyzer import get_top_free_signals, generate_signal, SYMBOLS
 from ai_model import predict_trade
@@ -14,6 +13,78 @@ import logging
 from contextlib import contextmanager
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from trade_tracker import add_trade, update_trades
+from market_analyzer import get_price
+import requests
+
+# =========================================
+# TELEGRAM SEND FUNCTION
+# =========================================
+def send_to_telegram(message, chat_id):
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+        payload = {
+            "chat_id": chat_id,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+
+        response = requests.post(url, json=payload, timeout=10)
+
+        if response.status_code != 200:
+            print(f"Telegram send failed to {chat_id}: {response.text}")
+
+    except Exception as e:
+        print(f"Telegram error: {e}")
+
+
+# =========================================
+# TRADE RESULT NOTIFIER (TP / SL)
+# =========================================
+def notify_trade_result(trade):
+    try:
+        # 👇 مهم: استورد هنا عشان تتجنب circular import
+        from app import get_users   # أو غيرها حسب مكان get_users عندك
+
+        users = get_users()
+
+        pair = trade["pair"]
+        status = trade["status"]
+        pnl = trade.get("pnl", 0)
+        direction = trade["direction"]
+
+        if status == "TP":
+            msg = f"""
+✅ <b>{pair}</b> TP HIT
+
+📈 Direction: {direction}
+💰 Profit: +{pnl}%
+"""
+        elif status == "SL":
+            msg = f"""
+❌ <b>{pair}</b> SL HIT
+
+📉 Direction: {direction}
+💰 Loss: {pnl}%
+"""
+        else:
+            return
+
+        # 👇 إرسال لكل المستخدمين
+        for user in users:
+            chat_id = user.get("chat_id")
+
+            if not chat_id:
+                continue
+
+            try:
+                send_to_telegram(msg, chat_id)
+            except Exception as e:
+                print(f"Send error to {chat_id}: {e}")
+
+    except Exception as e:
+        print(f"notify_trade_result error: {e}")
 
 load_dotenv()
 
@@ -51,7 +122,11 @@ MIN_CONFIDENCE = 66
 DUPLICATE_WINDOW_SECONDS = 300
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360
 
-MAX_ENTRY_DEVIATION_PERCENT = 0.75
+# 🔥 EXECUTION LOCK (حماية من تكرار الصفقات)
+EXECUTION_LOCK = {}
+EXECUTION_LOCK_EXPIRY = 120
+
+MAX_ENTRY_DEVIATION_PERCENT = 0.25
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -63,8 +138,69 @@ ULTRA_MODE = True
 LAST_SIGNAL_CACHE = {}
 RECENT_SIGNAL_MEMORY = {}
 LAST_NO_SIGNAL_NOTIFY = {}
+# ================= SIGNAL CONTROL =================
+USER_SIGNAL_MEMORY = {}
+USER_SIGNAL_EXPIRY = 900  # 15 دقيقة
+
+PAIR_COOLDOWN = {
+    "5m": 300,
+    "15m": 600,
+    "1h": 1800
+}
+
 
 # ================= HELPERS =================
+def build_signal_signature(signal):
+    try:
+        pair = signal.get("pair")
+        direction = signal.get("direction")
+        timeframe = signal.get("timeframe", "5m")
+        entry = round(float(signal.get("entry", 0)), 2)
+
+        return f"{pair}_{direction}_{timeframe}_{entry}"
+
+    except Exception as e:
+        log(f"signature error: {e}")
+        return None
+
+
+def is_signal_blocked(chat_id, signal):
+    try:
+        now = time.time()
+        signature = build_signal_signature(signal)
+
+        if not signature:
+            return False
+
+        timeframe = signal.get("timeframe", "5m")
+        cooldown = PAIR_COOLDOWN.get(timeframe, 300)
+
+        if chat_id not in USER_SIGNAL_MEMORY:
+            USER_SIGNAL_MEMORY[chat_id] = {}
+
+        user_memory = USER_SIGNAL_MEMORY[chat_id]
+
+        # تنظيف القديم
+        expired = []
+        for sig, t in user_memory.items():
+            if now - t > USER_SIGNAL_EXPIRY:
+                expired.append(sig)
+
+        for k in expired:
+            del user_memory[k]
+
+        # منع التكرار
+        if signature in user_memory:
+            if now - user_memory[signature] < cooldown:
+                return True
+
+        user_memory[signature] = now
+        return False
+
+    except Exception as e:
+        log(f"signal block error: {e}")
+        return False
+
 def decrypt_text(value):
     try:
         return cipher.decrypt(value.encode()).decode() if value else None
@@ -75,6 +211,39 @@ def decrypt_text(value):
 def normalize_symbol(symbol):
     return symbol.replace("/", "").upper()
 
+def clean_execution_lock():
+    try:
+        now = datetime.now()
+
+        for k in list(EXECUTION_LOCK.keys()):
+            last_time = EXECUTION_LOCK.get(k)
+
+            if not last_time:
+                continue
+
+            if (now - last_time).total_seconds() > EXECUTION_LOCK_EXPIRY:
+                del EXECUTION_LOCK[k]
+
+    except Exception as e:
+        log(f"clean_execution_lock error: {e}")
+
+LAST_SEND = {}
+
+def can_send(chat_id):
+    try:
+        now = time.time()
+
+        if chat_id in LAST_SEND:
+            if now - LAST_SEND[chat_id] < 2:
+                return False
+
+        LAST_SEND[chat_id] = now
+        return True
+
+    except Exception as e:
+        log(f"can_send error: {e}")
+        return True
+    
 def get_live_price(symbol):
     try:
         r = session_requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={normalize_symbol(symbol)}", timeout=10)
@@ -108,13 +277,43 @@ def get_db():
 
 # ================= TELEGRAM =================
 def send(chat_id, text):
+
+    if not can_send(chat_id):
+        log(f"🚫 Spam blocked for {chat_id}")
+        return False
+
     try:
-        r = session_requests.post(
-            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={"chat_id": str(chat_id), "text": text},
-            timeout=10
-        )
-        return r.status_code == 200
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+        payload = {
+            "chat_id": str(chat_id),
+            "text": text
+        }
+
+        for attempt in range(3):  # retry 3 مرات
+            try:
+                r = session_requests.post(url, json=payload, timeout=10)
+
+                if r.status_code == 200:
+                    return True
+
+                # 🚨 لو تيليجرام عمل Rate Limit
+                if r.status_code == 429:
+                    wait_time = 2 + attempt
+                    log(f"⚠️ Telegram rate limit... retry in {wait_time}s")
+                    time.sleep(wait_time)
+                    continue
+
+                # أي error تاني
+                log(f"❌ Telegram API error: {r.text}")
+                return False
+
+            except Exception as inner_e:
+                log(f"Retry send error: {inner_e}")
+                time.sleep(1)
+
+        return False
+
     except Exception as e:
         log(f"telegram error: {e}")
         return False
@@ -178,6 +377,7 @@ def is_duplicate_signal(signal):
     return False
 
 # ================= SIGNAL ENGINE =================
+# ================= SIGNAL ENGINE =================
 def get_monster_signals():
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT)
@@ -185,6 +385,10 @@ def get_monster_signals():
 
         for s in signals or []:
             try:
+                # ================= ADD TIMESTAMP =================
+                if "timestamp" not in s:
+                    s["timestamp"] = datetime.utcnow()
+
                 ai = predict_trade(s)
                 if not ai.get("approved"):
                     continue
@@ -194,8 +398,8 @@ def get_monster_signals():
                 if not valid_signal(s):
                     continue
 
-                rr = calculate_rr(s["entry"],s["tp"],s["sl"],s["direction"])
-                if rr < 1.1:
+                rr = calculate_rr(s["entry"], s["tp"], s["sl"], s["direction"])
+                if rr < 1.2:
                     continue
 
                 if is_duplicate_signal(s):
@@ -206,8 +410,8 @@ def get_monster_signals():
             except Exception as e:
                 log(f"signal filter error: {e}")
 
-        final = sorted(final, key=lambda x: float(x.get("confidence",0)), reverse=True)
-        return final[:3]
+        final = sorted(final, key=lambda x: float(x.get("confidence", 0)), reverse=True)
+        return final[:MAX_SIGNALS_PER_CYCLE]
 
     except Exception as e:
         log(f"signal engine error: {e}")
@@ -569,6 +773,24 @@ def pair_in_cooldown(chat_id, pair):
     except Exception as e:
         log(f"pair_in_cooldown error: {e}")
         return False
+    
+def is_trade_locked(chat_id, signal):
+    try:
+        entry = round(float(signal['entry']), 1)
+        key = f"{chat_id}_{signal['pair']}_{signal['direction']}_{entry}"
+        now = datetime.now()
+
+        if key in EXECUTION_LOCK:
+            last_time = EXECUTION_LOCK[key]
+            if (now - last_time).total_seconds() < EXECUTION_LOCK_EXPIRY:
+                return True
+
+        EXECUTION_LOCK[key] = now
+        return False
+
+    except Exception as e:
+        log(f"lock error: {e}")
+        return True    
 
 def can_trade_user(chat_id, trade_amount):
     if get_daily_trade_count(chat_id) >= MAX_DAILY_TRADES:
@@ -602,19 +824,32 @@ def normalize_symbol_for_ccxt(symbol):
         return symbol
 
 def get_exchange(api_key, api_secret, trade_type):
-    default_type = "future" if trade_type == "futures" else "spot"
+    try:
+        import ccxt
 
-    exchange = ccxt.binance({
-        "apiKey": api_key,
-        "secret": api_secret,
-        "enableRateLimit": True,
-        "options": {
-            "defaultType": default_type,
-            "adjustForTimeDifference": True
-        }
-    })
+        default_type = "future" if trade_type == "futures" else "spot"
 
-    return exchange
+        exchange = ccxt.binance({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": default_type,
+                "adjustForTimeDifference": True
+            }
+        })
+
+        # 🔥 مهم جدًا
+        exchange.set_sandbox_mode(False)
+
+        # 🔥 تحميل الماركت (بيحل مشاكل كتير)
+        exchange.load_markets()
+
+        return exchange
+
+    except Exception as e:
+        print(f"Exchange init error: {e}")
+        return None
 
 def check_api_permissions(exchange, trade_type):
     try:
@@ -639,11 +874,20 @@ def check_api_permissions(exchange, trade_type):
 def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id):
     conn = None
     try:
-        api_key = decrypt_text(api_key)
-        api_secret = decrypt_text(api_secret)
+        # ================= SAFE DECRYPT =================
+        try:
+            dec_key = decrypt_text(api_key)
+            dec_secret = decrypt_text(api_secret)
 
+            if dec_key and dec_secret:
+                api_key = dec_key
+                api_secret = dec_secret
+        except:
+            pass
+
+        # ================= VALIDATION =================
         if not api_key or not api_secret:
-            return None, "API KEY / SECRET invalid after decrypt"
+            return None, "API KEY / SECRET invalid"
 
         exchange = get_exchange(api_key, api_secret, trade_type)
         exchange.load_markets()
@@ -658,6 +902,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if symbol not in exchange.markets:
             return None, f"Symbol not available: {symbol}"
 
+        # ================= SIGNAL DATA =================
         entry = float(signal["entry"])
         tp = float(signal["tp"])
         sl = float(signal["sl"])
@@ -667,10 +912,22 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if live_price is None:
             return None, "فشل سحب السعر الحالي"
 
+        # ================= SIGNAL FRESHNESS =================
+        signal_time = signal.get("timestamp")
+        if signal_time:
+            try:
+                age = (datetime.utcnow() - signal_time).total_seconds()
+                if age > SIGNAL_FRESHNESS_SECONDS:
+                    return None, "تم رفض التنفيذ لأن الإشارة قديمة"
+            except:
+                pass
+
+        # ================= PRICE DEVIATION =================
         deviation = abs(live_price - entry) / entry * 100
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
             return None, f"تم رفض التنفيذ لأن السعر تحرك ({round(deviation,4)}%)"
 
+        # ================= LEVERAGE =================
         leverage = 10
 
         if trade_type == "futures":
@@ -684,6 +941,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             except Exception as e:
                 log(f"Leverage warning: {e}")
 
+        # ================= BALANCE =================
         balance = exchange.fetch_balance()
         usdt_balance = (
             balance.get("USDT", {}).get("free")
@@ -703,6 +961,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if capital_to_use > usdt_balance:
             return None, f"الرصيد غير كافي. المطلوب {capital_to_use} والمتاح {usdt_balance}"
 
+        # ================= POSITION SIZE =================
         position_notional = capital_to_use * leverage if trade_type == "futures" else capital_to_use
         amount = position_notional / live_price
 
@@ -719,6 +978,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
+        # ================= ORDER =================
         params = {}
         if trade_type == "futures":
             params = {
@@ -730,6 +990,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
+        # ================= REAL ENTRY =================
         real_entry = entry
         try:
             if order.get("average"):
@@ -739,6 +1000,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         except:
             pass
 
+        # ================= SAVE TRADE =================
         conn = db()
         c = conn.cursor()
 
@@ -774,38 +1036,26 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
 
     except ccxt.InsufficientFunds as e:
         log(f"execute_trade insufficient funds: {e}")
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
+        if conn:
+            conn.close()
         return None, "رصيد غير كافي لتنفيذ الصفقة"
 
     except ccxt.InvalidOrder as e:
         log(f"execute_trade invalid order: {e}")
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
+        if conn:
+            conn.close()
         return None, f"أمر غير صالح: {e}"
 
     except ccxt.AuthenticationError as e:
         log(f"execute_trade auth error: {e}")
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
-        return None, "API Key / Secret غير صالحين أو لا يوجد صلاحيات"
+        if conn:
+            conn.close()
+        return None, f"API ERROR: {e}"
 
     except Exception as e:
         log(f"execute_trade full error: {e}")
-        try:
-            if conn:
-                conn.close()
-        except:
-            pass
+        if conn:
+            conn.close()
         return None, f"Trade Error: {e}"
 
 # ================= NO SIGNAL =================
@@ -970,15 +1220,21 @@ def run():
         log(f"IP check failed: {e}")
 
     init_trade_tables()
-    init_trade_tables()
     log("BOT STARTED - FINAL SAFE MODE")
     log("Entering main bot loop...")
 
+    sent_signals = {}
+
     while True:
         try:
+            clean_execution_lock()
             log("Loop tick...")
 
+        # ✅ تحديث الصفقات (أهم سطر)
+            update_trades(get_price)
+
             update_closed_trades()
+
             signals = get_monster_signals()
             users = get_users()
 
@@ -990,15 +1246,30 @@ def run():
 
             sent_to_channel_pairs = set()
 
+            # تنظيف ذاكرة الإشارات (Memory Leak Fix)
+            now = datetime.now()
+
+            for k in list(USER_SIGNAL_MEMORY.keys()):
+               if (now - USER_SIGNAL_MEMORY[k]).total_seconds() > USER_SIGNAL_EXPIRY:
+                 del USER_SIGNAL_MEMORY[k]
+
             for signal in signals[:MAX_SIGNALS_PER_CYCLE]:
                 try:
-                    signal_key = f"{signal.get('pair')}_{signal.get('direction')}_{signal.get('entry')}"
+                    signal_key = f"{signal.get('pair')}_{signal.get('direction')}"
+                    now = time.time()
+
+                    if signal_key in sent_signals:
+                      if now - sent_signals[signal_key] < 1800:
+                        continue
+
+                    sent_signals[signal_key] = now
 
                     if CHANNEL_ID and signal_key not in sent_to_channel_pairs:
-                        send_channel(format_signal(signal))
-                        sent_to_channel_pairs.add(signal_key)
+                       send_channel(format_signal(signal))
+                       sent_to_channel_pairs.add(signal_key)
+
                 except Exception as ch_e:
-                    log(f"Channel send error: {ch_e}")
+                   log(f"Channel send error: {ch_e}")
 
                 for user in users:
                     try:
@@ -1016,6 +1287,19 @@ def run():
 
                         if not signal_allowed_for_plan(plan, signal):
                             continue
+
+                        signal_id = f"{signal['pair']}_{signal['direction']}"
+                        user_key = f"{chat_id}_{signal_id}"
+
+                        now = datetime.now()
+
+# منع التكرار لنفس المستخدم
+                        if user_key in USER_SIGNAL_MEMORY:
+                             last_time = USER_SIGNAL_MEMORY[user_key]
+                             if (now - last_time).total_seconds() < 600:  # 10 دقايق
+                                        continue
+
+                        USER_SIGNAL_MEMORY[user_key] = now
 
                         # ================= VIP AUTO TRADE =================
                         if (
@@ -1054,6 +1338,17 @@ def run():
 """)
                                     continue
 
+                                # 🚫 منع تنفيذ مكرر
+                                # 🔥 منع تكرار الإشارات (الأهم)
+                                if is_signal_blocked(chat_id, signal):
+                                   log(f"🚫 BLOCKED SIGNAL: {signal.get('pair')}")
+                                   continue
+
+# 🔒 منع تنفيذ مكرر
+                                if is_trade_locked(chat_id, signal):
+                                  log(f"🔒 LOCKED: {chat_id} | {signal.get('pair')} | {signal.get('direction')}")
+                                  continue
+
                                 signal_trade_type = "futures" if signal.get("type", "FUTURES") == "FUTURES" else "spot"
 
                                 order, result_msg = execute_trade(
@@ -1064,6 +1359,7 @@ def run():
                                     risk_percent=trade_amount,
                                     chat_id=chat_id
                                 )
+                                log(f"🔥 EXECUTION RESULT: {result_msg}")
 
                                 if order:
                                     real_entry = signal.get("real_entry", signal["entry"])

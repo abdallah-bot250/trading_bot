@@ -45,11 +45,23 @@ def sanitize_trade_amount(value, default=10.0, min_value=5.0, max_value=1000.0):
 
 
 # ================= APP =================
+if not os.environ.get("SECRET_KEY"):
+    raise Exception("SECRET_KEY missing")
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "secret")
+app.secret_key = os.environ.get("SECRET_KEY")
+
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax'
+)
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BASE_URL = os.environ.get("BASE_URL", "").strip().rstrip("/")
+
+if not BASE_URL:
+    raise Exception("BASE_URL missing")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 FERNET_KEY = os.environ.get("FERNET_KEY", "").strip()
 
@@ -87,6 +99,8 @@ session_requests.mount("https://", adapter)
 
 # ================= RATE LIMIT =================
 rate_limit = defaultdict(list)
+sent_messages_cache = {}
+CACHE_EXPIRY = 120  # ثواني
 
 def is_rate_limited(ip, limit=10, window=60):
     now = time.time()
@@ -130,7 +144,7 @@ def apply_security_headers(response):
 @app.errorhandler(Exception)
 def handle_exception(e):
     log(f"❌ Global Error: {e}")
-    return "❌ حصل خطأ في السيرفر", 500
+    return jsonify({"error": "internal_server_error"}), 500
 
 
 # ================= HELPERS =================
@@ -268,6 +282,23 @@ def send(chat_id, text):
     if not TOKEN or not chat_id:
         log(f"⚠️ TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
         return False
+
+    # 🔒 منع تكرار الرسائل
+    now = time.time()
+
+# تنظيف الكاش
+    for k in list(sent_messages_cache.keys()):
+      if now - sent_messages_cache[k] > CACHE_EXPIRY:
+         del sent_messages_cache[k]
+
+    key = f"{chat_id}_{hash(text)}"
+
+    if key in sent_messages_cache:
+     if now - sent_messages_cache[key] < 60:
+         log("⚠️ Duplicate message blocked")
+         return False
+
+    sent_messages_cache[key] = now
 
     try:
         user_link = f"{BASE_URL}/login?chat_id={chat_id}"
@@ -612,7 +643,16 @@ def cancel():
     return "❌ تم إلغاء الدفع"
 
 
+def admin_only(f):
+    def wrapper(*args, **kwargs):
+        if not is_current_admin():
+            return "❌ غير مصرح"
+        return f(*args, **kwargs)
+    return wrapper
+
+
 @app.route("/debug-users")
+@admin_only
 def debug_users():
     try:
         conn = db()
@@ -1596,9 +1636,25 @@ def mark_withdrawal_paid():
 # ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    ip = request.remote_addr
-    if is_rate_limited(ip, limit=60, window=60):
+    # 1. JSON only
+    if not request.is_json:
         return "ok", 200
+
+    # 2. Rate limit
+    ip = request.remote_addr
+    if is_rate_limited(ip, limit=20, window=60):
+        return "ok", 200
+
+    # 3. User-Agent check
+    user_agent = request.headers.get("User-Agent", "").lower()
+    if "telegrambot" not in user_agent:
+        return "forbidden", 403
+
+    # 4. Secret validation
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    if secret:
+        if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+            return "forbidden", 403
 
     try:
         data = request.get_json(silent=True) or {}
@@ -1922,7 +1978,20 @@ def webhook():
 # ================= PAYMENT WEBHOOK =================
 @app.route("/payment-webhook", methods=["POST"])
 def payment_webhook():
+
+    # 🔒 JSON only
+    if not request.is_json:
+        return "invalid", 400
+
+    # 🔒 Rate limit
+    ip = request.remote_addr
+    if is_rate_limited(ip, limit=10, window=60):
+        return "too many requests", 429
+
     data = request.get_json(silent=True) or {}
+
+    # 🔥 Logging مهم
+    log(f"📩 Payment webhook data: {data}")
 
     try:
         signature = request.headers.get("x-nowpayments-sig", "").strip()
@@ -1940,7 +2009,8 @@ def payment_webhook():
             digestmod=hashlib.sha512
         ).hexdigest()
 
-        if not hmac.compare_digest(signature.lower(), generated_sig.lower()):
+        # 🔒 Signature check (محسن)
+        if not hmac.compare_digest(signature, generated_sig):
             log(f"❌ Invalid NOWPayments signature | recv={signature} | gen={generated_sig}")
             return "invalid signature", 403
 
@@ -1949,7 +2019,13 @@ def payment_webhook():
         chat_id = str(data.get("order_id") or "").strip()
         plan = (data.get("order_description") or "basic").strip().lower()
 
-        if payment_status not in ["finished", "confirmed"]:
+        # 🔒 Validate plan
+        if plan not in ["basic", "pro", "vip"]:
+            log(f"⚠️ Invalid plan received: {plan}")
+            plan = "basic"
+
+        # 🔒 Validate basic data
+        if not payment_status or payment_status not in ["finished", "confirmed"]:
             log(f"ℹ️ Ignored payment status: {payment_status}")
             return "ignored", 200
 
@@ -1958,6 +2034,9 @@ def payment_webhook():
 
         if not payment_id:
             return "missing payment_id", 400
+
+        if len(payment_id) > 100 or len(chat_id) > 50:
+            return "invalid data", 400
 
         conn = db()
         c = conn.cursor()
@@ -1989,6 +2068,12 @@ def payment_webhook():
             LIMIT 1
         """, (chat_id,))
         buyer = c.fetchone()
+
+        # 🔒 User must exist
+        if not buyer:
+            conn.close()
+            log(f"❌ User not found for chat_id={chat_id}")
+            return "user not found", 404
 
         c.execute("""
             UPDATE users
@@ -2146,8 +2231,8 @@ def payment_webhook():
 # ================= CHECK OPEN TRADES =================
 def check_open_trades():
     try:
-        conn = db()
-        c = conn.cursor()
+        with get_db() as conn:
+            c = conn.cursor()
 
         c.execute("""
             SELECT id, chat_id, pair, direction, trade_type, entry, tp, sl, amount, status, breakeven_sent
@@ -2224,7 +2309,7 @@ def check_open_trades():
 
                 # ================= TP / SL RESULT =================
                 if direction == "LONG":
-                    if current_price >= tp:
+                    if current_price >= tp and trade[9] == "OPEN":
                         pnl = ((tp - entry) * amount) if amount > 0 else 0
 
                         send(chat_id, f"""✅ نتيجة الصفقة
@@ -2246,7 +2331,7 @@ def check_open_trades():
                         """, (pnl, trade_id))
                         conn.commit()
 
-                    elif current_price <= sl:
+                    elif current_price <= sl and trade[9] == "OPEN":
                         pnl = ((sl - entry) * amount) if amount > 0 else 0
 
                         send(chat_id, f"""❌ نتيجة الصفقة
@@ -2322,6 +2407,17 @@ def check_open_trades():
     except Exception as e:
         log(f"check_open_trades error: {e}")
 
+def trade_watcher():
+    log("🚀 Trade watcher started")
+
+    while True:
+        try:
+            check_open_trades()
+        except Exception as e:
+            log(f"❌ trade_watcher error: {e}")
+
+        time.sleep(30)  # كل 30 ثانية        
+
 
 # ================= SAFE BOT THREAD =================
 _bot_thread_started = False
@@ -2345,10 +2441,17 @@ def start_bot_once():
             log("ℹ️ Bot thread already started, skipping duplicate launch")
             return
 
-        _bot_thread_started = True
-        bot_thread = threading.Thread(target=start_bot, daemon=True)
-        bot_thread.start()
-        log("✅ Bot thread launched successfully")
+        __bot_thread_started = True
+
+# تشغيل البوت الأساسي
+bot_thread = threading.Thread(target=start_bot, daemon=True)
+bot_thread.start()
+
+# 🔥 تشغيل متابعة الصفقات
+watcher_thread = threading.Thread(target=trade_watcher, daemon=True)
+watcher_thread.start()
+
+log("✅ Bot + Trade watcher started successfully")
 
 
 # ================= START BOT ONLY ON RAILWAY / MAIN PROCESS =================

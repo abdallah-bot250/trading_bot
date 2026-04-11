@@ -33,6 +33,8 @@ def clamp(value, min_value, max_value):
     except Exception:
         return min_value
 
+
+# ✅ RR ثابت ومظبوط
 def rr_ratio(entry, tp, sl, direction):
     try:
         entry = safe_float(entry)
@@ -56,18 +58,22 @@ def rr_ratio(entry, tp, sl, direction):
     except Exception:
         return 0
 
+
+# ❌ كان بيرجع % → عملناها decimal عشان consistency
 def percent_distance(a, b):
     try:
         a = safe_float(a)
         b = safe_float(b)
-        if a == 0:
+        if a <= 0:
             return 0
-        return abs((b - a) / a) * 100
+        return abs((b - a) / a)  # 🔥 بدون *100
     except Exception:
         return 0
 
+
 def is_valid_direction(direction):
     return normalize_text(direction) in ["LONG", "SHORT"]
+
 
 def signal_shape_valid(entry, tp, sl, direction):
     try:
@@ -88,36 +94,28 @@ def signal_shape_valid(entry, tp, sl, direction):
     except Exception:
         return False
 
+
+# ✅ خففنا القسوة
 def trend_direction_alignment(direction, trend, trend_power):
-    """
-    فلتر خفيف مش قاتل:
-    يمنع فقط الحالات المتضاربة جدًا
-    """
     try:
         direction = normalize_text(direction)
         trend = normalize_text(trend)
         trend_power = normalize_text(trend_power)
 
+        # منع التضارب القاتل فقط
         if direction == "LONG" and trend_power == "STRONG_BEAR":
             return False
 
         if direction == "SHORT" and trend_power == "STRONG_BULL":
             return False
 
-        if direction == "LONG" and trend == "DOWN" and trend_power in ["BEAR", "STRONG_BEAR"]:
-            return False
-
-        if direction == "SHORT" and trend == "UP" and trend_power in ["BULL", "STRONG_BULL"]:
-            return False
-
         return True
     except Exception:
         return True
 
+
+# ✅ تقليل القسوة
 def market_quality_penalty(volume, trend_power, structure, smc):
-    """
-    خصومات جودة السوق
-    """
     penalty = 0
 
     volume = normalize_text(volume)
@@ -126,68 +124,67 @@ def market_quality_penalty(volume, trend_power, structure, smc):
     smc = normalize_text(smc)
 
     if volume == "WEAK":
-        penalty += 5
+        penalty += 3
 
     if trend_power == "WEAK":
-        penalty += 6
+        penalty += 4
     elif trend_power == "MIXED":
-        penalty += 2
+        penalty += 1
 
     if structure in ["CHOPPY", "RANGE"]:
-        penalty += 4
+        penalty += 3
 
     if smc in ["RANGE", "NONE", "UNKNOWN"]:
-        penalty += 2
+        penalty += 1
 
     return penalty
 
+
 # ================= SCORE COMPONENTS =================
+
 def score_confidence(confidence):
     confidence = safe_float(confidence)
 
-    if confidence >= 95:
-        return 25
-    elif confidence >= 90:
-        return 22
+    if confidence >= 90:
+        return 20
     elif confidence >= 85:
-        return 19
-    elif confidence >= 80:
         return 16
+    elif confidence >= 80:
+        return 13
     elif confidence >= 75:
-        return 12
+        return 10
     elif confidence >= 70:
-        return 8
-    elif confidence >= 65:
-        return 4
+        return 6
     return 0
+
 
 def score_rr(rr):
     rr = safe_float(rr)
 
     if rr >= 3.0:
-        return 20
+        return 18
     elif rr >= 2.5:
-        return 17
+        return 15
     elif rr >= 2.0:
-        return 14
+        return 12
     elif rr >= 1.7:
-        return 11
+        return 9
     elif rr >= 1.5:
-        return 8
-    elif rr >= 1.2:
-        return 5
+        return 6
     return 0
+
 
 def score_volume(volume):
     volume = normalize_text(volume)
 
     if volume == "STRONG":
-        return 12
+        return 10
     elif volume == "MEDIUM":
-        return 7
+        return 5
     elif volume == "WEAK":
-        return 2
+        return 1
     return 0
+
 
 def score_trend(trend, trend_power):
     trend = normalize_text(trend)
@@ -196,60 +193,55 @@ def score_trend(trend, trend_power):
     score = 0
 
     if trend in ["UP", "DOWN"]:
-        score += 6
+        score += 5
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        score += 10
+        score += 9
     elif trend_power in ["BULL", "BEAR"]:
-        score += 6
-    elif trend_power in ["MIXED"]:
-        score += 2
-    elif trend_power in ["WEAK"]:
-        score -= 3
+        score += 5
+    elif trend_power == "MIXED":
+        score += 1
+    elif trend_power == "WEAK":
+        score -= 2
 
     return score
+
 
 def score_structure(structure):
     structure = normalize_text(structure)
 
-    if structure in ["BREAKOUT", "NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
-        return 10
-    elif structure in ["PULLBACK", "CONTINUATION"]:
-        return 7
-    elif structure in ["MID_RANGE"]:
-        return 4
+    if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
+        return 8
+    elif structure == "MID_RANGE":
+        return 3
     elif structure in ["CHOPPY", "RANGE"]:
         return -2
     return 0
+
 
 def score_smc(smc):
     smc = normalize_text(smc)
 
     if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
-        return 10
-    elif smc in ["BOS", "CHOCH"]:
         return 8
-    elif smc in ["ORDER_BLOCK", "FVG"]:
+    elif smc in ["BOS", "CHOCH"]:
         return 6
-    elif smc in ["RANGE", "NONE"]:
-        return 1
     return 0
+
 
 def score_timeframe(tf):
     tf = normalize_text(tf)
 
     if tf == "1H":
-        return 10
-    elif tf == "15M":
         return 8
+    elif tf == "15M":
+        return 6
     elif tf == "5M":
-        return 5
-    elif tf == "3M":
-        return 3
-    elif tf == "1M":
-        return 1
+        return 4
     return 0
 
+
+# ✅ متظبط مع decimal system
 def score_signal_shape(entry, tp, sl, direction):
     try:
         entry = safe_float(entry)
@@ -262,51 +254,35 @@ def score_signal_shape(entry, tp, sl, direction):
 
         if direction == "LONG":
             if not (tp > entry > sl):
-                return -20
+                return -15
         elif direction == "SHORT":
             if not (tp < entry < sl):
-                return -20
-        else:
-            return -20
+                return -15
 
         tp_dist = percent_distance(entry, tp)
         sl_dist = percent_distance(entry, sl)
 
         score = 0
 
-        # منع SL القريب جدًا
-        if sl_dist < 0.12:
-            score -= 12
-        elif sl_dist < 0.20:
-            score -= 7
-        elif 0.20 <= sl_dist <= 2.20:
+        # SL
+        if sl_dist < 0.001:
+            score -= 10
+        elif 0.002 <= sl_dist <= 0.02:
+            score += 4
+
+        # TP
+        if tp_dist < 0.002:
+            score -= 10
+        elif 0.003 <= tp_dist <= 0.05:
             score += 5
 
-        # منع TP القريب جدًا
-        if tp_dist < 0.22:
-            score -= 12
-        elif tp_dist < 0.35:
-            score -= 6
-        elif 0.35 <= tp_dist <= 5.0:
-            score += 6
-
         return score
+
     except Exception:
         return -5
 
 # ================= MAIN AI FILTER =================
 def predict_trade(signal):
-    """
-    يرجع:
-    {
-        "approved": True/False,
-        "confidence": new_confidence,
-        "score": ai_score,
-        "ranking_score": ranking_score,
-        "reason": "...",
-        "rr": ...
-    }
-    """
     try:
         if not signal or not isinstance(signal, dict):
             return {
@@ -343,21 +319,18 @@ def predict_trade(signal):
                 "flags": ["missing_or_invalid_fields"]
             }
 
-        if not signal_shape_valid(entry, tp, sl, direction):
-            return {
-                "approved": False,
-                "confidence": 0,
-                "score": -100,
-                "ranking_score": 0,
-                "reason": "invalid_signal_shape",
-                "rr": 0,
-                "flags": ["invalid_signal_shape"]
-            }
-
-        rr = rr_ratio(entry, tp, sl, direction)
+        # ================= INIT =================
+        ai_score = 0
         reason_flags = []
 
-        # ================= HARD QUALITY FILTERS =================
+        # ================= SIGNAL SHAPE =================
+        if not signal_shape_valid(entry, tp, sl, direction):
+            ai_score -= 25
+            reason_flags.append("bad_signal_shape")
+
+        # ================= RR =================
+        rr = rr_ratio(entry, tp, sl, direction)
+
         if rr <= 0:
             return {
                 "approved": False,
@@ -369,19 +342,12 @@ def predict_trade(signal):
                 "flags": ["bad_rr"]
             }
 
+        # ================= TREND ALIGNMENT =================
         if not trend_direction_alignment(direction, trend, trend_power):
-            return {
-                "approved": False,
-                "confidence": round(confidence, 2),
-                "score": -25,
-                "ranking_score": 0,
-                "reason": "trend_direction_conflict",
-                "rr": round(rr, 4),
-                "flags": ["trend_direction_conflict"]
-            }
+            ai_score -= 18
+            reason_flags.append("trend_conflict")
 
-        # ================= AI SCORE BUILD =================
-        ai_score = 0
+        # ================= BASE SCORING =================
         ai_score += score_confidence(confidence)
         ai_score += score_rr(rr)
         ai_score += score_volume(volume)
@@ -391,67 +357,45 @@ def predict_trade(signal):
         ai_score += score_timeframe(timeframe)
         ai_score += score_signal_shape(entry, tp, sl, direction)
 
-        # ================= PENALTIES =================
+        # ================= PENALTIES (مخففة ومتوازنة) =================
         quality_penalty = market_quality_penalty(volume, trend_power, structure, smc)
         ai_score -= quality_penalty
 
         if quality_penalty > 0:
             reason_flags.append(f"market_penalty_{quality_penalty}")
 
-        if rr < 1.2:
-            ai_score -= 15
+        if rr < 1.3:
+            ai_score -= 12
             reason_flags.append("low_rr")
 
-        if confidence < 68:
-            ai_score -= 12
+        if confidence < 70:
+            ai_score -= 10
             reason_flags.append("low_conf")
-
-        if normalize_text(volume) == "WEAK":
-            reason_flags.append("weak_volume")
-
-        if normalize_text(trend_power) == "WEAK":
-            reason_flags.append("weak_trend_power")
-
-        if normalize_text(structure) in ["CHOPPY", "RANGE"]:
-            reason_flags.append("bad_structure")
-
-        if normalize_text(smc) in ["RANGE", "NONE", "UNKNOWN"]:
-            reason_flags.append("weak_smc")
 
         # ================= BONUS =================
         if rr >= 2.0 and confidence >= 80:
-            ai_score += 8
-            reason_flags.append("strong_rr_conf_combo")
+            ai_score += 6
+            reason_flags.append("strong_rr_conf")
 
         if normalize_text(volume) == "STRONG" and normalize_text(trend_power) in ["STRONG_BULL", "STRONG_BEAR"]:
-            ai_score += 7
+            ai_score += 5
             reason_flags.append("trend_volume_alignment")
 
-        if normalize_text(structure) in ["BREAKOUT", "NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"] and normalize_text(smc) in ["BOS", "CHOCH", "LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
-            ai_score += 6
-            reason_flags.append("structure_smc_alignment")
+        if normalize_text(structure) in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
+            ai_score += 4
 
-        if normalize_text(timeframe) == "15M" and rr >= 1.7:
-            ai_score += 3
-            reason_flags.append("preferred_15m_rr")
+        if normalize_text(timeframe) == "1H":
+            ai_score += 4
 
-        if normalize_text(timeframe) == "1H" and rr >= 1.8:
-            ai_score += 5
-            reason_flags.append("higher_tf_bonus")
-
-        # ================= FINAL AI CONFIDENCE =================
+        # ================= CONFIDENCE (متوازن) =================
         adjusted_confidence = confidence
 
-        if ai_score >= 85:
-            adjusted_confidence += 9
-        elif ai_score >= 75:
-            adjusted_confidence += 7
-        elif ai_score >= 65:
-            adjusted_confidence += 5
-        elif ai_score >= 55:
-            adjusted_confidence += 3
-        elif ai_score < 30:
-            adjusted_confidence -= 12
+        if ai_score >= 80:
+            adjusted_confidence += 6
+        elif ai_score >= 70:
+            adjusted_confidence += 4
+        elif ai_score >= 60:
+            adjusted_confidence += 2
         elif ai_score < 40:
             adjusted_confidence -= 8
         elif ai_score < 50:
@@ -459,56 +403,44 @@ def predict_trade(signal):
 
         adjusted_confidence = clamp(adjusted_confidence, 1, 99)
 
-        # ================= RANKING SCORE =================
+        # ================= RANKING =================
         ranking_score = (
             adjusted_confidence
-            + (rr * 10)
-            + score_volume(volume)
+            + (rr * 9)
             + score_trend(trend, trend_power)
             + score_structure(structure)
             + score_smc(smc)
-            + score_timeframe(timeframe)
         )
-
-        # Bonus ranking for clean setups
-        if normalize_text(volume) == "STRONG":
-            ranking_score += 3
-
-        if normalize_text(structure) in ["BREAKOUT", "NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
-            ranking_score += 3
-
-        if normalize_text(smc) in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN", "BOS", "CHOCH"]:
-            ranking_score += 3
 
         ranking_score = round(ranking_score, 2)
 
-        # ================= APPROVAL =================
+        # ================= APPROVAL (مشددة للجودة) =================
         approved = False
         reason = "rejected"
 
-        if adjusted_confidence >= 70 and ai_score >= 42 and rr >= 1.25:
+        if adjusted_confidence >= 75 and ai_score >= 50 and rr >= 1.4:
             approved = True
             reason = "approved"
 
-        if adjusted_confidence >= 78 and ai_score >= 52 and rr >= 1.45:
+        if adjusted_confidence >= 80 and ai_score >= 58 and rr >= 1.6:
             approved = True
-            reason = "strong_approved"
+            reason = "strong"
 
-        if adjusted_confidence >= 85 and ai_score >= 62 and rr >= 1.60:
+        if adjusted_confidence >= 87 and ai_score >= 65 and rr >= 1.8:
             approved = True
-            reason = "elite_approved"
+            reason = "elite"
 
-        # حماية أخيرة ضد إشارات borderline
+        # ================= FINAL SAFETY =================
         if approved:
-            if normalize_text(volume) == "WEAK" and rr < 1.5 and adjusted_confidence < 75:
+            if normalize_text(volume) == "WEAK" and rr < 1.5:
                 approved = False
-                reason = "rejected_weak_volume_borderline"
-                reason_flags.append("weak_volume_borderline")
+                reason = "weak_volume_reject"
+                reason_flags.append("weak_volume")
 
-            if normalize_text(structure) in ["CHOPPY", "RANGE"] and rr < 1.7:
+            if normalize_text(structure) in ["CHOPPY", "RANGE"]:
                 approved = False
-                reason = "rejected_bad_structure_borderline"
-                reason_flags.append("bad_structure_borderline")
+                reason = "bad_structure_reject"
+                reason_flags.append("bad_structure")
 
         result = {
             "approved": approved,
@@ -520,7 +452,10 @@ def predict_trade(signal):
             "flags": reason_flags
         }
 
-        log(f"AI RESULT => {pair} | {result}")
+        # 🔥 logging بس للإشارات المقبولة
+        if approved:
+            log(f"AI RESULT => {pair} | {result}")
+
         return result
 
     except Exception as e:
