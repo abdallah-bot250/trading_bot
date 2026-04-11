@@ -186,21 +186,21 @@ def get_market_data(symbol, interval="5m", limit=250):
     cache_key = f"{symbol}_{interval}_{limit}"
 
     # ================= SAFE CACHE TTL =================
-    if cache_key in MARKET_DATA_CACHE:
-      cached = MARKET_DATA_CACHE.get(cache_key)
+
+    cached = MARKET_DATA_CACHE.get(cache_key)
 
     if (
         isinstance(cached, dict)
         and "data" in cached
         and "time" in cached
     ):
-        cache_age = time.time() - cached["time"]
+       cache_age = time.time() - cached["time"]
 
-        if cache_age <= MARKET_CACHE_TTL_SECONDS:
-            return cached["data"]
-        else:
-            # expired → احذفه
-            MARKET_DATA_CACHE.pop(cache_key, None)
+    if cache_age <= MARKET_CACHE_TTL_SECONDS:
+        return cached["data"]
+    else:
+        # expired -> احذفه
+        MARKET_DATA_CACHE.pop(cache_key, None)
 
     KUCOIN_TF_MAP = {
         "1m": "1min",

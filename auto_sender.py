@@ -824,11 +824,12 @@ def normalize_symbol_for_ccxt(symbol):
         return symbol
 
 def get_exchange(api_key, api_secret, trade_type):
+    import ccxt
+
+    default_type = "future" if trade_type == "FUTURES" else "spot"
+
+    # 🥇 Binance
     try:
-        import ccxt
-
-        default_type = "future" if trade_type == "futures" else "spot"
-
         exchange = ccxt.binance({
             "apiKey": api_key,
             "secret": api_secret,
@@ -839,17 +840,46 @@ def get_exchange(api_key, api_secret, trade_type):
             }
         })
 
-        # 🔥 مهم جدًا
-        exchange.set_sandbox_mode(False)
-
-        # 🔥 تحميل الماركت (بيحل مشاكل كتير)
         exchange.load_markets()
-
+        log("✅ Using BINANCE")
         return exchange
 
     except Exception as e:
-        print(f"Exchange init error: {e}")
-        return None
+        log(f"❌ Binance failed: {e}")
+
+    # 🥈 Binance US (Spot فقط)
+    if trade_type != "FUTURES":
+        try:
+            exchange = ccxt.binanceus({
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+            })
+
+            exchange.load_markets()
+            log("✅ Using BINANCE US")
+            return exchange
+
+        except Exception as e:
+            log(f"❌ Binance US failed: {e}")
+
+    # 🥉 KuCoin
+    try:
+        exchange = ccxt.kucoin({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "password": "",  # ⚠️ لو هتستخدم futures لازم تحط passphrase
+            "enableRateLimit": True,
+        })
+
+        exchange.load_markets()
+        log("✅ Using KUCOIN")
+        return exchange
+
+    except Exception as e:
+        log(f"❌ KuCoin failed: {e}")
+
+    return None
 
 def check_api_permissions(exchange, trade_type):
     try:
