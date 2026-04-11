@@ -639,7 +639,7 @@ def higher_timeframe_confirmation(symbol, direction, current_interval):
         higher_tf = get_higher_tf(current_interval)
         df_htf = get_market_data(symbol, higher_tf, limit=200)
 
-        if df_htf is None or len(df_htf) < 50:
+        if df_htf is None or len(df_htf) < 60:
             return False
 
         trend_htf = detect_trend(df_htf)
@@ -720,19 +720,19 @@ def news_filter():
 def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, structure):
     score = 0
 
-    if rsi_val < 32:
-        score += 2
-    elif rsi_val > 68:
-        score -= 2
+    if rsi_val < 35:
+        score += 1.5
+    elif rsi_val > 65:
+        score -= 1.5
     elif 52 <= rsi_val <= 62:
         score += 1
     elif 38 <= rsi_val <= 48:
         score -= 1
 
     if macd_val > signal_val:
-        score += 2
+        score += 1.5
     else:
-        score -= 2
+        score -= 1.5
 
     if trend == "UP":
         score += 2
@@ -740,17 +740,17 @@ def ai_score(rsi_val, macd_val, signal_val, trend, volume, smc, trend_power, str
         score -= 2
 
     if volume == "STRONG":
-        score += 2
+        score += 1.5
 
     if smc == "LIQUIDITY_BREAK_UP":
-        score += 2
+        score += 1.5
     elif smc == "LIQUIDITY_BREAK_DOWN":
-        score -= 2
+        score -= 1.5
 
     if trend_power == "STRONG_BULL":
-        score += 2
+        score += 1.5
     elif trend_power == "STRONG_BEAR":
-        score -= 2
+        score -= 1.5
 
     if structure == "NEAR_BREAKOUT_HIGH":
         score += 1
@@ -1005,7 +1005,7 @@ def signal_levels_valid(entry, tp, sl, direction):
             return False
 
         rr = reward / risk
-        if rr < 2.0:
+        if rr < 1.7:
             return False
 
         return True
