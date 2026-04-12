@@ -19,6 +19,57 @@ import requests
 from queue import Queue
 import threading
 
+
+def send_telegram_signal(signal):
+    try:
+        message = f"""
+🚀 New Trade Signal
+
+📊 Pair: {signal['pair']}
+📈 Direction: {signal['direction']}
+
+💰 Entry: {signal['entry']}
+🎯 TP: {signal['tp']}
+🛑 SL: {signal['sl']}
+"""
+
+        bot_token = os.environ.get("BOT_TOKEN")
+        chat_id = signal.get("chat_id")
+
+        if not chat_id:
+            log("❌ No chat_id found")
+            return
+
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+        requests.post(url, json={
+            "chat_id": chat_id,
+            "text": message
+        })
+
+        log("✅ Signal sent to Telegram")
+
+    except Exception as e:
+        log(f"❌ Telegram send error: {e}")
+
+
+def get_public_exchange():
+    exchanges = [
+        ccxt.binance(),
+        ccxt.binanceus(),
+        ccxt.kucoin()
+    ]
+
+    for ex in exchanges:
+        try:
+            ex.load_markets()
+            log(f"✅ Using {ex.id} for DATA")
+            return ex
+        except Exception as e:
+            log(f"❌ {ex.id} failed: {e}")
+
+    return None
+
 message_queue = Queue()
 
 # =========================================
@@ -1007,11 +1058,19 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             pass
 
         # ================= VALIDATION =================
-        if not api_key or not api_secret:
-            return None, "API KEY / SECRET invalid"
+        no_api_mode = False
 
+        if not api_key or not api_secret:
+           no_api_mode = True
+
+        public_ex = get_public_exchange()
         exchange = get_exchange(api_key, api_secret, trade_type)
+
         exchange.load_markets()
+
+        if not public_ex:
+           return None, "No public exchange available"
+        
 
         perm_ok, perm_msg = check_api_permissions(exchange, trade_type)
         if not perm_ok:
@@ -1028,6 +1087,12 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         tp = float(signal["tp"])
         sl = float(signal["sl"])
         side = "buy" if signal["direction"] == "LONG" else "sell"
+
+        if no_api_mode:
+           log("⚠️ No API → Sending signal only")
+
+           send_telegram_signal(signal)  # 👈 مهم
+           return "signal_sent", "No API mode"
 
         live_price = get_live_price(raw_symbol)
         if live_price is None:
