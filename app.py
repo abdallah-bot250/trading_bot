@@ -13,7 +13,6 @@ import random
 import string
 import re
 from cryptography.fernet import Fernet
-
 # ================= NEW SAFE IMPORTS =================
 import logging
 import time
@@ -22,6 +21,23 @@ from collections import defaultdict
 from contextlib import contextmanager
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "123456")
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY")
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+
+    from flask import request, abort
+
+    token = request.headers.get("X-API-KEY")
+
+    if token != WEBHOOK_SECRET:
+        abort(403)
+
+    # باقي الكود هنا
 
 
 # ================= HELPERS =================
@@ -48,8 +64,7 @@ def sanitize_trade_amount(value, default=10.0, min_value=5.0, max_value=1000.0):
 if not os.environ.get("SECRET_KEY"):
     raise Exception("SECRET_KEY missing")
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY")
+
 
 app.config.update(
     SESSION_COOKIE_SECURE=True,
@@ -146,6 +161,38 @@ def handle_exception(e):
     log(f"❌ Global Error: {e}")
     return jsonify({"error": "internal_server_error"}), 500
 
+# ================= HELPERS =================
+
+import secrets
+
+def generate_csrf_token():
+    token = secrets.token_hex(32)
+    session["csrf_token"] = token
+    return token
+
+
+# 🔥 حط الكود هنا
+RATE_LIMIT_STORE = {}
+
+def is_rate_limited(ip, limit=10, window=60):
+    now = time.time()
+    
+
+    if ip not in RATE_LIMIT_STORE:
+        RATE_LIMIT_STORE[ip] = []
+
+    RATE_LIMIT_STORE[ip] = [
+        t for t in RATE_LIMIT_STORE[ip]
+        if now - t < window
+    ]
+
+    if len(RATE_LIMIT_STORE[ip]) >= limit:
+        return True
+
+    RATE_LIMIT_STORE[ip].append(now)
+    return False
+def admin_required():
+    return session.get("user") and session.get("is_admin")
 
 # ================= HELPERS =================
 def get_live_price(symbol):
@@ -719,6 +766,15 @@ def register():
         session["ref"] = request.args.get("ref").strip()
 
     if request.method == "POST":
+        ip = request.remote_addr
+        if is_rate_limited(ip, limit=5, window=60):
+            return "Too many requests", 429
+
+        token = request.form.get("csrf_token")
+
+        if not token or token != session.get("csrf_token"):
+             return "CSRF blocked", 403
+
         try:
             email = (request.form.get("email") or "").strip().lower()
             password_raw = (request.form.get("password") or "").strip()
@@ -896,15 +952,19 @@ def register():
             flash("❌ حصل خطأ أثناء التسجيل", "error")
             return redirect(url_for("register", chat_id=chat_id, ref=ref))
 
-    return render_template("register.html", chat_id=chat_id, ref=ref, bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"))
+    return render_template(
+    "register.html",
+    chat_id=chat_id,
+    ref=ref,
+    bot_link=os.environ.get("BOT_LINK", "https://t.me/your_bot"),
+    csrf_token=generate_csrf_token()
+)
 
 
 # ================= LOGIN =================
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    ip = request.remote_addr
-    if is_rate_limited(ip, limit=20, window=60):
-        return "❌ Too many requests, حاول بعد دقيقة"
+    
 
     chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
 
@@ -912,7 +972,12 @@ def login():
         session["chat_id"] = request.args.get("chat_id").strip()
 
     if request.method == "POST":
-        try:
+
+       ip = request.remote_addr
+       if is_rate_limited(ip, limit=5, window=60):
+           return "❌ Too many requests, حاول بعد دقيقة"
+
+       try:
             email = (request.form.get("email") or "").strip().lower()
             password = (request.form.get("password") or "").strip()
 
@@ -969,7 +1034,7 @@ def login():
             flash("❌ الباسورد غير صحيح", "error")
             return redirect("/login")
 
-        except Exception as e:
+       except Exception as e:
             log(f"❌ Login error: {e}")
             flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
             return redirect("/login")
@@ -1480,12 +1545,12 @@ def is_current_admin():
 
 
 @app.route("/admin")
-def admin_dashboard():
-    if not session.get("user"):
-        return redirect("/login")
+def admin():
 
-    if not is_current_admin():
-        return "❌ غير مصرح"
+    if not admin_required():
+        return "forbidden", 403
+
+    
 
     try:
         conn = db()
@@ -1545,7 +1610,7 @@ def activate_user():
         user_id = request.form.get("id", "").strip()
         plan = request.form.get("plan", "basic").strip().lower()
 
-        if plan not in ["basic", "pro", "vip"]:
+        if plan not in ["basic", "pro", "vip", "pro_2y"]:
             plan = "basic"
 
         expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -1636,6 +1701,12 @@ def mark_withdrawal_paid():
 # ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    from flask import abort
+
+    token = request.headers.get("X-API-KEY")
+
+    if token != WEBHOOK_SECRET:
+        return "forbidden", 403
     # 1. JSON only
     if not request.is_json:
         return "ok", 200
@@ -2059,7 +2130,10 @@ def payment_webhook():
             VALUES (%s, %s, %s)
         """, (payment_id, chat_id, payment_status))
 
-        expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        if plan == "pro_2y":
+            expiry = (datetime.now() + timedelta(days=730)).strftime("%Y-%m-%d")
+        else:
+             expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
 
         c.execute("""
             SELECT email, referred_by
@@ -2080,7 +2154,7 @@ def payment_webhook():
             SET is_paid = 1,
                 plan = %s,
                 expiry = %s,
-                bot_active = CASE WHEN %s = 'vip' THEN 1 ELSE bot_active END
+                bot_active = CASE WHEN %s IN ('vip', 'pro_2y') THEN 1 ELSE bot_active END
             WHERE chat_id = %s
         """, (plan, expiry, plan, chat_id))
 
@@ -2111,15 +2185,17 @@ def payment_webhook():
 
                     if not already_exists:
                         plan_prices = {
-                            "basic": 25,
-                            "pro": 59.99,
-                            "vip": 100
+                          "basic": 25,
+                          "pro": 59.99,
+                          "vip": 100,
+                          "pro_2y": 999
                         }
 
                         commission_percent_map = {
-                            "basic": 0.08,
-                            "pro": 0.12,
-                            "vip": 0.15
+                          "basic": 0.08,
+                          "pro": 0.12,
+                          "vip": 0.15,
+                          "pro_2y": 0.05
                         }
 
                         plan_price = float(plan_prices.get(plan, 25))
@@ -2212,10 +2288,15 @@ def payment_webhook():
         conn.close()
 
         if user and user[0]:
+            if plan == "pro_2y":
+                duration_text = "سنتين 🔥"
+            else:
+                duration_text = "30 يوم"
+
             send(user[0], f"""🔥 تم تفعيل اشتراكك بنجاح!
 
 📦 الباقة: {plan.upper()}
-⏳ المدة: 30 يوم
+⏳ المدة: {duration_text}
 
 🚀 هتوصلك الإشارات تلقائي الآن
 """)

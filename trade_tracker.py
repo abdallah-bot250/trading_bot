@@ -40,6 +40,7 @@ def add_trade(signal):
             "rr": float(signal.get("rr", 0)),
             "status": "OPEN",
             "pnl": 0,
+            "sent_result": False,
             "created_at": datetime.utcnow().isoformat()
         }
 
@@ -93,12 +94,20 @@ def update_trades(get_price_func):
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["tp"])
                     updated = True
+                    if not trade.get("sent_result"):
+                        from auto_sender import notify_trade_result
+                        notify_trade_result(trade)
+                        trade["sent_result"] = True
 
                 elif price <= trade["sl"]:
                     trade["status"] = "SL"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["sl"])
                     updated = True
+                    if not trade.get("sent_result"):
+                       from auto_sender import notify_trade_result
+                       notify_trade_result(trade)
+                       trade["sent_result"] = True
 
             # ================= SHORT =================
             elif trade["direction"] == "SHORT":
@@ -108,12 +117,19 @@ def update_trades(get_price_func):
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["tp"])
                     updated = True
-
+                    if not trade.get("sent_result"):
+                       from auto_sender import notify_trade_result
+                       notify_trade_result(trade)
+                       trade["sent_result"] = True
                 elif price >= trade["sl"]:
                     trade["status"] = "SL"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["sl"])
                     updated = True
+                    if not trade.get("sent_result"):
+                       from auto_sender import notify_trade_result
+                       notify_trade_result(trade)
+                       trade["sent_result"] = True
 
         if updated:
             save_trades(trades)

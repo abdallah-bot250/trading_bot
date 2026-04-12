@@ -89,6 +89,28 @@ h2 {
     line-height: 1.8;
 }
 
+.price-box {
+    margin-top: 12px;
+}
+
+.old-price {
+    text-decoration: line-through;
+    color: #ef4444;
+    font-size: 16px;
+}
+
+.new-price {
+    color: #22c55e;
+    font-size: 28px;
+    font-weight: 900;
+    margin: 5px 0;
+}
+
+.duration {
+    font-size: 14px;
+    color: #cbd5e1;
+}
+
 .features {
     text-align: right;
     background: rgba(255,255,255,0.03);
@@ -182,6 +204,30 @@ h2 {
 <div class="plan-box">
     <div class="plan-title">📦 الخطة المختارة</div>
     <div class="plan-name">{{plan}}</div>
+
+    <div class="price-box">
+        {% if plan == "basic" %}
+            <div class="old-price">60$</div>
+            <div class="new-price">25$</div>
+            <div class="duration">30 يوم</div>
+
+        {% elif plan == "pro" %}
+            <div class="old-price">110$</div>
+            <div class="new-price">59.99$</div>
+            <div class="duration">30 يوم</div>
+
+        {% elif plan == "vip" %}
+            <div class="old-price">180$</div>
+            <div class="new-price">99.9$</div>
+            <div class="duration">30 يوم</div>
+
+        {% elif plan == "pro_2y" %}
+            <div class="old-price">1500$</div>
+            <div class="new-price">999$</div>
+            <div class="duration">سنتين 🔥</div>
+        {% endif %}
+    </div>
+
     <div class="plan-note">
         بعد الدفع سيتم تفعيل حسابك تلقائيًا وربط الخطة بحسابك خلال ثوانٍ.
     </div>
@@ -219,4 +265,4 @@ h2 {
 </div>
 
 </body>
-</html>
+</h

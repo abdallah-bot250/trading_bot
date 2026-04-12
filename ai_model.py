@@ -418,21 +418,22 @@ def predict_trade(signal):
         approved = False
         reason = "rejected"
 
-        if adjusted_confidence >= 75 and ai_score >= 50 and rr >= 1.4:
+        if adjusted_confidence >= 72 and ai_score >= 50 and rr >= 1.4:
             approved = True
             reason = "approved"
 
-        if adjusted_confidence >= 80 and ai_score >= 58 and rr >= 1.6:
+        if adjusted_confidence >= 78 and ai_score >= 58 and rr >= 1.6:
             approved = True
             reason = "strong"
 
-        if adjusted_confidence >= 87 and ai_score >= 65 and rr >= 1.8:
+        if adjusted_confidence >= 85 and ai_score >= 65 and rr >= 1.8:
             approved = True
             reason = "elite"
 
         # ================= FINAL SAFETY =================
         if approved:
-            if normalize_text(volume) == "WEAK" and rr < 1.5:
+            if normalize_text(volume) == "WEAK":
+             if rr < 1.3 and adjusted_confidence < 78:
                 approved = False
                 reason = "weak_volume_reject"
                 reason_flags.append("weak_volume")

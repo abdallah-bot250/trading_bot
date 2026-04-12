@@ -347,6 +347,7 @@ button.main-btn:hover {
             </div>
         </div>
 
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="chat_id" value="{{chat_id}}">
 
         <button type="submit" class="main-btn">إنشاء الحساب</button>

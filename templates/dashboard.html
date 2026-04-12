@@ -54,7 +54,12 @@ body::before {
     margin-top: 0;
     font-size: 15px;
 }
-
+.live-users {
+    margin-top: 10px;
+    color: #38bdf8;
+    font-weight: bold;
+    font-size: 15px;
+}
 /* GLASS BOX */
 .glass-box {
     background: rgba(15,23,42,0.85);
@@ -385,6 +390,26 @@ input, select {
     .notice-box {
         padding: 16px 14px;
     }
+
+.fake-popup {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(15,23,42,0.95);
+    border: 1px solid rgba(34,197,94,0.3);
+    padding: 12px 18px;
+    border-radius: 12px;
+    color: #bbf7d0;
+    font-size: 14px;
+    display: none;
+    animation: fadeIn 0.5s ease;
+    z-index: 9999;
+}
+
+@keyframes fadeIn {
+    from {opacity:0; transform:translateY(10px);}
+    to {opacity:1; transform:translateY(0);}
+}    
 }
 </style>
 </head>
@@ -438,6 +463,23 @@ input, select {
 
     <h1>🚀 AI Crypto Trader</h1>
     <p>Smart Trading • AI Powered • Passive Income</p>
+    {% if plan == "basic" %}
+<div class="urgency-box">
+🚀 Upgrade الآن إلى PRO أو VIP واحصل على إشارات أقوى وتنفيذ أفضل
+⏳ العرض ينتهي خلال:
+<span id="countdown">05:00</span>
+</div>
+
+{% elif plan == "pro" %}
+<div class="urgency-box">
+💎 أنت قريب جدًا من أعلى مستوى — ابدأ VIP الآن واستمتع بالتداول التلقائي الكامل
+⏳ العرض ينتهي خلال:
+<span id="countdown">05:00</span>
+</div>
+{% endif %}
+<div class="live-users">
+👥 <span id="usersCount">127</span> مستخدم متواجد الآن
+</div>
 
     <div class="status-strip">
         <div class="status-pill">
@@ -788,7 +830,51 @@ setInterval(async ()=>{
      console.log("chart update error", e);
  }
 }, 3000);
-</script>
 
+
+// 👇 حط هنا 👇
+
+let users = 120 + Math.floor(Math.random() * 20);
+
+function updateUsers() {
+    let change = Math.floor(Math.random() * 5);
+
+    if (Math.random() > 0.5) {
+        users += change;
+    } else {
+        users -= change;
+    }
+
+    if (users < 90) users = 95;
+
+    let el = document.getElementById("usersCount");
+    if (el) el.innerText = users;
+}
+
+setInterval(updateUsers, 3000);
+
+const names = ["Ahmed", "Mohamed", "Ali", "Omar", "Youssef", "Khaled"];
+const plans = ["VIP 💎", "PRO 🔥"];
+
+function showPopup() {
+    let name = names[Math.floor(Math.random() * names.length)];
+    let plan = plans[Math.floor(Math.random() * plans.length)];
+
+    let popup = document.getElementById("popup");
+
+    if (!popup) return;
+
+    popup.innerText = `🔥 ${name} اشترك الآن في ${plan}`;
+    popup.style.display = "block";
+
+    setTimeout(() => {
+        popup.style.display = "none";
+    }, 4000);
+}
+
+setInterval(showPopup, 8000);
+
+</script>
+<div id="popup" class="fake-popup"></div>
 </body>
 </html>

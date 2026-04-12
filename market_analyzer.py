@@ -22,11 +22,11 @@ def log(msg):
 
 # ================= SETTINGS =================
 
-import ccxt
-
-def get_all_symbols(limit=50):
+def get_all_symbols(limit=35):
     try:
-        exchange = ccxt.binance({
+        import ccxt
+
+        exchange = ccxt.kucoin({
             "enableRateLimit": True
         })
 
@@ -44,28 +44,39 @@ def get_all_symbols(limit=50):
             ):
                 symbols.append(s.replace("/", ""))
 
-        # 🔥 ترتيب + حذف التكرار
+        # حذف التكرار
         symbols = list(set(symbols))
 
-        # 🔥 تقليل العدد علشان الأداء
-        symbols = sorted(symbols)[:limit]
+        # ترتيب عشوائي خفيف عشان ميبقاش نفس العملات دايمًا
+        import random
+        random.shuffle(symbols)
+
+        # ناخد 35 بس
+        symbols = symbols[:limit]
+
+        print(f"🔥 Loaded {len(symbols)} symbols from KUCOIN")
 
         return symbols
 
     except Exception as e:
-        print(f"Error loading symbols: {e}")
-        return ["BTCUSDT", "ETHUSDT"]
+        print(f"❌ Error loading symbols from KuCoin: {e}")
+
+        return [
+            "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT",
+            "XRPUSDT", "ADAUSDT", "DOGEUSDT",
+            "AVAXUSDT", "LINKUSDT", "APTUSDT"
+        ]
 
 
 # 🔥 استخدام مباشر
-SYMBOLS = get_all_symbols(limit=50)
+SYMBOLS = get_all_symbols(limit=35)
 
 # ================= OTHER SETTINGS =================
 
 TIMEFRAMES = ["5m", "15m", "1h"]
 
 REQUEST_TIMEOUT = 6
-MIN_SCORE_TO_TRADE = 6.5
+MIN_SCORE_TO_TRADE = 7
 MIN_CONFIDENCE = 75
 
 # منع تكرار نفس الأزواج دايمًا
@@ -1171,27 +1182,29 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         structure
     )
 
-    # ===== Penalty System بدل القتل =====
+    # ===== Penalty System بدل القتل (UPDATED) =====
     penalty = 0.0
 
     if choppy:
-        penalty += 1.0
+        penalty += 0.6
 
     if not momentum_ok:
-        penalty += 1.0
+        penalty += 0.6
 
     if not vol_ok:
-        penalty += 0.8
+        penalty += 0.5
 
     if not news_ok:
-        penalty += 1.0
+        penalty += 0.6
 
     score -= penalty
 
-    # ===== Direction =====
-    if score >= MIN_SCORE_TO_TRADE:
+    # ===== Direction (UPDATED) =====
+    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.8 if is_paid else 0.5)
+
+    if score >= ENTRY_THRESHOLD:
         direction = "LONG"
-    elif score <= -MIN_SCORE_TO_TRADE:
+    elif score <= -ENTRY_THRESHOLD:
         direction = "SHORT"
     else:
         return None
@@ -1205,9 +1218,10 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if trend_power == "MIXED" and abs(score) < (6.3 if is_paid else 5.3):
         return None
 
-    # الفلتر ده مهم ولسه نخليه قاتل
+    # الفلتر ده مهم ولسه نخليه قاتل (UPDATED)
     if not strong_signal_filter(df, trend, trend_power, direction):
-        return None
+        if not is_paid:
+            return None
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
@@ -1303,7 +1317,6 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         return None
 
     # ===== Trade type =====
-    # سبوت فقط لو لونج قوي جدًا
     if (
         direction == "LONG"
         and trend == "UP"
@@ -1372,7 +1385,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         ai_result = predict_trade(signal)
 
         if not ai_result.get("approved"):
-          return None
+            return None
 
         signal["confidence"] = float(ai_result.get("confidence", signal["confidence"]))
         signal["ranking_score"] = float(ai_result.get("ranking_score", signal["ranking_score"]))
@@ -1380,18 +1393,15 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         signal["rr"] = float(ai_result.get("rr", rr))
 
     except Exception as e:
-       log(f"AI model error in _build_signal {symbol} {interval}: {e}")
-       return None
+        log(f"AI model error in _build_signal {symbol} {interval}: {e}")
+        return None
 
-
-# ✅ هنا بالظبط تحطها
+    # ===== SAVE STATE =====
     LAST_SIGNAL_STATE[symbol] = {
-    "time": time.time(),
-    "direction": direction,
-    "entry": entry
+        "time": time.time(),
+        "direction": direction,
+        "entry": entry
     }
-
-    add_trade(signal)
 
     return signal
 

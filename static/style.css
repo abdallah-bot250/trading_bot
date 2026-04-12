@@ -54,6 +54,24 @@ a {
     margin-top: 0;
     line-height: 1.8;
 }
+/* 🔥 urgency effect */
+.urgency-box {
+    margin-top: 20px;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.3);
+    padding: 12px;
+    border-radius: 12px;
+    color: #fca5a5;
+    font-weight: bold;
+    animation: pulse 1.5s infinite;
+    text-align: center;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
 
 /* 🧊 GLASS */
 .glass-box {
