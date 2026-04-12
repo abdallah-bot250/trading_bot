@@ -27,17 +27,6 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "123456")
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-
-    from flask import request, abort
-
-    token = request.headers.get("X-API-KEY")
-
-    if token != WEBHOOK_SECRET:
-        abort(403)
-
-    # باقي الكود هنا
 
 
 # ================= HELPERS =================
