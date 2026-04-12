@@ -1613,13 +1613,14 @@ def run():
                                 exchange = get_exchange(api_key, api_secret, trade_type)
 
                                 if not exchange:
-                                    log(f"🚫 Exchange init failed: {chat_id}")
-                                    continue
+                                   log(f"⚠️ No API → send signal only")
+                                   send_telegram_signal(signal)
+                                   continue
 
                                 perm_ok, perm_msg = check_api_permissions(exchange, trade_type)
 
-                                if not perm_ok:
-                                   continue
+                                
+                                
 
                                 order, result_msg = execute_trade(
                                     api_key=api_key,
