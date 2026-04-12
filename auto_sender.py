@@ -1619,7 +1619,6 @@ def run():
                                 perm_ok, perm_msg = check_api_permissions(exchange, trade_type)
 
                                 if not perm_ok:
-                                   send(chat_id, f"🚫 API Error:\n{perm_msg}")
                                    continue
 
                                 order, result_msg = execute_trade(
