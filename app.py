@@ -1691,19 +1691,12 @@ def mark_withdrawal_paid():
 # ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-
-    # ================= 1. JSON ONLY =================
-    if not request.is_json:
-        return "ok", 200
-
-    # ================= 2. TELEGRAM SECRET =================
-    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
-    if secret:
-        incoming_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if incoming_secret != secret:
-            return "forbidden", 403
-
     try:
+        # ================= 1. JSON ONLY =================
+        if not request.is_json:
+            return "ok", 200
+
+        # ================= 2. GET DATA =================
         data = request.get_json(silent=True) or {}
 
         message = data.get("message", {}) or {}
@@ -1712,14 +1705,14 @@ def webhook():
         chat_id = str(chat.get("id") or "").strip()
 
         if not chat_id:
-            log("⚠️ Telegram webhook received without chat_id")
+            log("⚠️ No chat_id")
             return "ok", 200
 
-        log(f"📩 Telegram message | chat_id={chat_id} | text={text}")
+        log(f"📩 {chat_id} | {text}")
 
         # ================= /start =================
         if text.startswith("/start"):
-            log("🔥 START DETECTED")
+            log("🔥 START")
 
             start_ref = None
             parts = text.split()
@@ -1730,7 +1723,7 @@ def webhook():
             conn = db()
             c = conn.cursor()
 
-            # ===== SAVE REFERRAL =====
+            # ===== SAVE REF =====
             if start_ref:
                 try:
                     c.execute("""
@@ -1748,24 +1741,17 @@ def webhook():
                     """, (chat_id, start_ref))
 
                     conn.commit()
-                    log(f"✅ Telegram referral saved: {chat_id} -> {start_ref}")
 
                 except Exception as e:
-                    log(f"❌ Telegram referral save error: {e}")
+                    log(f"ref error: {e}")
 
             try:
+                # ===== GET USER =====
                 c.execute("""
-                    SELECT id, email, trades, is_paid, referral_code, plan, expiry, is_admin, lifetime_owner
+                    SELECT id, trades, is_paid, referral_code, plan, expiry, is_admin, lifetime_owner
                     FROM users
                     WHERE chat_id = %s
-                    ORDER BY 
-                        CASE 
-                            WHEN is_admin = 1 THEN 1
-                            WHEN lifetime_owner = 1 THEN 2
-                            WHEN is_paid = 1 THEN 3
-                            ELSE 4
-                        END,
-                        id DESC
+                    ORDER BY id DESC
                     LIMIT 1
                 """, (chat_id,))
                 user = c.fetchone()
@@ -1773,104 +1759,71 @@ def webhook():
                 # ================= USER EXISTS =================
                 if user:
                     user_id = user[0]
-                    trades = int(user[2] or 0)
-                    is_paid = bool(user[3])
-                    referral_code = user[4]
-                    current_plan = user[5]
-                    expiry = user[6]
-                    is_admin_flag = int(user[7] or 0)
-                    lifetime_owner = int(user[8] or 0)
+                    trades = int(user[1] or 0)
+                    is_paid = bool(user[2])
+                    referral_code = user[3]
+                    plan = user[4]
+                    expiry = user[5]
+                    is_admin_flag = int(user[6] or 0)
+                    lifetime_owner = int(user[7] or 0)
 
                     if not referral_code:
                         referral_code = ensure_user_has_referral_code(chat_id, conn)
 
-                    send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
+                    send(chat_id, "✅ حسابك مربوط")
 
-                    # ===== ADMIN / OWNER =====
-                    if is_admin_flag == 1 or lifetime_owner == 1:
-                        send(chat_id, f"""👑 حساب المالك / الأدمن مفعل
-
-📦 الخطة: {current_plan}
-⏳ الصلاحية: {expiry}
-
-🚀 هتوصلك الإشارات تلقائيًا.
-""")
+                    # ADMIN
+                    if is_admin_flag or lifetime_owner:
+                        send(chat_id, f"👑 Admin\nPlan: {plan}")
                         return "ok", 200
 
-                    # ===== PAID USER =====
+                    # PAID
                     if is_paid:
-                        send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
-
                         bot_link = os.environ.get("BOT_LINK")
                         aff_link = f"{bot_link}?start=ref_{referral_code}"
 
-                        send(chat_id, f"""💸 رابط الأفلييت الخاص بك:
-
-{aff_link}
-""")
+                        send(chat_id, f"🔥 اشتراك مفعل\n{aff_link}")
                         return "ok", 200
 
-                    # ===== FREE USER =====
+                    # FREE
                     if trades < 2:
-                        free_signals = get_cached_signals(limit=2)
+                        signals = get_cached_signals(limit=2)
 
-                        if not free_signals:
-                            send(chat_id, "❌ لا توجد فرصة قوية حاليًا، انتظر فرصة أفضل.")
+                        if not signals:
+                            send(chat_id, "❌ مفيش فرص دلوقتي")
                         else:
-                            sent_count = 0
+                            sent = 0
 
-                            for i, signal in enumerate(free_signals, 1):
-                                success = send(chat_id, f"""🔥 إشارة مجانية #{i}
-
-📊 الزوج: {signal['pair']}
-📌 النوع: {signal.get('type', 'FUTURES')}
-📈 الاتجاه: {signal['direction']}
-
-📍 الدخول: {signal['entry']}
-🎯 الهدف: {signal['tp']}
-🛑 وقف الخسارة: {signal['sl']}
-
-📊 الثقة: {signal['confidence']}%
+                            for s in signals:
+                                ok = send(chat_id, f"""
+{ s['pair'] }
+{ s['direction'] }
+Entry: { s['entry'] }
+TP: { s['tp'] }
+SL: { s['sl'] }
 """)
+                                if ok:
+                                    sent += 1
 
-                                if success:
-                                    sent_count += 1
-
-                            if sent_count > 0:
+                            if sent:
                                 c.execute("""
                                     UPDATE users
-                                    SET trades = LEAST(COALESCE(trades, 0) + %s, 2)
+                                    SET trades = LEAST(COALESCE(trades,0)+%s,2)
                                     WHERE id = %s
-                                """, (sent_count, user_id))
+                                """, (sent, user_id))
                                 conn.commit()
 
-                                send(chat_id, f"🎁 تم إرسال {sent_count} صفقة مجانية.")
-
                     else:
-                        bot_link = os.environ.get("BOT_LINK")
-                        aff_link = f"{bot_link}?start=ref_{referral_code}"
-
-                        send(chat_id, f"""📌 استخدمت المجاني بالفعل
-
-💸 رابطك:
-{aff_link}
-""")
+                        send(chat_id, "📌 خلصت المجاني")
 
                 # ================= NEW USER =================
                 else:
-                    register_link = f"{BASE_URL}/register?chat_id={chat_id}"
+                    link = f"{BASE_URL}/register?chat_id={chat_id}"
+                    send(chat_id, f"سجل:\n{link}")
 
-                    send(chat_id, f"""👋 أهلاً بيك
-
-🔗 سجل من هنا:
-{register_link}
-
-وبعدها ابعت /start
-""")
-
-            except Exception as db_err:
-                log(f"❌ DB Error: {db_err}")
-                send(chat_id, "❌ حصل خطأ حاول تاني")
+            except Exception as e:
+                log(f"DB error: {e}")
+                send(chat_id, "❌ خطأ")
 
             finally:
                 try:
@@ -1880,7 +1833,7 @@ def webhook():
 
             return "ok", 200
 
-        # ================= LINK ACCOUNT =================
+        # ================= LINK =================
         elif "@" in text:
             try:
                 conn = db()
@@ -1888,21 +1841,18 @@ def webhook():
 
                 email = text.lower().strip()
 
-                c.execute("SELECT id FROM users WHERE LOWER(email) = %s", (email,))
+                c.execute("SELECT id FROM users WHERE LOWER(email)=%s", (email,))
                 user = c.fetchone()
 
                 if not user:
-                    send(chat_id, "❌ الإيميل مش موجود")
+                    send(chat_id, "❌ مش موجود")
                 else:
-                    c.execute(
-                        "UPDATE users SET chat_id = %s WHERE LOWER(email) = %s",
-                        (chat_id, email)
-                    )
+                    c.execute("UPDATE users SET chat_id=%s WHERE LOWER(email)=%s", (chat_id, email))
                     conn.commit()
 
                     ensure_user_has_referral_code(chat_id, conn)
 
-                    send(chat_id, "✅ تم الربط بنجاح")
+                    send(chat_id, "✅ تم الربط")
 
             except Exception as e:
                 log(f"link error: {e}")
@@ -1916,7 +1866,7 @@ def webhook():
 
             return "ok", 200
 
-        # ================= /affiliate =================
+        # ================= AFFILIATE =================
         elif text.startswith("/affiliate"):
             try:
                 conn = db()
@@ -1932,29 +1882,23 @@ def webhook():
                 user = c.fetchone()
 
                 if not user:
-                    send(chat_id, "❌ لازم تسجل الأول")
+                    send(chat_id, "❌ سجل الأول")
                     return "ok", 200
 
-                referral_code = user[0]
+                code = user[0]
                 balance = float(user[1] or 0)
                 refs = int(user[2] or 0)
 
-                if not referral_code:
-                    referral_code = ensure_user_has_referral_code(chat_id, conn)
+                if not code:
+                    code = ensure_user_has_referral_code(chat_id, conn)
 
                 bot_link = os.environ.get("BOT_LINK")
-                aff_link = f"{bot_link}?start=ref_{referral_code}"
+                link = f"{bot_link}?start=ref_{code}"
 
-                send(chat_id, f"""💸 الأفلييت
-
-🔗 {aff_link}
-
-👥 {refs}
-💰 {round(balance, 2)}$
-""")
+                send(chat_id, f"{link}\nRefs: {refs}\n$ {balance}")
 
             except Exception as e:
-                log(f"/affiliate error: {e}")
+                log(f"aff error: {e}")
                 send(chat_id, "❌ خطأ")
 
             finally:
@@ -1965,14 +1909,10 @@ def webhook():
 
         # ================= DEFAULT =================
         else:
-            send(chat_id, """👋 الأوامر:
-
-/start
-/affiliate
-""")
+            send(chat_id, "/start\n/affiliate")
 
     except Exception as e:
-        log(f"❌ Webhook Error: {e}")
+        log(f"❌ Webhook error: {e}")
 
     return "ok", 200
 
