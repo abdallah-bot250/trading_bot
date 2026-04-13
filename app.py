@@ -1692,21 +1692,26 @@ def webhook():
     try:
         data = request.get_json(force=True)
 
-        message = data.get("message", {})
-        chat = message.get("chat", {})
-        text = message.get("text", "")
-        chat_id = str(chat.get("id"))
+        print("🔥 FULL UPDATE:", data)  # مهم جدًا
 
-        print("TEXT:", text)
+        message = data.get("message")
+        if not message:
+            return "ok", 200
+
+        chat_id = str(message["chat"]["id"])
+        text = message.get("text", "")
+
+        print("📩 TEXT:", text)
 
         if text == "/start":
-            send(chat_id, "🔥 البوت شغال 100%")
+            print("🔥 START RECEIVED")
+            send(chat_id, "🔥 البوت شغال 100% وبيستقبل الأوامر")
 
         return "ok", 200
 
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
-        return "error", 200
+        print("❌ WEBHOOK ERROR:", e)
+        return "ok", 200
 
 # ================= PAYMENT WEBHOOK =================
 @app.route("/payment-webhook", methods=["POST"])
