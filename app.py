@@ -1687,234 +1687,26 @@ def mark_withdrawal_paid():
         return f"❌ Error: {str(e)}"
 
 
-# ================= TELEGRAM WEBHOOK =================
-# ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        # ================= 1. JSON ONLY =================
-        if not request.is_json:
-            return "ok", 200
+        data = request.get_json(force=True)
 
-        # ================= 2. GET DATA =================
-        data = request.get_json(silent=True) or {}
+        message = data.get("message", {})
+        chat = message.get("chat", {})
+        text = message.get("text", "")
+        chat_id = str(chat.get("id"))
 
-        message = data.get("message", {}) or {}
-        chat = message.get("chat", {}) or {}
-        text = (message.get("text") or "").strip()
-        chat_id = str(chat.get("id") or "").strip()
+        print("TEXT:", text)
 
-        if not chat_id:
-            log("⚠️ No chat_id")
-            return "ok", 200
+        if text == "/start":
+            send(chat_id, "🔥 البوت شغال 100%")
 
-        log(f"📩 {chat_id} | {text}")
-
-        # ================= /start =================
-        if text.startswith("/start"):
-            log("🔥 START")
-
-            start_ref = None
-            parts = text.split()
-
-            if len(parts) > 1 and parts[1].startswith("ref_"):
-                start_ref = parts[1].replace("ref_", "").strip()
-
-            conn = db()
-            c = conn.cursor()
-
-            # ===== SAVE REF =====
-            if start_ref:
-                try:
-                    c.execute("""
-                        CREATE TABLE IF NOT EXISTS telegram_referrals (
-                            telegram_id TEXT PRIMARY KEY,
-                            referral_code TEXT
-                        )
-                    """)
-
-                    c.execute("""
-                        INSERT INTO telegram_referrals (telegram_id, referral_code)
-                        VALUES (%s, %s)
-                        ON CONFLICT (telegram_id)
-                        DO UPDATE SET referral_code = EXCLUDED.referral_code
-                    """, (chat_id, start_ref))
-
-                    conn.commit()
-
-                except Exception as e:
-                    log(f"ref error: {e}")
-
-            try:
-                # ===== GET USER =====
-                c.execute("""
-                    SELECT id, trades, is_paid, referral_code, plan, expiry, is_admin, lifetime_owner
-                    FROM users
-                    WHERE chat_id = %s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """, (chat_id,))
-                user = c.fetchone()
-
-                # ================= USER EXISTS =================
-                if user:
-                    user_id = user[0]
-                    trades = int(user[1] or 0)
-                    is_paid = bool(user[2])
-                    referral_code = user[3]
-                    plan = user[4]
-                    expiry = user[5]
-                    is_admin_flag = int(user[6] or 0)
-                    lifetime_owner = int(user[7] or 0)
-
-                    if not referral_code:
-                        referral_code = ensure_user_has_referral_code(chat_id, conn)
-
-                    send(chat_id, "✅ حسابك مربوط")
-
-                    # ADMIN
-                    if is_admin_flag or lifetime_owner:
-                        send(chat_id, f"👑 Admin\nPlan: {plan}")
-                        return "ok", 200
-
-                    # PAID
-                    if is_paid:
-                        bot_link = os.environ.get("BOT_LINK")
-                        aff_link = f"{bot_link}?start=ref_{referral_code}"
-
-                        send(chat_id, f"🔥 اشتراك مفعل\n{aff_link}")
-                        return "ok", 200
-
-                    # FREE
-                    if trades < 2:
-                        signals = get_cached_signals(limit=2)
-
-                        if not signals:
-                            send(chat_id, "❌ مفيش فرص دلوقتي")
-                        else:
-                            sent = 0
-
-                            for s in signals:
-                                ok = send(chat_id, f"""
-{ s['pair'] }
-{ s['direction'] }
-Entry: { s['entry'] }
-TP: { s['tp'] }
-SL: { s['sl'] }
-""")
-                                if ok:
-                                    sent += 1
-
-                            if sent:
-                                c.execute("""
-                                    UPDATE users
-                                    SET trades = LEAST(COALESCE(trades,0)+%s,2)
-                                    WHERE id = %s
-                                """, (sent, user_id))
-                                conn.commit()
-
-                    else:
-                        send(chat_id, "📌 خلصت المجاني")
-
-                # ================= NEW USER =================
-                else:
-                    link = f"{BASE_URL}/register?chat_id={chat_id}"
-                    send(chat_id, f"سجل:\n{link}")
-
-            except Exception as e:
-                log(f"DB error: {e}")
-                send(chat_id, "❌ خطأ")
-
-            finally:
-                try:
-                    conn.close()
-                except:
-                    pass
-
-            return "ok", 200
-
-        # ================= LINK =================
-        elif "@" in text:
-            try:
-                conn = db()
-                c = conn.cursor()
-
-                email = text.lower().strip()
-
-                c.execute("SELECT id FROM users WHERE LOWER(email)=%s", (email,))
-                user = c.fetchone()
-
-                if not user:
-                    send(chat_id, "❌ مش موجود")
-                else:
-                    c.execute("UPDATE users SET chat_id=%s WHERE LOWER(email)=%s", (chat_id, email))
-                    conn.commit()
-
-                    ensure_user_has_referral_code(chat_id, conn)
-
-                    send(chat_id, "✅ تم الربط")
-
-            except Exception as e:
-                log(f"link error: {e}")
-                send(chat_id, "❌ خطأ")
-
-            finally:
-                try:
-                    conn.close()
-                except:
-                    pass
-
-            return "ok", 200
-
-        # ================= AFFILIATE =================
-        elif text.startswith("/affiliate"):
-            try:
-                conn = db()
-                c = conn.cursor()
-
-                c.execute("""
-                    SELECT referral_code, affiliate_balance, total_referrals
-                    FROM users
-                    WHERE chat_id = %s
-                    ORDER BY id DESC
-                    LIMIT 1
-                """, (chat_id,))
-                user = c.fetchone()
-
-                if not user:
-                    send(chat_id, "❌ سجل الأول")
-                    return "ok", 200
-
-                code = user[0]
-                balance = float(user[1] or 0)
-                refs = int(user[2] or 0)
-
-                if not code:
-                    code = ensure_user_has_referral_code(chat_id, conn)
-
-                bot_link = os.environ.get("BOT_LINK")
-                link = f"{bot_link}?start=ref_{code}"
-
-                send(chat_id, f"{link}\nRefs: {refs}\n$ {balance}")
-
-            except Exception as e:
-                log(f"aff error: {e}")
-                send(chat_id, "❌ خطأ")
-
-            finally:
-                try:
-                    conn.close()
-                except:
-                    pass
-
-        # ================= DEFAULT =================
-        else:
-            send(chat_id, "/start\n/affiliate")
+        return "ok", 200
 
     except Exception as e:
-        log(f"❌ Webhook error: {e}")
-
-    return "ok", 200
+        print("WEBHOOK ERROR:", e)
+        return "error", 200
 
 # ================= PAYMENT WEBHOOK =================
 @app.route("/payment-webhook", methods=["POST"])
