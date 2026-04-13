@@ -1690,30 +1690,16 @@ def mark_withdrawal_paid():
 # ================= TELEGRAM WEBHOOK =================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    from flask import abort
 
-    token = request.headers.get("X-API-KEY")
-
-    if token != WEBHOOK_SECRET:
-        return "forbidden", 403
-    # 1. JSON only
+    # ================= 1. JSON ONLY =================
     if not request.is_json:
         return "ok", 200
 
-    # 2. Rate limit
-    ip = request.remote_addr
-    if is_rate_limited(ip, limit=20, window=60):
-        return "ok", 200
-
-    # 3. User-Agent check
-    user_agent = request.headers.get("User-Agent", "").lower()
-    if "telegrambot" not in user_agent:
-        return "forbidden", 403
-
-    # 4. Secret validation
+    # ================= 2. TELEGRAM SECRET =================
     secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
     if secret:
-        if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+        incoming_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+        if incoming_secret != secret:
             return "forbidden", 403
 
     try:
@@ -1732,6 +1718,8 @@ def webhook():
 
         # ================= /start =================
         if text.startswith("/start"):
+            log("🔥 START DETECTED")
+
             start_ref = None
             parts = text.split()
 
@@ -1741,6 +1729,7 @@ def webhook():
             conn = db()
             c = conn.cursor()
 
+            # ===== SAVE REFERRAL =====
             if start_ref:
                 try:
                     c.execute("""
@@ -1755,7 +1744,7 @@ def webhook():
                         VALUES (%s, %s)
                         ON CONFLICT (telegram_id)
                         DO UPDATE SET referral_code = EXCLUDED.referral_code
-                    """, (str(chat_id), start_ref))
+                    """, (chat_id, start_ref))
 
                     conn.commit()
                     log(f"✅ Telegram referral saved: {chat_id} -> {start_ref}")
@@ -1780,6 +1769,7 @@ def webhook():
                 """, (chat_id,))
                 user = c.fetchone()
 
+                # ================= USER EXISTS =================
                 if user:
                     user_id = user[0]
                     trades = int(user[2] or 0)
@@ -1795,6 +1785,7 @@ def webhook():
 
                     send(chat_id, "✅ حسابك مربوط بالفعل بالموقع.")
 
+                    # ===== ADMIN / OWNER =====
                     if is_admin_flag == 1 or lifetime_owner == 1:
                         send(chat_id, f"""👑 حساب المالك / الأدمن مفعل
 
@@ -1805,26 +1796,25 @@ def webhook():
 """)
                         return "ok", 200
 
+                    # ===== PAID USER =====
                     if is_paid:
                         send(chat_id, "🔥 اشتراكك مفعل، وهتوصلك الإشارات المدفوعة تلقائيًا.")
 
                         bot_link = os.environ.get("BOT_LINK")
                         aff_link = f"{bot_link}?start=ref_{referral_code}"
+
                         send(chat_id, f"""💸 رابط الأفلييت الخاص بك:
 
 {aff_link}
-
-📌 كل شخص يدخل من خلالك ويبدأ البوت هيتسجل تحتك.
 """)
-
                         return "ok", 200
 
+                    # ===== FREE USER =====
                     if trades < 2:
                         free_signals = get_cached_signals(limit=2)
-                        log(f"🎯 Free signals returned: {free_signals}")
 
                         if not free_signals:
-                            send(chat_id, "❌ لا توجد فرصة قوية حاليًا، من فضلك انتظر حتى يظهر دخول قوي.")
+                            send(chat_id, "❌ لا توجد فرصة قوية حاليًا، انتظر فرصة أفضل.")
                         else:
                             sent_count = 0
 
@@ -1840,10 +1830,6 @@ def webhook():
 🛑 وقف الخسارة: {signal['sl']}
 
 📊 الثقة: {signal['confidence']}%
-📉 الترند: {signal.get('trend', 'N/A')}
-📦 الفوليوم: {signal.get('volume', 'N/A')}
-🧠 SMC: {signal.get('smc', 'N/A')}
-⏱ الفريم: {signal.get('timeframe', 'N/A')}
 """)
 
                                 if success:
@@ -1857,76 +1843,34 @@ def webhook():
                                 """, (sent_count, user_id))
                                 conn.commit()
 
-                                send(chat_id, f"""🎁 تم إرسال {sent_count} صفقة مجانية من البوت.
-
-📌 مهم:
-النسخة المجانية هدفها إنك تشوف طريقة شغل البوت وجودة الفلترة،
-لكنها ليست كل إمكانيات النظام.
-
-🚀 في النسخة المدفوعة هتستفيد بـ:
-• فرص أقوى
-• فلترة أعلى
-• إشارات مستمرة حسب حالة السوق
-• تقليل الدخول العشوائي
-• وفي VIP تقدر تربط حسابك للتنفيذ التلقائي
-
-⚠️ البوت مش بيبعت صفقات لمجرد الإرسال،
-هو بيستنى الفرصة الواضحة فقط.
-
-💰 لو حابب تكمل:
-ادخل على الموقع وفعّل الباقة المناسبة ليك.
-""")
-                            else:
-                                send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
+                                send(chat_id, f"🎁 تم إرسال {sent_count} صفقة مجانية.")
 
                     else:
                         bot_link = os.environ.get("BOT_LINK")
                         aff_link = f"{bot_link}?start=ref_{referral_code}"
 
-                        send(chat_id, f"""📌 أنت استلمت الصفقتين المجانيين بالفعل.
+                        send(chat_id, f"""📌 استخدمت المجاني بالفعل
 
-🔥 لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
-تقدر تفعّل الباقة المناسبة من الموقع.
-
-💡 البوت بيختار الفرص على حسب حالة السوق،
-ومش هدفه كثرة الصفقات... هدفه الجودة أولًا.
-
-💸 ولو حابب تكسب من البوت كمان،
-ده رابط الأفلييت الخاص بك:
-
+💸 رابطك:
 {aff_link}
 """)
 
+                # ================= NEW USER =================
                 else:
                     register_link = f"{BASE_URL}/register?chat_id={chat_id}"
 
-                    send(chat_id, f"""🔥 أهلاً بيك في AI Crypto Trader
+                    send(chat_id, f"""👋 أهلاً بيك
 
-🤖 البوت ده مصمم علشان يفلتر السوق ويختار أفضل الفرص الممكنة فقط،
-بدل الدخول العشوائي في أي صفقة.
-
-📌 البوت بيشتغل على:
-• تحليل الترند والزخم
-• الفوليوم والسيولة
-• الفريمات الأكبر للتأكيد
-• فلترة الصفقات الضعيفة
-• اختيار فرص قليلة لكن أقوى
-
-⚠️ مهم:
-البوت مش هدفه يبعت صفقات كتير،
-هدفه يبعت صفقات أقوى على قد ما السوق يسمح.
-
-🎁 عندك صفقتين مجانيين بعد التسجيل.
-
-🔗 اربط حسابك من هنا:
+🔗 سجل من هنا:
 {register_link}
 
-🚀 وبعد التسجيل ابعت /start علشان تستقبل أول الصفقات.
+وبعدها ابعت /start
 """)
 
             except Exception as db_err:
-                log(f"❌ /start DB Error: {db_err}")
-                send(chat_id, "❌ حصل خطأ أثناء التحقق من حسابك. حاول تاني بعد شوية.")
+                log(f"❌ DB Error: {db_err}")
+                send(chat_id, "❌ حصل خطأ حاول تاني")
+
             finally:
                 try:
                     conn.close()
@@ -1935,7 +1879,7 @@ def webhook():
 
             return "ok", 200
 
-        # ============ LINK ACCOUNT ============
+        # ================= LINK ACCOUNT =================
         elif "@" in text:
             try:
                 conn = db()
@@ -1947,7 +1891,7 @@ def webhook():
                 user = c.fetchone()
 
                 if not user:
-                    send(chat_id, "❌ الإيميل غير موجود في الموقع")
+                    send(chat_id, "❌ الإيميل مش موجود")
                 else:
                     c.execute(
                         "UPDATE users SET chat_id = %s WHERE LOWER(email) = %s",
@@ -1957,11 +1901,12 @@ def webhook():
 
                     ensure_user_has_referral_code(chat_id, conn)
 
-                    send(chat_id, "✅ تم ربط حسابك بنجاح!\nهتوصلك الإشارات هنا 👌")
+                    send(chat_id, "✅ تم الربط بنجاح")
 
             except Exception as e:
-                log(f"link account error: {e}")
-                send(chat_id, "❌ حصل خطأ حاول تاني")
+                log(f"link error: {e}")
+                send(chat_id, "❌ خطأ")
+
             finally:
                 try:
                     conn.close()
@@ -1972,10 +1917,10 @@ def webhook():
 
         # ================= /affiliate =================
         elif text.startswith("/affiliate"):
-            conn = db()
-            c = conn.cursor()
-
             try:
+                conn = db()
+                c = conn.cursor()
+
                 c.execute("""
                     SELECT referral_code, affiliate_balance, total_referrals
                     FROM users
@@ -1986,7 +1931,7 @@ def webhook():
                 user = c.fetchone()
 
                 if not user:
-                    send(chat_id, "❌ لازم تسجل في الموقع الأول.")
+                    send(chat_id, "❌ لازم تسجل الأول")
                     return "ok", 200
 
                 referral_code = user[0]
@@ -1999,41 +1944,36 @@ def webhook():
                 bot_link = os.environ.get("BOT_LINK")
                 aff_link = f"{bot_link}?start=ref_{referral_code}"
 
-                send(chat_id, f"""💸 نظام الأفلييت
+                send(chat_id, f"""💸 الأفلييت
 
-🔗 رابطك:
-{aff_link}
+🔗 {aff_link}
 
-👥 عدد الإحالات: {refs}
-💰 رصيد العمولة: {round(balance, 2)}$
-
-📌 السحب من الداشبورد
-الحد الأدنى: 25$
-الحد الأقصى: 300$
-⏳ خلال 24 ساعة
+👥 {refs}
+💰 {round(balance, 2)}$
 """)
 
             except Exception as e:
                 log(f"/affiliate error: {e}")
-                send(chat_id, "❌ حصل خطأ أثناء تحميل بيانات الأفلييت.")
+                send(chat_id, "❌ خطأ")
+
             finally:
                 try:
                     conn.close()
                 except:
                     pass
 
+        # ================= DEFAULT =================
         else:
-            send(chat_id, """👋 الأوامر المتاحة:
+            send(chat_id, """👋 الأوامر:
 
-/start - ربط الحساب واستلام الإشارات
-/affiliate - عرض رابط الأفلييت والرصيد
+/start
+/affiliate
 """)
 
     except Exception as e:
-        log(f"❌ Telegram Webhook Error: {e}")
+        log(f"❌ Webhook Error: {e}")
 
     return "ok", 200
-
 
 # ================= PAYMENT WEBHOOK =================
 @app.route("/payment-webhook", methods=["POST"])
@@ -2304,175 +2244,173 @@ def check_open_trades():
         with get_db() as conn:
             c = conn.cursor()
 
-        c.execute("""
-            SELECT id, chat_id, pair, direction, trade_type, entry, tp, sl, amount, status, breakeven_sent
-            FROM trades_log
-            WHERE status = 'OPEN'
-            ORDER BY id DESC
-        """)
-        trades = c.fetchall()
+            c.execute("""
+                SELECT id, chat_id, pair, direction, trade_type, entry, tp, sl, amount, status, breakeven_sent
+                FROM trades_log
+                WHERE status = 'OPEN'
+                ORDER BY id DESC
+            """)
+            trades = c.fetchall()
 
-        if not trades:
-            conn.close()
-            return
+            if not trades:
+                return
 
-        for trade in trades:
-            try:
-                trade_id = trade[0]
-                chat_id = str(trade[1] or "").strip()
-                pair = trade[2]
-                direction = trade[3]
-                entry = float(trade[5])
-                tp = float(trade[6])
-                sl = float(trade[7])
-                amount = float(trade[8] or 0)
-                breakeven_sent = int(trade[10] or 0)
+            for trade in trades:
+                try:
+                    trade_id = trade[0]
+                    chat_id = str(trade[1] or "").strip()
+                    pair = trade[2]
+                    direction = trade[3]
+                    entry = float(trade[5])
+                    tp = float(trade[6])
+                    sl = float(trade[7])
+                    amount = float(trade[8] or 0)
+                    status = trade[9]
+                    breakeven_sent = int(trade[10] or 0)
 
-                current_price = get_live_price(pair)
+                    current_price = get_live_price(pair)
 
-                if current_price is None:
-                    continue
+                    if current_price is None:
+                        continue
 
-                current_price = float(current_price)
+                    current_price = float(current_price)
 
-                # ================= BREAKEVEN CHECK =================
-                if breakeven_sent == 0:
-                    if direction == "LONG":
-                        halfway = entry + ((tp - entry) * 0.5)
-                        if current_price >= halfway:
-                            send(chat_id, f"""🟡 تحديث الصفقة
+                    # ================= BREAKEVEN =================
+                    if breakeven_sent == 0:
+                        if direction == "LONG":
+                            halfway = entry + ((tp - entry) * 0.5)
+
+                            if current_price >= halfway:
+                                send(chat_id, f"""🟡 تحديث الصفقة
 
 🔥 {pair}
 📈 الاتجاه: LONG
 
 ✅ الصفقة وصلت نصف الهدف تقريبًا
 💡 يفضل الآن تحريك وقف الخسارة إلى نقطة الدخول (Breakeven)
-لحماية رأس المال.
 """)
 
-                            c.execute("""
-                                UPDATE trades_log
-                                SET breakeven_sent = 1
-                                WHERE id = %s
-                            """, (trade_id,))
-                            conn.commit()
+                                c.execute("""
+                                    UPDATE trades_log
+                                    SET breakeven_sent = 1
+                                    WHERE id = %s
+                                """, (trade_id,))
+                                conn.commit()
 
-                    elif direction == "SHORT":
-                        halfway = entry - ((entry - tp) * 0.5)
-                        if current_price <= halfway:
-                            send(chat_id, f"""🟡 تحديث الصفقة
+                        elif direction == "SHORT":
+                            halfway = entry - ((entry - tp) * 0.5)
+
+                            if current_price <= halfway:
+                                send(chat_id, f"""🟡 تحديث الصفقة
 
 🔥 {pair}
 📉 الاتجاه: SHORT
 
 ✅ الصفقة وصلت نصف الهدف تقريبًا
 💡 يفضل الآن تحريك وقف الخسارة إلى نقطة الدخول (Breakeven)
-لحماية رأس المال.
+""")
+
+                                c.execute("""
+                                    UPDATE trades_log
+                                    SET breakeven_sent = 1
+                                    WHERE id = %s
+                                """, (trade_id,))
+                                conn.commit()
+
+                    # ================= TP / SL =================
+                    if direction == "LONG":
+                        if current_price >= tp and status == "OPEN":
+                            pnl = ((tp - entry) * amount) if amount > 0 else 0
+
+                            send(chat_id, f"""✅ نتيجة الصفقة
+
+🔥 {pair}
+📈 LONG
+
+🎯 تم ضرب الهدف
+💰 PROFIT
+📊 PnL: {round(pnl, 2)} USDT
 """)
 
                             c.execute("""
                                 UPDATE trades_log
-                                SET breakeven_sent = 1
+                                SET status = 'TP_HIT',
+                                    pnl = %s,
+                                    closed_at = NOW()
                                 WHERE id = %s
-                            """, (trade_id,))
+                            """, (pnl, trade_id))
                             conn.commit()
 
-                # ================= TP / SL RESULT =================
-                if direction == "LONG":
-                    if current_price >= tp and trade[9] == "OPEN":
-                        pnl = ((tp - entry) * amount) if amount > 0 else 0
+                        elif current_price <= sl and status == "OPEN":
+                            pnl = ((sl - entry) * amount) if amount > 0 else 0
 
-                        send(chat_id, f"""✅ نتيجة الصفقة
+                            send(chat_id, f"""❌ نتيجة الصفقة
 
 🔥 {pair}
 📈 LONG
 
-🎯 تم ضرب الهدف بنجاح
-💰 النتيجة: PROFIT
-📊 PnL تقريبي: {round(pnl, 2)} USDT
+🛑 SL HIT
+📉 LOSS
+📊 PnL: {round(pnl, 2)} USDT
 """)
 
-                        c.execute("""
-                            UPDATE trades_log
-                            SET status = 'TP_HIT',
-                                pnl = %s,
-                                closed_at = NOW()
-                            WHERE id = %s
-                        """, (pnl, trade_id))
-                        conn.commit()
+                            c.execute("""
+                                UPDATE trades_log
+                                SET status = 'SL_HIT',
+                                    pnl = %s,
+                                    closed_at = NOW()
+                                WHERE id = %s
+                            """, (pnl, trade_id))
+                            conn.commit()
 
-                    elif current_price <= sl and trade[9] == "OPEN":
-                        pnl = ((sl - entry) * amount) if amount > 0 else 0
+                    elif direction == "SHORT":
+                        if current_price <= tp and status == "OPEN":
+                            pnl = ((entry - tp) * amount) if amount > 0 else 0
 
-                        send(chat_id, f"""❌ نتيجة الصفقة
-
-🔥 {pair}
-📈 LONG
-
-🛑 تم ضرب وقف الخسارة
-📉 النتيجة: LOSS
-📊 PnL تقريبي: {round(pnl, 2)} USDT
-""")
-
-                        c.execute("""
-                            UPDATE trades_log
-                            SET status = 'SL_HIT',
-                                pnl = %s,
-                                closed_at = NOW()
-                            WHERE id = %s
-                        """, (pnl, trade_id))
-                        conn.commit()
-
-                elif direction == "SHORT":
-                    if current_price <= tp:
-                        pnl = ((entry - tp) * amount) if amount > 0 else 0
-
-                        send(chat_id, f"""✅ نتيجة الصفقة
+                            send(chat_id, f"""✅ نتيجة الصفقة
 
 🔥 {pair}
 📉 SHORT
 
-🎯 تم ضرب الهدف بنجاح
-💰 النتيجة: PROFIT
-📊 PnL تقريبي: {round(pnl, 2)} USDT
+🎯 تم ضرب الهدف
+💰 PROFIT
+📊 PnL: {round(pnl, 2)} USDT
 """)
 
-                        c.execute("""
-                            UPDATE trades_log
-                            SET status = 'TP_HIT',
-                                pnl = %s,
-                                closed_at = NOW()
-                            WHERE id = %s
-                        """, (pnl, trade_id))
-                        conn.commit()
+                            c.execute("""
+                                UPDATE trades_log
+                                SET status = 'TP_HIT',
+                                    pnl = %s,
+                                    closed_at = NOW()
+                                WHERE id = %s
+                            """, (pnl, trade_id))
+                            conn.commit()
 
-                    elif current_price >= sl:
-                        pnl = ((entry - sl) * amount) if amount > 0 else 0
+                        elif current_price >= sl and status == "OPEN":
+                            pnl = ((entry - sl) * amount) if amount > 0 else 0
 
-                        send(chat_id, f"""❌ نتيجة الصفقة
+                            send(chat_id, f"""❌ نتيجة الصفقة
 
 🔥 {pair}
 📉 SHORT
 
-🛑 تم ضرب وقف الخسارة
-📉 النتيجة: LOSS
-📊 PnL تقريبي: {round(pnl, 2)} USDT
+🛑 SL HIT
+📉 LOSS
+📊 PnL: {round(pnl, 2)} USDT
 """)
 
-                        c.execute("""
-                            UPDATE trades_log
-                            SET status = 'SL_HIT',
-                                pnl = %s,
-                                closed_at = NOW()
-                            WHERE id = %s
-                        """, (pnl, trade_id))
-                        conn.commit()
+                            c.execute("""
+                                UPDATE trades_log
+                                SET status = 'SL_HIT',
+                                    pnl = %s,
+                                    closed_at = NOW()
+                                WHERE id = %s
+                            """, (pnl, trade_id))
+                            conn.commit()
 
-            except Exception as inner_e:
-                log(f"check_open_trades inner error: {inner_e}")
-                continue
-
-        conn.close()
+                except Exception as inner_e:
+                    log(f"check_open_trades inner error: {inner_e}")
+                    continue
 
     except Exception as e:
         log(f"check_open_trades error: {e}")
@@ -2508,20 +2446,18 @@ def start_bot_once():
 
     with _bot_thread_lock:
         if _bot_thread_started:
-            log("ℹ️ Bot thread already started, skipping duplicate launch")
+            log("ℹ️ Bot thread already started")
             return
 
-        __bot_thread_started = True
+        _bot_thread_started = True
 
-# تشغيل البوت الأساسي
-bot_thread = threading.Thread(target=start_bot, daemon=True)
-bot_thread.start()
+        bot_thread = threading.Thread(target=start_bot, daemon=True)
+        bot_thread.start()
 
-# 🔥 تشغيل متابعة الصفقات
-watcher_thread = threading.Thread(target=trade_watcher, daemon=True)
-watcher_thread.start()
+        watcher_thread = threading.Thread(target=trade_watcher, daemon=True)
+        watcher_thread.start()
 
-log("✅ Bot + Trade watcher started successfully")
+        log("✅ Bot + Trade watcher started successfully")
 
 
 # ================= START BOT ONLY ON RAILWAY / MAIN PROCESS =================
@@ -2532,5 +2468,4 @@ if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PORT"):
 # ================= RUN APP =================
 if __name__ == "__main__":
     log("🚀 Flask app started")
-    start_bot_once()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
