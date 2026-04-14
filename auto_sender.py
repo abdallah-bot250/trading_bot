@@ -7,8 +7,6 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
-from trade_tracker import update_trades
-
 # ================= SAFE IMPORTS =================
 import logging
 from contextlib import contextmanager
@@ -109,9 +107,6 @@ def message_worker():
 # =========================================
 def notify_trade_result(trade):
     try:
-        # 👇 مهم: استورد هنا عشان تتجنب circular import
-       # أو غيرها حسب مكان get_users عندك
-
         users = get_users()
 
         pair = trade["pair"]
@@ -119,8 +114,7 @@ def notify_trade_result(trade):
         pnl = trade.get("pnl", 0)
         direction = trade["direction"]
 
-        msg = f"""
-📢 <b>BOT RESULT</b>
+        msg = f"""📢 BOT RESULT
 
 🔥 {pair}
 
@@ -130,20 +124,23 @@ def notify_trade_result(trade):
 💰 PNL: {pnl}%
 """
 
-        # 👇 إرسال لكل المستخدمين
         for user in users:
-            chat_id = user.get("chat_id")
-
-            if not chat_id:
-                continue
-
             try:
-                send_to_telegram(msg, chat_id)
+                chat_id = user[0]  # ✅ الصح
+
+                if not chat_id:
+                    continue
+
+                ok = send(chat_id, msg)  # ✅ استخدم send مش send_to_telegram
+
+                if ok:
+                    log(f"✅ RESULT SENT → {chat_id}")
+
             except Exception as e:
-                print(f"Send error to {chat_id}: {e}")
+                log(f"Send error to {chat_id}: {e}")
 
     except Exception as e:
-        print(f"notify_trade_result error: {e}")
+        log(f"notify_trade_result error: {e}")
 
 load_dotenv()
 
@@ -597,8 +594,8 @@ def signal_allowed_for_plan(plan, signal):
         if plan == "pro":
             return confidence >= 76 and score >= 5
 
-        if plan == "vip":
-            return confidence >= 78 and score >= 5
+        if plan in ["pro", "pro_2y"]:
+             return confidence >= 80 and score >= 5
 
         return False
     except Exception as e:
@@ -1399,10 +1396,14 @@ def update_closed_trades():
                               "pnl": round(pnl, 2)
                         }
 
-                        if trade.get("sent_close_msg"):
-                           continue# إرسال النتيجة لكل المستخدمين
+                        trade_data = {
+                             "pair": pair,
+                             "direction": direction,
+                             "status": "TP" if new_status == "TP_HIT" else "SL",
+                             "pnl": round(pnl, 2)
+                        }
+
                         notify_trade_result(trade_data)
-                        trade["sent_close_msg"] = True
 
                 except Exception as e:
                     log(f"trade monitor inner error: {e}")
@@ -1447,7 +1448,6 @@ def run():
             clean_execution_lock()
             log("Loop tick...")
 
-            update_trades(get_price)
             update_closed_trades()
 
             signals = get_monster_signals()
@@ -1509,8 +1509,8 @@ def run():
                         elif str(plan).lower() == "pro":
                            cooldown = 900    # كل 15 دقيقة
 
-                        elif str(plan).lower() == "vip":
-                            cooldown = 0      # VIP مفتوح
+                        elif str(plan).lower() in ["vip", "pro_2y"]:
+                            cooldown = 900
 
                        # ⛔ منع التكرار حسب الوقت
                         if cooldown > 0:
@@ -1686,6 +1686,47 @@ def run():
 
                             if sent_ok:
                                 write_log(chat_id, "INFO", f"SIGNAL SENT {signal['pair']} {signal['direction']}")
+
+                                # ✅ تسجيل الصفقة علشان تتتابع وتتبعت نتيجتها
+                                try:
+                                    with get_db() as conn:
+                                        c = conn.cursor()
+
+                                        c.execute("""
+                                        INSERT INTO trades_log (
+                                            chat_id,
+                                            pair,
+                                            direction,
+                                            trade_type,
+                                            timeframe,
+                                            entry,
+                                            tp,
+                                            sl,
+                                            amount,
+                                            status,
+                                            sent_open_msg,
+                                            sent_close_msg
+                                        )
+                                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                        """, (
+                                            str(chat_id),
+                                            signal["pair"],
+                                            signal["direction"],
+                                            signal.get("type", "FUTURES"),
+                                            signal.get("timeframe", "5m"),
+                                            float(signal["entry"]),
+                                            float(signal["tp"]),
+                                            float(signal["sl"]),
+                                            0,
+                                            "OPEN",
+                                            True,
+                                            False
+                                        ))
+
+                                        conn.commit()
+
+                                except Exception as e:
+                                    log(f"❌ Tracking insert error: {e}")
 
                                 if plan == "trial":
                                     increment_trade(chat_id)

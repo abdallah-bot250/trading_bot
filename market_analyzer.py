@@ -1128,28 +1128,99 @@ def calculate_smart_tp_sl(df, entry, direction):
         return round(tp, 6), round(sl, 6)
 
     except Exception:
-        return entry, entry    
+        return entry, entry 
+    
+# ================= SUPPORT / RESISTANCE =================
+def find_support_resistance(candles):
+    try:
+        supports = []
+        resistances = []
+
+        for i in range(2, len(candles)-2):
+            low = candles[i][3]
+            high = candles[i][2]
+
+            if (
+                low < candles[i-1][3] and
+                low < candles[i+1][3] and
+                low < candles[i-2][3] and
+                low < candles[i+2][3]
+            ):
+                supports.append(low)
+
+            if (
+                high > candles[i-1][2] and
+                high > candles[i+1][2] and
+                high > candles[i-2][2] and
+                high > candles[i+2][2]
+            ):
+                resistances.append(high)
+
+        return supports, resistances
+
+    except Exception as e:
+        print(f"SR error: {e}")
+        return [], []
+      
 
 
 # ================= INTERNAL SIGNAL BUILDER =================
+def smart_entry_filter(df, direction, entry, atr_val):
+    try:
+        price = float(df["close"].iloc[-1])
+        distance = abs(price - entry) / entry
+
+        if distance > 0.004:
+            return False
+
+        recent_move = abs(df["close"].iloc[-1] - df["close"].iloc[-4]) / df["close"].iloc[-4]
+
+        if recent_move > 0.006:
+            pullback = abs(df["close"].iloc[-1] - df["close"].iloc[-2])
+            if pullback < atr_val * 0.35:
+                return False
+
+        return True
+    except:
+        return True
+
+
+def liquidity_sweep_filter(df, direction):
+    try:
+        highs = df["high"].values
+        lows = df["low"].values
+
+        last_high = highs[-2]
+        last_low = lows[-2]
+
+        current_high = highs[-1]
+        current_low = lows[-1]
+
+        if direction == "LONG":
+            return current_low < last_low and df["close"].iloc[-1] > last_low
+
+        if direction == "SHORT":
+            return current_high > last_high and df["close"].iloc[-1] < last_high
+
+        return False
+    except:
+        return True
+
+
 def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < (100 if is_paid else 60):
         return None
 
-    # ===== فلاتر أساسية فقط =====
     choppy = is_choppy(df)
     momentum_ok = strong_momentum(df)
     vol_ok = volatility_ok(df)
 
-    # النسخة المجانية stricter شوية
     if choppy and not is_paid:
         return None
-
     if not vol_ok and not is_paid:
         return None
 
-    # ===== Indicators =====
     df["rsi"] = rsi(df)
     macd_line, signal_line = macd(df)
     df["atr"] = atr(df)
@@ -1170,36 +1241,22 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if pd.isna(rsi_val) or pd.isna(macd_val) or pd.isna(signal_val) or pd.isna(atr_val):
         return None
 
-    # ===== AI/Base Score =====
     score = ai_score(
-        rsi_val,
-        macd_val,
-        signal_val,
-        trend,
-        volume,
-        smc,
-        trend_power,
-        structure
+        rsi_val, macd_val, signal_val,
+        trend, volume, smc, trend_power, structure
     )
 
-    # ===== Penalty System بدل القتل (UPDATED) =====
     penalty = 0.0
-
-    if choppy:
-        penalty += 0.6
-
-    if not momentum_ok:
-        penalty += 0.6
-
-    if not vol_ok:
-        penalty += 0.5
-
-    if not news_ok:
-        penalty += 0.6
+    if choppy: penalty += 0.6
+    if not momentum_ok: penalty += 0.6
+    if not vol_ok: penalty += 0.5
+    if not news_ok: penalty += 0.6
 
     score -= penalty
 
-    # ===== Direction (UPDATED) =====
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+        score += 0.4
+
     ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.8 if is_paid else 0.5)
 
     if score >= ENTRY_THRESHOLD:
@@ -1208,166 +1265,85 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         direction = "SHORT"
     else:
         return None
-    
-    entry_preview = float(df["close"].iloc[-1])
 
-    if should_block_signal(symbol, direction, entry_preview):
+    price = float(df["close"].iloc[-1])
+
+    if should_block_signal(symbol, direction, price):
         return None
 
-    # السوق المتلخبط يتفلتر بس مش بقسوة
-    if trend_power == "MIXED" and abs(score) < (6.3 if is_paid else 5.3):
+    if direction == "LONG" and trend == "DOWN" and abs(score) < 6:
+        return None
+    if direction == "SHORT" and trend == "UP" and abs(score) < 6:
         return None
 
-    # الفلتر ده مهم ولسه نخليه قاتل (UPDATED)
-    if not strong_signal_filter(df, trend, trend_power, direction):
-        if not is_paid:
-            return None
-
-    htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
-
-    # ===== HTF / Trend sanity =====
-    if is_paid:
-        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < (MIN_SCORE_TO_TRADE + 1.2):
-            return None
-        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < (MIN_SCORE_TO_TRADE + 1.2):
-            return None
-    else:
-        if not htf_ok and abs(score) < 5.0:
-            return None
-        if direction == "LONG" and trend_power == "STRONG_BEAR" and abs(score) < 5.3:
-            return None
-        if direction == "SHORT" and trend_power == "STRONG_BULL" and abs(score) < 5.3:
-            return None
-
-    # ===== الفلاتر اللي كانت بتقتل الإشارات =====
-    late_entry_bad = late_entry_filter(df, direction)
-    sr_ok = support_resistance_filter(df, direction)
-    pullback_ok = pullback_entry_quality(df, direction)
-    wick_ok = rejection_wick_filter(df, direction)
-
-    # بدل القتل المباشر = خصومات ذكية
-    if late_entry_bad:
-        score -= 0.9
-
-    if not sr_ok:
-        score -= 0.7
-
-    if not pullback_ok:
-        score -= 0.7
-
-    if not wick_ok:
-        score -= 0.6
-
-    # بعد الخصومات الإضافية
-    if abs(score) < MIN_SCORE_TO_TRADE:
+    # 🔥 Liquidity sweep
+    if not liquidity_sweep_filter(df, direction):
         return None
 
-    # ===== Entry / Targets =====
-    entry = float(df["close"].iloc[-1])
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
-
-    if tp is None or sl is None:
+    # 🔥 Fake candle
+    candle_size = abs(df["close"].iloc[-1] - df["open"].iloc[-1])
+    if candle_size > atr_val * 1.2:
         return None
 
-    tp_distance = abs(tp - entry) / entry
-    sl_distance = abs(sl - entry) / entry
+    # ================= ENTRY =================
+    candles = df.values.tolist()
+    supports, resistances = find_support_resistance(candles)
 
-    if is_paid:
-        if tp_distance < 0.0065:
-            return None
-        if sl_distance < 0.0028:
-            return None
-    else:
-        if tp_distance < 0.0055:
-            return None
-        if sl_distance < 0.0025:
-            return None
+    if direction == "LONG":
+        valid_supports = [s for s in supports if s < price]
+        entry = max(valid_supports) if valid_supports else price - (atr_val * 0.5)
 
-    # ===== Confidence =====
+    elif direction == "SHORT":
+        valid_res = [r for r in resistances if r > price]
+        entry = min(valid_res) if valid_res else price + (atr_val * 0.5)
+
+    if not smart_entry_filter(df, direction, entry, atr_val):
+        return None
+
+    # ================= SL =================
+    if direction == "LONG":
+        valid_supports = [s for s in supports if s < entry]
+        sl = max(valid_supports) - (atr_val * 0.3) if valid_supports else entry - atr_val * 1.5
+
+    elif direction == "SHORT":
+        valid_res = [r for r in resistances if r > entry]
+        sl = min(valid_res) + (atr_val * 0.3) if valid_res else entry + atr_val * 1.5
+
+    # ================= TP =================
+    tp_full, _ = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
+
+    if tp_full is None or sl is None:
+        return None
+
+    # 🔥 Multi TP
+    tp1 = entry + (tp_full - entry) * 0.5
+    tp2 = tp_full
+
+    rr = abs(tp2 - entry) / max(abs(entry - sl), 1e-9)
+    if rr < (1.4 if is_paid else 1.3):
+        return None
+
     confidence = calculate_confidence(
-        score, volume, smc, trend_power, structure, momentum_ok, htf_ok
+        score, volume, smc, trend_power, structure, momentum_ok, True
     )
 
-    if not news_ok:
-        confidence -= 3
+    if not news_ok: confidence -= 3
+    if choppy: confidence -= 2
+    if not momentum_ok: confidence -= 3
 
-    if late_entry_bad:
-        confidence -= 3
-
-    if not sr_ok:
-        confidence -= 2
-
-    if not pullback_ok:
-        confidence -= 2
-
-    if not wick_ok:
-        confidence -= 2
-
-    if choppy:
-        confidence -= 2
-
-    if not momentum_ok:
-        confidence -= 3
-
-    if not signal_levels_valid(entry, tp, sl, direction):
+    if confidence < (76 if is_paid else 70):
         return None
-
-    min_conf = (76 + (4 if not htf_ok else 0)) if is_paid else (70 + (4 if not htf_ok else 0))
-    if confidence < min_conf:
-        return None
-
-    # ===== Trade type =====
-    if (
-        direction == "LONG"
-        and trend == "UP"
-        and trend_power == "STRONG_BULL"
-        and htf_ok
-        and confidence >= 80
-        and structure in ["NEAR_BREAKOUT_HIGH", "MID_RANGE"]
-        and interval in ["15m", "1h"]
-    ):
-        trade_type = "SPOT"
-    else:
-        trade_type = "FUTURES"
-
-    # ===== Ranking Score =====
-    rr = abs(tp - entry) / max(abs(entry - sl), 1e-9)
-
-    ranking_score = (
-        abs(score) * 8
-        + confidence * 0.7
-        + rr * 12
-    )
-
-    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        ranking_score += 6
-
-    if htf_ok:
-        ranking_score += 5
-
-    if volume == "STRONG":
-        ranking_score += 4
-
-    if smc in ["LIQUIDITY_BREAK_UP", "LIQUIDITY_BREAK_DOWN"]:
-        ranking_score += 4
-
-    if structure in ["NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
-        ranking_score += 3
-
-    if trade_type == "FUTURES":
-        ranking_score += 2.5
-
-    ranking_score = round(float(ranking_score), 2)
 
     from datetime import datetime, timezone
 
     signal = {
         "pair": symbol,
         "timeframe": interval,
-        "type": trade_type,
+        "type": "FUTURES",
         "direction": direction,
         "entry": float(format_price(entry)),
-        "tp": float(format_price(tp)),
+        "tp1": float(format_price(tp1)),   # 🔥 جديد
+        "tp2": float(format_price(tp2)),   # 🔥 جديد
         "sl": float(format_price(sl)),
         "confidence": float(round(confidence, 2)),
         "trend": trend,
@@ -1376,11 +1352,10 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         "smc": smc,
         "structure": structure,
         "score": float(round(score, 2)),
-        "ranking_score": float(ranking_score),
+        "rr": float(round(rr, 2)),
         "signal_time": datetime.now(timezone.utc).isoformat()
     }
 
-    # ===== AI Final Approval =====
     try:
         ai_result = predict_trade(signal)
 
@@ -1388,15 +1363,11 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
             return None
 
         signal["confidence"] = float(ai_result.get("confidence", signal["confidence"]))
-        signal["ranking_score"] = float(ai_result.get("ranking_score", signal["ranking_score"]))
-        signal["ai_score"] = float(ai_result.get("score", 0))
         signal["rr"] = float(ai_result.get("rr", rr))
 
-    except Exception as e:
-        log(f"AI model error in _build_signal {symbol} {interval}: {e}")
+    except:
         return None
 
-    # ===== SAVE STATE =====
     LAST_SIGNAL_STATE[symbol] = {
         "time": time.time(),
         "direction": direction,
