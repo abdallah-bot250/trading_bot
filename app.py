@@ -989,7 +989,7 @@ def login():
 
             c.execute("""
                 SELECT * FROM users
-                WHERE LOWER(email) = %s
+                WHERE email ILIKE %s
                 LIMIT 1
             """, (email,))
             user = c.fetchone()
@@ -1020,7 +1020,7 @@ def login():
 
                     ensure_user_has_referral_code(chat_id, conn)
 
-                session["user"] = email
+                session["user"] = user_id
                 session["is_admin"] = True if is_admin_email(email) else False
                 log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
