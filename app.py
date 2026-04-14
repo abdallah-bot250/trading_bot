@@ -1048,7 +1048,7 @@ def logout():
 # ================= SAVE API =================
 @app.route("/save-api", methods=["POST"])
 def save_api():
-    if not session.get("user"):
+    if not session.get("user_email"):
         return redirect("/login")
 
     try:
@@ -1056,8 +1056,8 @@ def save_api():
         c = conn.cursor()
 
         c.execute(
-            "SELECT plan FROM users WHERE LOWER(email) = %s",
-            (session["user"].lower(),)
+           "SELECT plan FROM users WHERE LOWER(email) = %s",
+            (session["user_email"].lower(),)
         )
         user = c.fetchone()
 
