@@ -1247,17 +1247,17 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     )
 
     penalty = 0.0
-    if choppy: penalty += 0.6
-    if not momentum_ok: penalty += 0.6
-    if not vol_ok: penalty += 0.5
-    if not news_ok: penalty += 0.6
+    if choppy: penalty += 0.4
+    if not momentum_ok: penalty += 0.4
+    if not vol_ok: penalty += 0.3
+    if not news_ok: penalty += 0.3
 
     score -= penalty
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         score += 0.4
 
-    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.8 if is_paid else 0.5)
+    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.8 if is_paid else 0.4)
 
     if score >= ENTRY_THRESHOLD:
         direction = "LONG"
@@ -1271,9 +1271,9 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if should_block_signal(symbol, direction, price):
         return None
 
-    if direction == "LONG" and trend == "DOWN" and abs(score) < 6:
+    if direction == "LONG" and trend == "DOWN" and abs(score) < 5:
         return None
-    if direction == "SHORT" and trend == "UP" and abs(score) < 6:
+    if direction == "SHORT" and trend == "UP" and abs(score) < 5:
         return None
 
     # 🔥 Liquidity sweep
