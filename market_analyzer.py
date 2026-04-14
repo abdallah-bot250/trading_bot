@@ -6,6 +6,7 @@ import time
 import logging
 from ai_model import predict_trade
 from trade_tracker import add_trade
+import ccxt
 
 LAST_SIGNAL_STATE = {}
 PAIR_SIGNAL_COOLDOWN = 1800  # 30 دقيقة
@@ -1331,7 +1332,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if choppy: confidence -= 2
     if not momentum_ok: confidence -= 3
 
-    if confidence < (76 if is_paid else 70):
+    if confidence < (72 if is_paid else 65):
         return None
 
     from datetime import datetime, timezone
