@@ -1020,7 +1020,8 @@ def login():
 
                     ensure_user_has_referral_code(chat_id, conn)
 
-                session["user"] = user_id
+                session["user_id"] = user_id
+                session["user_email"] = email
                 session["is_admin"] = True if is_admin_email(email) else False
                 log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
