@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -659,27 +660,49 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>Basic</h2>
-        <div class="price">$25</div>
+       <div class="price">
+<span style="text-decoration:line-through;color:#94a3b8">$49</span><br>
+$25
+</div>
+
+<p style="color:#facc15; font-size:13px;">
+⚠️ خطة محدودة — مناسبة للتجربة فقط
+</p>
 
         <ul>
-            <li>✔ إشارات Telegram (Spot & Futures)</li>
-            <li>✔ تحليل باستخدام AI</li>
-            <li>✔ مؤشرات حديثة:
-                <br>• RSI
-                <br>• MACD
-                <br>• Smart Money Concepts
-            </li>
-            <li>❌ بدون تنفيذ تلقائي</li>
-            <li>❌ بدون إدارة مخاطرة متقدمة</li>
-            <li>❌ بدون إشارات VIP</li>
-        </ul>
+    <li>✔ إشارات تداول محدودة يوميًا</li>
+    <li>✔ تحليل أساسي باستخدام AI</li>
+    <li>✔ دخول عام للسوق بدون تحسينات متقدمة</li>
+
+    <li style="color:#facc15;">
+    ⚠️ عدد فرص أقل مقارنة بالخطط الأعلى
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ دقة دخول متوسطة (غير مخصصة للمناطق القوية)
+    </li>
+
+    <li style="color:#ef4444;">
+    ❌ بدون تحسين نقاط الدخول (Smart Entry)
+    </li>
+
+    <li style="color:#ef4444;">
+    ❌ بدون إدارة مخاطرة ذكية
+    </li>
+
+    <li style="color:#ef4444;">
+    ❌ بدون تنفيذ تلقائي أو متابعة متقدمة
+    </li>
+
+    <li style="color:#94a3b8;">
+    📊 مناسبة للتجربة فقط وليس لتحقيق أفضل النتائج
+    </li>
+</ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="basic">
-            <button class="pay">💳 Subscribe</button>
+            <button class="pay">📊 Start Basic Plan</button>
         </form>
-
-        <a href="/pay/basic"><button class="manual">💸 Manual</button></a>
     </div>
 
     <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
@@ -687,27 +710,44 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>Pro 🔥</h2>
-        <div class="price">$59.99</div>
+        <div class="price">
+<span style="text-decoration:line-through;color:#94a3b8">$129</span><br>
+$59.99
+</div>
+
+<p style="color:#38bdf8; font-weight:bold;">
+🔥 الخطة الأكثر استخدامًا
+</p>
 
         <ul>
-            <li>✔ إشارات احترافية (Spot & Futures)</li>
-            <li>✔ عدد صفقات يومية أكبر</li>
-            <li>✔ دقة أعلى في التحليل</li>
-            <li>✔ مؤشرات متقدمة:
-                <br>• Order Blocks
-                <br>• Liquidity Zones
-                <br>• Volume Analysis
-            </li>
-            <li>✔ إدارة مخاطرة محسنة</li>
-            <li>❌ بدون تنفيذ تلقائي</li>
-        </ul>
+    <li>✔ إشارات احترافية يومية (Spot & Futures)</li>
+    <li>✔ تحليل متقدم باستخدام AI + Smart Money</li>
+    <li>✔ تحسين نقاط الدخول (Better Entry Timing)</li>
+    <li>✔ فلترة قوية للإشارات (High Probability Setups)</li>
+    <li>✔ إدارة مخاطرة محسنة</li>
+
+    <li style="color:#22c55e;">
+    📊 دقة أعلى واستقرار أفضل من BASIC
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ لا يشمل تنفيذ تلقائي
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ لا يشمل Copy Trading
+    </li>
+
+    <li style="color:#94a3b8;">
+    🔓 مناسب للمتداولين الجادين وليس الاحترافيين بالكامل
+    </li>
+</ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="pro">
-            <button class="pay">💳 Subscribe</button>
+            <button class="pay">🚀 Upgrade to PRO</button>
         </form>
 
-        <a href="/pay/pro"><button class="manual">💸 Manual</button></a>
     </div>
 
     <div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
@@ -715,25 +755,98 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>VIP 💎</h2>
-        <div class="price">$99.99</div>
+        <div class="price">
+<span style="text-decoration:line-through;color:#94a3b8">$199</span><br>
+$99.99
+</div>
+
+<p style="color:#facc15; font-weight:bold;">
+💎 النظام الأكثر ربحية داخل المنصة
+</p>
 
         <ul>
-            <li>✔ تداول تلقائي كامل (Spot & Futures)</li>
-            <li>✔ ربط Binance / Bybit / OKX</li>
-            <li>✔ تنفيذ صفقات بدون تدخل</li>
-            <li>✔ أعلى نسبة نجاح</li>
-            <li>✔ إدارة مخاطرة ذكية AI</li>
-            <li style="color:#facc15;">⚠️ البوت يتداول فقط بالمبلغ الذي تحدده</li>
-            <li style="color:#facc15;">⚠️ لا يمكنه السحب أو الإيداع — تداول فقط</li>
-        </ul>
+    <li>✔ نظام تداول تلقائي متكامل 100% (بدون تدخل)</li>
+    <li>✔ Copy Trading مباشر على حسابك</li>
+    <li>✔ Smart Entry Engine (دخول من أفضل مناطق السوق)</li>
+    <li>✔ AI Risk Management لحماية رأس المال</li>
+    <li>✔ تنفيذ فوري بأقل تأخير (Low Latency)</li>
+    <li>✔ متابعة الصفقة تلقائيًا (TP / SL / إدارة ديناميكية)</li>
+
+    <li style="color:#22c55e;">
+    🚀 نظام كامل: تحليل + تنفيذ + متابعة
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ يعمل فقط على: Bybit / KuCoin / OKX
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ لا يمكن السحب أو الإيداع — أمان كامل 100%
+    </li>
+
+    <li style="color:#94a3b8;">
+    💎 مناسب لمن يريد دخل شبه تلقائي من السوق
+    </li>
+</ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="vip">
-            <button class="pay">💳 Subscribe</button>
+            <button class="pay">💎 Activate VIP System</button>
         </form>
 
-        <a href="/pay/vip"><button class="manual">💸 Manual</button></a>
     </div>
+
+</div>
+<div class="card pro2y {% if plan == 'pro_2y' %}current-plan{% endif %}">
+
+    {% if plan == "pro_2y" %}
+    <div class="current-badge">YOUR CURRENT PLAN</div>
+    {% endif %}
+
+    <h2>ELITE SYSTEM 👑</h2>
+
+    <div class="price">
+<span style="text-decoration:line-through;color:#94a3b8">$1499</span><br>
+$999
+</div>
+
+<p style="color:#22c55e; font-weight:bold; margin-top:10px;">
+🔥 احصل على سنتين كاملة مقابل أقل من سعر سنة واحدة
+</p>
+
+<p style="color:#facc15; font-size:13px;">
+⏳ عرض محدود — قد يتم إلغاؤه في أي وقت
+</p>
+
+    <ul>
+    <li>✔ نظام تداول احترافي كامل (Institutional Level)</li>
+    <li>✔ Copy Trading متقدم — نسخ استراتيجيات كاملة</li>
+    <li>✔ AI Multi-Strategy Engine (سكالب + سوينج)</li>
+    <li>✔ Smart Liquidity Entry — دخول من مناطق البنوك</li>
+    <li>✔ Dynamic TP System (أهداف متعددة)</li>
+    <li>✔ Auto Position Management (إدارة الصفقة تلقائي)</li>
+    <li>✔ أعلى دقة دخول بين جميع الخطط</li>
+    <li>✔ نتائج ثابتة وتقليل المخاطرة لأقصى حد</li>
+
+    <li style="color:#22c55e;">
+    🔥 أعلى مستوى أداء داخل النظام بالكامل
+    </li>
+
+    <li style="color:#facc15;">
+    ⚠️ مخصص للمستخدمين المتقدمين فقط
+    </li>
+</ul>
+
+    <form action="/create-payment" method="GET">
+        <input type="hidden" name="plan" value="pro_2y">
+        <button class="pay" style="font-size:16px;">
+👑 Unlock Elite System
+</button>
+
+<p style="font-size:12px; color:#94a3b8; margin-top:6px;">
+🚀 وصول فوري + تفعيل مباشر بعد الدفع
+</p>
+    </form>
 
 </div>
 
