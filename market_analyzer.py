@@ -26,7 +26,7 @@ def get_all_symbols(limit=35):
     try:
         import ccxt
 
-        exchange = ccxt.kucoin({
+        exchange = ccxt.binance({
             "enableRateLimit": True
         })
 
@@ -42,7 +42,7 @@ def get_all_symbols(limit=35):
                 and market.get("active", False)
                 and not any(x in s for x in ["UP/", "DOWN/", "BULL/", "BEAR/"])
             ):
-                symbols.append(s.replace("/", ""))
+                symbols.append(s)
 
         # حذف التكرار
         symbols = list(set(symbols))
