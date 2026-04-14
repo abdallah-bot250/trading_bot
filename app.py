@@ -24,6 +24,13 @@ from urllib3.util.retry import Retry
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "123456")
 
+prices = {
+                            "basic": 25,
+                            "pro": 59.99,
+                            "vip": 99.99,
+                            "pro_2y": 999   # 👑 ضيف دي
+                        }
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
 
@@ -1292,13 +1299,19 @@ def create_payment():
 
     plan = request.args.get("plan", "basic").strip().lower()
 
-    prices = {
-        "basic": 25,
-        "pro": 59.99,
-        "vip": 100
-    }
+    if plan == "basic":
+        price = 25
 
-    if plan not in prices:
+    elif plan == "pro":
+        price = 59.99
+
+    elif plan == "vip":
+        price = 99.99
+
+    elif plan == "pro_2y":   # 👑 الحل هنا
+        price = 999
+
+    else:
         return "❌ باقة غير صحيحة"
 
     amount = prices[plan]
@@ -2052,15 +2065,8 @@ def payment_webhook():
                         LIMIT 1
                     """, (referrer_chat_id, chat_id))
                     already_exists = c.fetchone()
-
                     if not already_exists:
-                        plan_prices = {
-                          "basic": 25,
-                          "pro": 59.99,
-                          "vip": 100,
-                          "pro_2y": 999
-                        }
-
+                        
                         commission_percent_map = {
                           "basic": 0.08,
                           "pro": 0.12,
@@ -2068,7 +2074,7 @@ def payment_webhook():
                           "pro_2y": 0.05
                         }
 
-                        plan_price = float(plan_prices.get(plan, 25))
+                        plan_price = float(prices.get(plan, 25))
                         commission_percent = float(commission_percent_map.get(plan, 0.08))
                         commission_amount = round(plan_price * commission_percent, 2)
 
