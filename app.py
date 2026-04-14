@@ -988,8 +988,8 @@ def login():
             c = conn.cursor()
 
             c.execute("""
-                SELECT * FROM users
-                WHERE email ILIKE %s
+               SELECT * FROM users
+               WHERE LOWER(email) = %s
                 LIMIT 1
             """, (email,))
             user = c.fetchone()
@@ -1020,8 +1020,7 @@ def login():
 
                     ensure_user_has_referral_code(chat_id, conn)
 
-                session["user_id"] = user_id
-                session["user_email"] = email
+                session["user"] = email
                 session["is_admin"] = True if is_admin_email(email) else False
                 log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
@@ -1056,8 +1055,8 @@ def save_api():
         c = conn.cursor()
 
         c.execute(
-           "SELECT plan FROM users WHERE LOWER(email) = %s",
-            (session["user_email"].lower(),)
+            "SELECT plan FROM users WHERE LOWER(email) = %s",
+             (session["user"].lower(),)
         )
         user = c.fetchone()
 
