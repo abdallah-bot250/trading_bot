@@ -1268,7 +1268,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         score += 0.4
 
-    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.8 if is_paid else 0.4)
+    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.6 if is_paid else 0.3)
 
     if score >= ENTRY_THRESHOLD:
         direction = "LONG"
@@ -1282,9 +1282,9 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if should_block_signal(symbol, direction, price):
         return None
 
-    if direction == "LONG" and trend == "DOWN" and abs(score) < 5:
+    if direction == "LONG" and trend == "DOWN" and abs(score) < 4:
         return None
-    if direction == "SHORT" and trend == "UP" and abs(score) < 5:
+    if direction == "SHORT" and trend == "UP" and abs(score) < 4:
         return None
 
     # 🔥 Liquidity sweep
@@ -1342,7 +1342,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if choppy: confidence -= 2
     if not momentum_ok: confidence -= 3
 
-    if confidence < (72 if is_paid else 65):
+    if confidence < (72 if is_paid else 68):
         return None
 
     from datetime import datetime, timezone
@@ -1384,6 +1384,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         "direction": direction,
         "entry": entry
     }
+    log(f"🔥 SIGNAL PASSED: {symbol} | {direction} | score={score} | conf={confidence} | rr={rr}")
 
     return signal
 
