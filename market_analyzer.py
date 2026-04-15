@@ -794,7 +794,7 @@ def smart_target_multiplier(interval, trend_power, volume, structure, direction)
         tp_mult += 0.10
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        tp_mult += 0.35
+        tp_mult += 0.15
         sl_mult += 0.10
     elif trend_power == "MIXED":
         tp_mult -= 0.10
@@ -840,7 +840,7 @@ def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WE
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
         min_tp_percent += 0.0025
-        atr_tp_multiplier += 0.5
+        atr_tp_multiplier += 0.3
 
     if volume == "STRONG":
         min_tp_percent += 0.002
@@ -1027,7 +1027,7 @@ def signal_levels_valid(entry, tp, sl, direction):
             return False
 
         rr = reward / risk
-        if rr < 1.7:
+        if rr < 1.4:
             return False
 
         return True
@@ -1266,7 +1266,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     score -= penalty
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        score += 0.4
+        score += 0.25
 
     ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.6 if is_paid else 0.3)
 
@@ -1331,6 +1331,13 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     tp2 = tp_full
 
     rr = abs(tp2 - entry) / max(abs(entry - sl), 1e-9)
+    
+    if rr > 2.2:
+      tp2 = entry + (tp2 - entry) * 0.85
+
+    # 🔥 إعادة حساب RR بعد التعديل
+    rr = abs(tp2 - entry) / max(abs(entry - sl), 1e-9)
+
     if rr < (1.4 if is_paid else 1.3):
         return None
 
