@@ -274,6 +274,9 @@ def get_market_data(symbol, interval="5m", limit=250):
     try:
         kucoin_interval = KUCOIN_TF_MAP.get(interval, interval)
         kucoin_symbol = symbol.replace("USDT", "-USDT")
+# 🔥 تجاهل الرموز الغريبة
+        if "-" not in kucoin_symbol:
+             return None
 
         kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
         response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
@@ -292,12 +295,19 @@ def get_market_data(symbol, interval="5m", limit=250):
 
         candles = data["data"]
 
+# 🔥 خد آخر عدد محدد
+        candles = candles[:limit]
+
+# 🔥 اعكس الترتيب (مهم جدًا)
+        candles = list(reversed(candles))
+
         if not candles:
             log(f"KUCOIN no candles for {symbol} {interval}")
             return None
 
         df = parse_kucoin_klines_to_df(candles)
         if df is not None and not df.empty:
+            log(f"🔥 KUCOIN DATA USED for {symbol} {interval}")
             MARKET_DATA_CACHE[cache_key] = {
                 "data": df.copy(),
                 "time": time.time()
