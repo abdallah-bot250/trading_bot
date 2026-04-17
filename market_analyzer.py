@@ -1258,17 +1258,17 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     )
 
     penalty = 0.0
-    if choppy: penalty += 0.4
-    if not momentum_ok: penalty += 0.4
-    if not vol_ok: penalty += 0.3
-    if not news_ok: penalty += 0.3
+    if choppy: penalty += 0.3
+    if not momentum_ok: penalty += 0.3
+    if not vol_ok: penalty += 0.2
+    if not news_ok: penalty += 0.2
 
     score -= penalty
 
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
-        score += 0.25
+        score += 0.4
 
-    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.6 if is_paid else 0.3)
+    ENTRY_THRESHOLD = MIN_SCORE_TO_TRADE - (0.4 if is_paid else 0.2)
 
     if score >= ENTRY_THRESHOLD:
         direction = "LONG"
@@ -1338,8 +1338,13 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     # 🔥 إعادة حساب RR بعد التعديل
     rr = abs(tp2 - entry) / max(abs(entry - sl), 1e-9)
 
-    if rr < (1.4 if is_paid else 1.3):
-        return None
+    min_rr = 1.3 if is_paid else 1.2
+
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+       min_rr += 0.3
+
+    if rr < min_rr:
+       return None
 
     confidence = calculate_confidence(
         score, volume, smc, trend_power, structure, momentum_ok, True
@@ -1349,8 +1354,18 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if choppy: confidence -= 2
     if not momentum_ok: confidence -= 3
 
-    if confidence < (72 if is_paid else 68):
-        return None
+    min_conf = 68 if is_paid else 63
+
+# لو السوق قوي
+    if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
+      min_conf += 4
+
+# لو السوق متلخبط
+    elif trend_power == "MIXED":
+      min_conf -= 3
+
+    if confidence < min_conf:
+      return None
 
     from datetime import datetime, timezone
 
