@@ -25,9 +25,8 @@ def log(msg):
 
 def get_all_symbols(limit=35):
     try:
-        import ccxt
 
-        exchange = ccxt.binance({
+        exchange = ccxt.kucoin({
             "enableRateLimit": True
         })
 

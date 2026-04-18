@@ -53,9 +53,10 @@ def send_telegram_signal(signal):
 
 def get_public_exchange():
     exchanges = [
+        ccxt.kucoin(),
         ccxt.binance(),
-        ccxt.binanceus(),
-        ccxt.kucoin()
+        ccxt.binanceus()
+        
     ]
 
     for ex in exchanges:
@@ -963,13 +964,12 @@ def normalize_symbol_for_ccxt(symbol):
         return symbol
 
 def get_exchange(api_key, api_secret, trade_type):
-    import ccxt
 
     default_type = "future" if trade_type == "FUTURES" else "spot"
 
     # 🥇 Binance
     try:
-        exchange = ccxt.binance({
+        exchange = ccxt.kucoin({
             "apiKey": api_key,
             "secret": api_secret,
             "enableRateLimit": True,
@@ -989,7 +989,7 @@ def get_exchange(api_key, api_secret, trade_type):
     # 🥈 Binance US (Spot فقط)
     if trade_type != "FUTURES":
         try:
-            exchange = ccxt.binanceus({
+            exchange = ccxt.kucoin({
                 "apiKey": api_key,
                 "secret": api_secret,
                 "enableRateLimit": True,
