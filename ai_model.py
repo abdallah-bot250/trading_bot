@@ -418,17 +418,20 @@ def predict_trade(signal):
         approved = False
         reason = "rejected"
 
-        if adjusted_confidence >= 72 and ai_score >= 50 and rr >= 1.4:
+# 🎯 المستوى العادي
+        if adjusted_confidence >= 68 and ai_score >= 45 and rr >= 1.3:
             approved = True
             reason = "approved"
 
-        if adjusted_confidence >= 78 and ai_score >= 58 and rr >= 1.6:
+# 🔥 مستوى قوي
+        if adjusted_confidence >= 75 and ai_score >= 52 and rr >= 1.4:
             approved = True
             reason = "strong"
 
-        if adjusted_confidence >= 85 and ai_score >= 65 and rr >= 1.8:
-            approved = True
-            reason = "elite"
+# 💎 مستوى جامد جدًا
+        if adjusted_confidence >= 82 and ai_score >= 60 and rr >= 1.6:
+             approved = True
+             reason = "elite"
 
         # ================= FINAL SAFETY =================
         if approved:
@@ -439,6 +442,7 @@ def predict_trade(signal):
                 reason_flags.append("weak_volume")
 
             if normalize_text(structure) in ["CHOPPY", "RANGE"]:
+              if rr < 1.5:
                 approved = False
                 reason = "bad_structure_reject"
                 reason_flags.append("bad_structure")

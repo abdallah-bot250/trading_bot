@@ -1549,8 +1549,11 @@ def is_current_admin():
 @app.route("/admin")
 def admin():
 
-    if not admin_required():
-        return "forbidden", 403
+    if not session.get("user"):
+        return redirect("/login")
+
+    if not is_current_admin():
+       return redirect("/login")
 
     
 
