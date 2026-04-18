@@ -219,6 +219,8 @@ small {
                     <span class="badge badge-vip">VIP</span>
                 {% elif u[2] == 'pro' %}
                     <span class="badge badge-pro">PRO</span>
+                {% elif u[2] == 'pro_2y' %}
+                    <span class="badge badge-pro">PRO 2Y</span>
                 {% elif u[2] == 'basic' %}
                     <span class="badge badge-basic">BASIC</span>
                 {% else %}
@@ -261,12 +263,11 @@ small {
                     <button class="btn vip">VIP</button>
                 </form>
 
-                <!-- Lifetime VIP -->
+                <!-- Activate pro_2y -->
                 <form action="/activate-user" method="POST" style="display:inline;">
                     <input type="hidden" name="id" value="{{u[0]}}">
-                    <input type="hidden" name="plan" value="vip">
-                    <input type="hidden" name="lifetime" value="1">
-                    <button class="btn life">Lifetime</button>
+                    <input type="hidden" name="plan" value="pro_2y">
+                    <button class="btn pro">Pro 2Y</button>
                 </form>
 
                 <!-- Delete -->
