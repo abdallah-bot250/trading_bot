@@ -22,8 +22,17 @@ def log(msg):
     logging.info(msg)
 
 # ================= SETTINGS =================
+def clean_symbol(symbol):
+    try:
+        symbol = str(symbol)
+        symbol = symbol.replace(":USDT", "")
+        symbol = symbol.replace("/", "")
+        return symbol.strip().upper()
+    except:
+        return symbol
 
-def get_all_symbols(limit=35):
+
+def get_all_symbols(limit=50):
     try:
 
         exchange = ccxt.kucoin({
@@ -43,7 +52,7 @@ def get_all_symbols(limit=35):
                 and not any(x in s for x in ["UP/", "DOWN/", "BULL/", "BEAR/", ":", "USDT:USDT"])
                 and not s.endswith(":USDT")
             ):
-                symbols.append(s)
+                symbols.append(clean_symbol(s))
 
         # حذف التكرار
         symbols = list(set(symbols))
@@ -227,10 +236,10 @@ def get_market_data(symbol, interval="5m", limit=250):
         "12h": "12hour",
         "1d": "1day",
     }
-
+    symbol = symbol.replace("/", "-")
     endpoints = [
         ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-        ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
+        ("KUCOIN", f"https://api.kucoin.com/api/v1/market/candles?type={interval}&symbol={symbol}")
     ]
 
     for source_name, url in endpoints:
