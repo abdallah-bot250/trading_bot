@@ -40,7 +40,8 @@ def get_all_symbols(limit=35):
             if (
                 "/USDT" in s
                 and market.get("active", False)
-                and not any(x in s for x in ["UP/", "DOWN/", "BULL/", "BEAR/"])
+                and not any(x in s for x in ["UP/", "DOWN/", "BULL/", "BEAR/", ":", "USDT:USDT"])
+                and not s.endswith(":USDT")
             ):
                 symbols.append(s)
 
