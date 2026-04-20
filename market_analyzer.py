@@ -78,16 +78,27 @@ def get_all_symbols(limit=50):
         ]
 
 
-# 🔥 استخدام مباشر
-SYMBOLS = get_all_symbols(limit=35)
+SYMBOLS = [
+    "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT",
+    "ADAUSDT","DOGEUSDT","AVAXUSDT","LINKUSDT","MATICUSDT",
+
+    "LTCUSDT","ATOMUSDT","NEARUSDT","FTMUSDT","ALGOUSDT",
+    "ICPUSDT","FILUSDT","APTUSDT","ARBUSDT","OPUSDT",
+
+    "SUIUSDT","SEIUSDT","INJUSDT","RNDRUSDT","TIAUSDT",
+    "JUPUSDT","PYTHUSDT","WIFUSDT","BONKUSDT","PEPEUSDT",
+
+    "ENSUSDT","DYDXUSDT","GMXUSDT","LDOUSDT","AAVEUSDT",
+    "UNIUSDT","CRVUSDT","SNXUSDT","1INCHUSDT","COMPUSDT"
+]
 
 # ================= OTHER SETTINGS =================
 
 TIMEFRAMES = ["5m", "15m", "1h"]
 
-REQUEST_TIMEOUT = 6
-MIN_SCORE_TO_TRADE = 7
-MIN_CONFIDENCE = 75
+REQUEST_TIMEOUT = 5
+MIN_SCORE_TO_TRADE = 6
+MIN_CONFIDENCE = 72
 
 # منع تكرار نفس الأزواج دايمًا
 LAST_USED_PAIRS = []
@@ -237,9 +248,19 @@ def get_market_data(symbol, interval="5m", limit=250):
         "1d": "1day",
     }
     symbol = symbol.replace("/", "-")
+
+    interval_map = {
+      "1m": "1min",
+      "5m": "5min",
+      "15m": "15min",
+      "1h": "1hour"
+}
+
+    interval = interval_map.get(interval, interval)
+
     endpoints = [
-        ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-        ("KUCOIN", f"https://api.kucoin.com/api/v1/market/candles?type={interval}&symbol={symbol}")
+        ("KUCOIN", f"https://api.kucoin.com/api/v1/market/candles?type={interval}&symbol={symbol}"),
+        ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
     for source_name, url in endpoints:
