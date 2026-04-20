@@ -52,7 +52,7 @@ def get_all_symbols(limit=35):
         random.shuffle(symbols)
 
         # ناخد 35 بس
-        symbols = symbols[:limit]
+        symbols = symbols[:35]
 
         print(f"🔥 Loaded {len(symbols)} symbols from KUCOIN")
 
@@ -1365,6 +1365,8 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
 
     if confidence < min_conf:
       return None
+    
+    signal_freshness_check = True
 
     from datetime import datetime, timezone
 
@@ -1421,7 +1423,7 @@ def generate_free_signal(symbol, interval="5m", prechecked_news_ok=None):
 
 
 # ================= FREE SIGNALS ONLY =================
-def get_top_free_signals(limit=2):
+def get_top_free_signals(limit=5):
     global LAST_USED_PAIRS, MARKET_DATA_CACHE
 
     now = time.time()
@@ -1452,7 +1454,7 @@ def get_top_free_signals(limit=2):
     random.shuffle(sorted_symbols)
 
 # ناخد أول 12 بس بدل 38
-    sorted_symbols = sorted_symbols[:15]
+    sorted_symbols = sorted_symbols[:50]
 
     for symbol in sorted_symbols:
         for tf in TIMEFRAMES:

@@ -193,7 +193,9 @@ def admin_required():
 # ================= HELPERS =================
 def get_live_price(symbol):
     try:
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+        # تأكد إن الصيغة بدون slash (BTCUSDT مش BTC/USDT)
+        clean_symbol = symbol.replace("/", "").upper()
+        url = f"https://api.binance.com/api/v3/ticker/price?symbol={clean_symbol}"
         r = session_requests.get(url, timeout=10)
 
         if r.status_code == 200:
@@ -202,7 +204,7 @@ def get_live_price(symbol):
                 return float(data["price"])
 
         # fallback Binance US
-        url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={symbol}"
+        url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={clean_symbol}"
         r2 = session_requests.get(url_us, timeout=10)
 
         if r2.status_code == 200:
@@ -1094,7 +1096,6 @@ def save_api():
         return f"❌ حصل خطأ أثناء حفظ API: {str(e)}"
 
 
-# ================= SAVE SETTINGS =================
 @app.route("/save-settings", methods=["POST"])
 def save_settings():
     if not session.get("user"):
@@ -1977,7 +1978,7 @@ def payment_webhook():
         plan = (data.get("order_description") or "basic").strip().lower()
 
         # 🔒 Validate plan
-        if plan not in ["basic", "pro", "vip"]:
+        if plan not in ["basic", "pro", "vip", "por_2y"]:
             log(f"⚠️ Invalid plan received: {plan}")
             plan = "basic"
 

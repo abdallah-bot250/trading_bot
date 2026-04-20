@@ -76,14 +76,16 @@ message_queue = Queue()
 # =========================================
 def send_to_telegram(message, chat_id):
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
+        bot_token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+        if not bot_token:
+            print("❌ TELEGRAM_TOKEN missing")
+            return
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         payload = {
             "chat_id": chat_id,
             "text": message,
             "parse_mode": "HTML"
         }
-
         response = requests.post(url, json=payload, timeout=10)
 
         if response.status_code != 200:
