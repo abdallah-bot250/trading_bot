@@ -1319,7 +1319,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
 
     # 🔥 Liquidity sweep
     if not liquidity_sweep_filter(df, direction):
-        return None
+       pass
 
     # 🔥 Fake candle
     candle_size = abs(df["close"].iloc[-1] - df["open"].iloc[-1])
