@@ -98,7 +98,7 @@ TIMEFRAMES = ["5m", "15m", "1h"]
 
 REQUEST_TIMEOUT = 5
 MIN_SCORE_TO_TRADE = 6
-MIN_CONFIDENCE = 72
+MIN_CONFIDENCE = 70
 
 # منع تكرار نفس الأزواج دايمًا
 LAST_USED_PAIRS = []
@@ -1373,7 +1373,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:
        min_rr += 0.3
 
-    if rr < min_rr:
+    if rr < min_rr - 0.2:
        return None
 
     confidence = calculate_confidence(
@@ -1384,7 +1384,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
     if choppy: confidence -= 2
     if not momentum_ok: confidence -= 3
 
-    min_conf = 68 if is_paid else 63
+    min_conf = 65 if is_paid else 60
 
 # لو السوق قوي
     if trend_power in ["STRONG_BULL", "STRONG_BEAR"]:

@@ -364,17 +364,17 @@ def predict_trade(signal):
         if quality_penalty > 0:
             reason_flags.append(f"market_penalty_{quality_penalty}")
 
-        if rr < 1.3:
-            ai_score -= 12
+        if rr < 1.2:
+            ai_score -= 8
             reason_flags.append("low_rr")
 
-        if confidence < 70:
-            ai_score -= 10
+        if confidence < 68:
+            ai_score -= 6
             reason_flags.append("low_conf")
 
         # ================= BONUS =================
-        if rr >= 2.0 and confidence >= 80:
-            ai_score += 6
+        if rr >= 2.0 and confidence >= 76:
+            ai_score += 5
             reason_flags.append("strong_rr_conf")
 
         if normalize_text(volume) == "STRONG" and normalize_text(trend_power) in ["STRONG_BULL", "STRONG_BEAR"]:
@@ -419,30 +419,30 @@ def predict_trade(signal):
         reason = "rejected"
 
 # 🎯 المستوى العادي
-        if adjusted_confidence >= 68 and ai_score >= 45 and rr >= 1.3:
+        if adjusted_confidence >= 65 and ai_score >= 42 and rr >= 1.25:
             approved = True
             reason = "approved"
 
 # 🔥 مستوى قوي
-        if adjusted_confidence >= 75 and ai_score >= 52 and rr >= 1.4:
+        if adjusted_confidence >= 70 and ai_score >= 49 and rr >= 1.3:
             approved = True
             reason = "strong"
 
 # 💎 مستوى جامد جدًا
-        if adjusted_confidence >= 82 and ai_score >= 60 and rr >= 1.6:
+        if adjusted_confidence >= 75 and ai_score >= 56 and rr >= 1.45:
              approved = True
              reason = "elite"
 
         # ================= FINAL SAFETY =================
         if approved:
             if normalize_text(volume) == "WEAK":
-             if rr < 1.3 and adjusted_confidence < 78:
+             if rr < 1.2 and adjusted_confidence < 72:
                 approved = False
                 reason = "weak_volume_reject"
                 reason_flags.append("weak_volume")
 
             if normalize_text(structure) in ["CHOPPY", "RANGE"]:
-              if rr < 1.5:
+              if rr < 1.4:
                 approved = False
                 reason = "bad_structure_reject"
                 reason_flags.append("bad_structure")
