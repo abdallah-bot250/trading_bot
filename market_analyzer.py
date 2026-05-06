@@ -257,9 +257,10 @@ def get_market_data(symbol, interval="5m", limit=250):
 }
 
     interval = interval_map.get(interval, interval)
+    kucoin_symbol = symbol.replace("USDT", "-USDT")
 
     endpoints = [
-        ("KUCOIN", f"https://api.kucoin.com/api/v1/market/candles?type={interval}&symbol={symbol}"),
+        ("KUCOIN", f"https://api.kucoin.com/api/v1/market/candles?type={interval}&symbol={kucoin_symbol}"),
         ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
@@ -303,7 +304,6 @@ def get_market_data(symbol, interval="5m", limit=250):
     # ================= FALLBACK TO KUCOIN =================
     try:
         kucoin_interval = KUCOIN_TF_MAP.get(interval, interval)
-        kucoin_symbol = symbol.replace("USDT", "-USDT")
 # 🔥 تجاهل الرموز الغريبة
         if "-" not in kucoin_symbol:
              return None
@@ -1407,6 +1407,7 @@ def _build_signal(symbol, interval="5m", is_paid=False, prechecked_news_ok=None)
         "type": "FUTURES",
         "direction": direction,
         "entry": float(format_price(entry)),
+        "tp": float(format_price(tp2)),
         "tp1": float(format_price(tp1)),   # 🔥 جديد
         "tp2": float(format_price(tp2)),   # 🔥 جديد
         "sl": float(format_price(sl)),

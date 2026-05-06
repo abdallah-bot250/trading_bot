@@ -298,7 +298,7 @@ def predict_trade(signal):
         pair = signal.get("pair", "")
         direction = normalize_text(signal.get("direction", ""))
         entry = safe_float(signal.get("entry", 0))
-        tp = safe_float(signal.get("tp", 0))
+        tp = safe_float(signal.get("tp2", signal.get("tp1", 0)))
         sl = safe_float(signal.get("sl", 0))
         confidence = safe_float(signal.get("confidence", 0))
         volume = signal.get("volume", "WEAK")

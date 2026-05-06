@@ -595,10 +595,13 @@ def signal_allowed_for_plan(plan, signal):
             return confidence >= 72 and score >= 4
 
         if plan == "pro":
-            return confidence >= 76 and score >= 5
+          return confidence >= 76 and score >= 5
 
-        if plan in ["pro", "pro_2y"]:
-             return confidence >= 80 and score >= 5
+        if plan == "pro_2y":
+           return confidence >= 80 and score >= 5
+
+        if plan == "vip":
+            return confidence >= 82 and score >= 6
 
         return False
     except Exception as e:
@@ -718,7 +721,7 @@ def format_price(price):
         return price
 
 def format_signal(signal):
-    rr = calculate_rr(signal["entry"], signal["tp"], signal["sl"], signal["direction"])
+    rr = calculate_rr(signal["entry"], signal["tp2"], signal["sl"], signal["direction"])
     return f"""🔥 {signal['pair']}
 
 📊 Type: {signal.get('type', 'FUTURES')}
@@ -965,62 +968,63 @@ def normalize_symbol_for_ccxt(symbol):
     except:
         return symbol
 
-def get_exchange(api_key, api_secret, trade_type):
-
-    default_type = "future" if trade_type == "FUTURES" else "spot"
-
-    # 🥇 Binance
+def get_exchange(api_key, api_secret, trade_type, password=None):
     try:
-        exchange = ccxt.kucoin({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-            "options": {
-                "defaultType": default_type,
-                "adjustForTimeDifference": True
-            }
-        })
+        import ccxt
+
+        trade_type = str(trade_type).upper()
+
+        # ================= BINANCE =================
+        if trade_type == "FUTURES":
+            exchange = ccxt.binance({
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+                "options": {
+                    "defaultType": "future",
+                    "adjustForTimeDifference": True
+                }
+            })
+
+        else:
+            exchange = ccxt.binance({
+                "apiKey": api_key,
+                "secret": api_secret,
+                "enableRateLimit": True,
+                "options": {
+                    "defaultType": "spot",
+                    "adjustForTimeDifference": True
+                }
+            })
 
         exchange.load_markets()
-        log("✅ Using BINANCE")
+
+        log(f"✅ USING BINANCE {trade_type}")
+
         return exchange
 
     except Exception as e:
-        log(f"❌ Binance failed: {e}")
+        log(f"❌ get_exchange error: {e}")
 
-    # 🥈 Binance US (Spot فقط)
-    if trade_type != "FUTURES":
+        # ================= FALLBACK KUCOIN =================
         try:
             exchange = ccxt.kucoin({
                 "apiKey": api_key,
                 "secret": api_secret,
-                "enableRateLimit": True,
+                "password": password or "",
+                "enableRateLimit": True
             })
 
             exchange.load_markets()
-            log("✅ Using BINANCE US")
+
+            log("✅ USING KUCOIN")
+
             return exchange
 
-        except Exception as e:
-            log(f"❌ Binance US failed: {e}")
+        except Exception as kucoin_error:
+            log(f"❌ KUCOIN FAILED: {kucoin_error}")
 
-    # 🥉 KuCoin
-    try:
-        exchange = ccxt.kucoin({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "password": "",  # ⚠️ لو هتستخدم futures لازم تحط passphrase
-            "enableRateLimit": True,
-        })
-
-        exchange.load_markets()
-        log("✅ Using KUCOIN")
-        return exchange
-
-    except Exception as e:
-        log(f"❌ KuCoin failed: {e}")
-
-    return None
+            return None
 
 def check_api_permissions(exchange, trade_type):
     try:
@@ -1074,6 +1078,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         perm_ok, perm_msg = check_api_permissions(exchange, trade_type)
         if not perm_ok:
             return None, perm_msg
+        
 
         raw_symbol = signal["pair"]
         symbol = normalize_symbol_for_ccxt(raw_symbol)
@@ -1083,7 +1088,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
 
         # ================= SIGNAL DATA =================
         entry = float(signal["entry"])
-        tp = float(signal["tp"])
+        tp = float(signal["tp2"])
         sl = float(signal["sl"])
         side = "buy" if signal["direction"] == "LONG" else "sell"
 
@@ -1440,6 +1445,7 @@ def run():
         log(f"IP check failed: {e}")
 
     init_trade_tables()
+
     log("BOT STARTED - FINAL SAFE MODE")
     log("Entering main bot loop...")
 
@@ -1448,6 +1454,7 @@ def run():
     while True:
         try:
             clean_execution_lock()
+
             log("Loop tick...")
 
             update_closed_trades()
@@ -1463,78 +1470,117 @@ def run():
 
             sent_to_channel_pairs = set()
 
-            # تنظيف ذاكرة الإشارات (Memory Leak Fix)
             # ================= CLEAN USER SIGNAL MEMORY =================
             now = datetime.now()
 
-            expired_keys = []
+            for chat_id in list(USER_SIGNAL_MEMORY.keys()):
 
-            for key, timestamp in USER_SIGNAL_MEMORY.items():
-                try:
-                    if (now - timestamp).total_seconds() > USER_SIGNAL_EXPIRY:
-                        expired_keys.append(key)
-                except:
-                      expired_keys.append(key)
+                user_signals = USER_SIGNAL_MEMORY.get(chat_id, {})
 
-            for key in expired_keys:
-                USER_SIGNAL_MEMORY.pop(key, None)
+                # لو الداتا بايظة
+                if not isinstance(user_signals, dict):
+                    USER_SIGNAL_MEMORY.pop(chat_id, None)
+                    continue
 
+                expired_signals = []
+
+                for sig, ts in list(user_signals.items()):
+
+                    try:
+                        age = (now - ts).total_seconds()
+
+                        if age > USER_SIGNAL_EXPIRY:
+                            expired_signals.append(sig)
+
+                    except Exception:
+                        expired_signals.append(sig)
+
+                # حذف الإشارات القديمة
+                for sig in expired_signals:
+                    user_signals.pop(sig, None)
+
+                # حذف المستخدم لو فاضي
+                if not user_signals:
+                    USER_SIGNAL_MEMORY.pop(chat_id, None)
+
+            # ================= SIGNAL LOOP =================
             for signal in signals[:MAX_SIGNALS_PER_CYCLE]:
+
                 try:
                     signal_key = f"{signal.get('pair')}_{signal.get('direction')}"
-                    now = time.time()
+
+                    now_ts = time.time()
 
                     if signal_key in sent_signals:
-                      if now - sent_signals[signal_key] < 1800:
-                        continue
+                        if now_ts - sent_signals[signal_key] < 1800:
+                            continue
 
-                    sent_signals[signal_key] = now
+                    sent_signals[signal_key] = now_ts
 
                     if CHANNEL_ID and signal_key not in sent_to_channel_pairs:
-                       send_channel(format_signal(signal))
-                       sent_to_channel_pairs.add(signal_key)
+                        send_channel(format_signal(signal))
+                        sent_to_channel_pairs.add(signal_key)
 
                 except Exception as ch_e:
-                   log(f"Channel send error: {ch_e}")
+                    log(f"Channel send error: {ch_e}")
 
+                # ================= USERS LOOP =================
                 for user in users:
+
                     try:
-                        chat_id, is_paid, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active = user
-
-                        now_ts = time.time()
-                          # 🧠 تحديد الوقت حسب الخطة
-                        cooldown = 0
-
-                        if str(plan).lower() == "basic":
-                           cooldown = 3600   # كل ساعة
-
-                        elif str(plan).lower() == "pro":
-                           cooldown = 900    # كل 15 دقيقة
-
-                        elif str(plan).lower() in ["vip", "pro_2y"]:
-                            cooldown = 900
-
-                       # ⛔ منع التكرار حسب الوقت
-                        if cooldown > 0:
-                           last_time = LAST_USER_SIGNAL_TIME.get(chat_id)
-
-                           if last_time:
-                               if now_ts - last_time < cooldown:
-                                    continue
-
-# ✅ تحديث الوقت
-                        LAST_USER_SIGNAL_TIME[chat_id] = now_ts
+                        (
+                            chat_id,
+                            is_paid,
+                            plan,
+                            expiry,
+                            api_key,
+                            api_secret,
+                            trade_amount,
+                            trade_type,
+                            trades,
+                            profit,
+                            bot_active
+                        ) = user
 
                         if not chat_id:
                             continue
 
+                        now_ts = time.time()
+
+                        # ================= USER COOLDOWN =================
+                        cooldown = 0
+
+                        if str(plan).lower() == "basic":
+                            cooldown = 3600
+
+                        elif str(plan).lower() == "pro":
+                            cooldown = 900
+
+                        elif str(plan).lower() in ["vip", "pro_2y"]:
+                            cooldown = 900
+
+                        if cooldown > 0:
+
+                            last_time = LAST_USER_SIGNAL_TIME.get(chat_id)
+
+                            if last_time:
+                                if now_ts - last_time < cooldown:
+                                    continue
+
+                        LAST_USER_SIGNAL_TIME[chat_id] = now_ts
+
+                        # ================= PLAN VALIDATION =================
                         if plan == "trial":
+
                             if not is_trial_allowed(trades):
                                 continue
+
                         else:
+
                             if not is_paid_plan_active(plan, expiry, is_paid):
                                 continue
 
+                        # ================= SIGNAL FILTER =================
                         if not signal_allowed_for_plan(plan, signal):
                             continue
 
@@ -1542,87 +1588,130 @@ def run():
                         can_trade, reason = can_trade_user(chat_id, trade_amount)
 
                         if not can_trade:
-                               continue
+                            continue
 
+                        # ================= USER SIGNAL MEMORY =================
                         signature = build_signal_signature(signal)
-                        user_key = f"{chat_id}_{signature}"
+
+                        if not signature:
+                            continue
 
                         now = datetime.now()
 
-# منع التكرار لنفس المستخدم
-                        if user_key in USER_SIGNAL_MEMORY:
-                             last_time = USER_SIGNAL_MEMORY[user_key]
-                             if (now - last_time).total_seconds() < 600:  # 10 دقايق
-                                        continue
+                        if chat_id not in USER_SIGNAL_MEMORY:
+                            USER_SIGNAL_MEMORY[chat_id] = {}
 
-                        USER_SIGNAL_MEMORY[user_key] = now
+                        user_memory = USER_SIGNAL_MEMORY[chat_id]
+
+                        # منع التكرار لنفس المستخدم
+                        if signature in user_memory:
+
+                            last_time = user_memory[signature]
+
+                            if (now - last_time).total_seconds() < 600:
+                                continue
+
+                        user_memory[signature] = now
 
                         # ================= VIP AUTO TRADE =================
                         if (
                             str(plan).strip().lower() == "vip"
-                            and (str(expiry).strip().lower() == "lifetime" or is_paid_plan_active(plan, expiry, is_paid))
+                            and (
+                                str(expiry).strip().lower() == "lifetime"
+                                or is_paid_plan_active(plan, expiry, is_paid)
+                            )
                             and int(bot_active or 0) == 1
                             and api_key
                             and api_secret
                         ):
+
                             try:
                                 can_trade, reason = can_trade_user(chat_id, trade_amount)
+
                                 if not can_trade:
+
                                     send(chat_id, f"""{format_signal(signal)}
 
 🤖 تنبيه التنفيذ التلقائي
 
 {reason}
 """)
+
                                     continue
 
                                 if has_open_trade(chat_id, signal["pair"]):
+
                                     send(chat_id, f"""{format_signal(signal)}
 
 🤖 تنبيه التنفيذ التلقائي
 
 🚫 لديك بالفعل صفقة مفتوحة على نفس الزوج
 """)
+
                                     continue
 
                                 if pair_in_cooldown(chat_id, signal["pair"]):
+
                                     send(chat_id, f"""{format_signal(signal)}
 
 🤖 تنبيه التنفيذ التلقائي
 
 🚫 هذا الزوج داخل فترة تهدئة (Cooldown)
 """)
+
                                     continue
 
-                                # 🚫 منع تنفيذ مكرر
-                                # 🔥 منع تكرار الإشارات (الأهم)
+                                # 🔥 منع تكرار الإشارات
                                 if is_signal_blocked(chat_id, signal):
-                                   log(f"🚫 BLOCKED SIGNAL: {signal.get('pair')}")
-                                   continue
 
-# 🔒 منع تنفيذ مكرر
+                                    log(f"🚫 BLOCKED SIGNAL: {signal.get('pair')}")
+                                    continue
+
+                                # 🔒 منع تنفيذ مكرر
                                 if is_trade_locked(chat_id, signal):
-                                  log(f"🔒 LOCKED: {chat_id} | {signal.get('pair')} | {signal.get('direction')}")
-                                  continue
 
-                                signal_trade_type = "futures" if signal.get("type", "FUTURES") == "FUTURES" else "spot"
+                                    log(
+                                        f"🔒 LOCKED: {chat_id} | "
+                                        f"{signal.get('pair')} | "
+                                        f"{signal.get('direction')}"
+                                    )
 
-                                # ================= DOUBLE CHECK OPEN TRADE =================
+                                    continue
+
+                                signal_trade_type = (
+                                    "futures"
+                                    if signal.get("type", "FUTURES") == "FUTURES"
+                                    else "spot"
+                                )
+
+                                # ================= DOUBLE CHECK =================
                                 if has_open_trade(chat_id, signal["pair"]):
-                                   log(f"🚫 BLOCKED DUPLICATE TRADE: {chat_id} | {signal['pair']}")
-                                   continue
 
-                                exchange = get_exchange(api_key, api_secret, trade_type)
+                                    log(
+                                        f"🚫 BLOCKED DUPLICATE TRADE: "
+                                        f"{chat_id} | {signal['pair']}"
+                                    )
+
+                                    continue
+
+                                exchange = get_exchange(
+                                    api_key,
+                                    api_secret,
+                                    trade_type
+                                )
 
                                 if not exchange:
-                                   log(f"⚠️ No API → send signal only")
-                                   send_telegram_signal(signal)
-                                   continue
 
-                                perm_ok, perm_msg = check_api_permissions(exchange, trade_type)
+                                    log("⚠️ No API → send signal only")
 
-                                
-                                
+                                    send_telegram_signal(signal)
+
+                                    continue
+
+                                perm_ok, perm_msg = check_api_permissions(
+                                    exchange,
+                                    trade_type
+                                )
 
                                 order, result_msg = execute_trade(
                                     api_key=api_key,
@@ -1632,10 +1721,15 @@ def run():
                                     risk_percent=trade_amount,
                                     chat_id=chat_id
                                 )
+
                                 log(f"🔥 EXECUTION RESULT: {result_msg}")
 
                                 if order:
-                                    real_entry = signal.get("real_entry", signal["entry"])
+
+                                    real_entry = signal.get(
+                                        "real_entry",
+                                        signal["entry"]
+                                    )
 
                                     send(chat_id, f"""{format_signal(signal)}
 
@@ -1652,9 +1746,16 @@ def run():
 ✅ تم فتح الصفقة بنجاح على Binance
 """)
 
-                                    write_log(chat_id, "INFO", f"AUTO TRADE EXECUTED {signal['pair']} ORDER={order.get('id')}")
+                                    write_log(
+                                        chat_id,
+                                        "INFO",
+                                        f"AUTO TRADE EXECUTED "
+                                        f"{signal['pair']} "
+                                        f"ORDER={order.get('id')}"
+                                    )
 
                                 else:
+
                                     fail_reason = format_trade_fail_reason(result_msg)
 
                                     send(chat_id, f"""{format_signal(signal)}
@@ -1666,9 +1767,14 @@ def run():
 ⚠️ تم إرسال الإشارة فقط ولم يتم فتح الصفقة تلقائيًا.
 """)
 
-                                    write_log(chat_id, "ERROR", f"AUTO TRADE FAILED: {result_msg}")
+                                    write_log(
+                                        chat_id,
+                                        "ERROR",
+                                        f"AUTO TRADE FAILED: {result_msg}"
+                                    )
 
                             except Exception as e:
+
                                 fail_reason = format_trade_fail_reason(str(e))
 
                                 send(chat_id, f"""{format_signal(signal)}
@@ -1680,18 +1786,31 @@ def run():
 ⚠️ تم إرسال الإشارة فقط ولم يتم فتح الصفقة تلقائيًا.
 """)
 
-                                write_log(chat_id, "ERROR", f"AUTO TRADE EXCEPTION: {str(e)}")
+                                write_log(
+                                    chat_id,
+                                    "ERROR",
+                                    f"AUTO TRADE EXCEPTION: {str(e)}"
+                                )
 
                         # ================= NORMAL SEND =================
                         else:
+
                             sent_ok = send(chat_id, format_signal(signal))
 
                             if sent_ok:
-                                write_log(chat_id, "INFO", f"SIGNAL SENT {signal['pair']} {signal['direction']}")
 
-                                # ✅ تسجيل الصفقة علشان تتتابع وتتبعت نتيجتها
+                                write_log(
+                                    chat_id,
+                                    "INFO",
+                                    f"SIGNAL SENT "
+                                    f"{signal['pair']} "
+                                    f"{signal['direction']}"
+                                )
+
+                                # ✅ تسجيل الصفقة للتتبع
                                 try:
                                     with get_db() as conn:
+
                                         c = conn.cursor()
 
                                         c.execute("""
@@ -1709,7 +1828,10 @@ def run():
                                             sent_open_msg,
                                             sent_close_msg
                                         )
-                                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                        VALUES (
+                                            %s,%s,%s,%s,%s,
+                                            %s,%s,%s,%s,%s,%s,%s
+                                        )
                                         """, (
                                             str(chat_id),
                                             signal["pair"],
@@ -1717,7 +1839,7 @@ def run():
                                             signal.get("type", "FUTURES"),
                                             signal.get("timeframe", "5m"),
                                             float(signal["entry"]),
-                                            float(signal["tp"]),
+                                            float(signal["tp2"]),
                                             float(signal["sl"]),
                                             0,
                                             "OPEN",
@@ -1734,15 +1856,20 @@ def run():
                                     increment_trade(chat_id)
 
                     except Exception as user_loop_error:
+
                         log(f"user loop error: {user_loop_error}")
+
                         continue
 
             time.sleep(GLOBAL_LOOP_SLEEP)
 
         except Exception as e:
+
             log(f"RUN LOOP ERROR: {e}")
+
             time.sleep(30)
 
-if __name__ == "__main__":
+
+if __name__ == "main":
     threading.Thread(target=message_worker, daemon=True).start()
     run()
