@@ -2289,13 +2289,35 @@ def payment_webhook():
     return "OK"
 
 # ================= MANUAL PAYMENT =================
-@app.route("/manual-payment", methods=["POST"])
+@app.route("/manual-payment", methods=["GET", "POST"])
 def manual_payment():
 
+    # فتح صفحة الدفع اليدوي
+    if request.method == "GET":
+
+        plan = request.args.get("plan", "basic").strip().lower()
+
+        amount_map = {
+            "basic": 25,
+            "pro": 59.99,
+            "vip": 99.99,
+            "pro_2y": 999
+        }
+
+        amount = amount_map.get(plan, 25)
+
+        return render_template(
+            "manual.html",
+            plan=plan,
+            amount=amount
+        )
+
+    # إرسال عملية الدفع اليدوي
     if not session.get("user"):
         return redirect("/login")
 
     try:
+
         txid = request.form.get("txid", "").strip()
         plan = request.form.get("plan", "").strip().lower()
         network = request.form.get("network", "").strip().upper()
