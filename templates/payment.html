@@ -247,6 +247,75 @@ h2 {
 <a href="/create-payment?plan={{plan}}" class="pay-btn">
 🚀 ادفع الآن (Crypto)
 </a>
+<div class="warning" style="margin-top:25px; text-align:right;">
+
+<h3 style="margin-bottom:15px; color:#22c55e;">
+🟡 Binance Manual Payment
+</h3>
+
+<p style="line-height:2;">
+حوّل المبلغ على عنوان USDT التالي ثم أدخل TXID للمراجعة.
+</p>
+
+<div style="
+background:#020617;
+padding:12px;
+border-radius:10px;
+margin-top:12px;
+word-break:break-all;
+font-size:14px;
+">
+
+TRC20 Wallet:<br>
+TSiwGKuanfvay6RMem1zJ8QqcDFQKTXVF1
+
+</div>
+
+<form action="/manual-payment" method="POST" style="margin-top:20px;">
+
+<input type="hidden" name="plan" value="{{plan}}">
+
+<label>🌐 الشبكة</label>
+
+<select name="network" required style="
+width:100%;
+padding:12px;
+margin-top:8px;
+margin-bottom:15px;
+border-radius:10px;
+border:none;
+background:#0f172a;
+color:white;
+">
+<option value="TRC20">TRC20</option>
+<option value="BEP20">BEP20</option>
+</select>
+
+<label>🧾 TXID</label>
+
+<input
+type="text"
+name="txid"
+required
+placeholder="أدخل TXID هنا"
+style="
+width:100%;
+padding:12px;
+margin-top:8px;
+border-radius:10px;
+border:none;
+background:#0f172a;
+color:white;
+"
+>
+
+<button type="submit" class="pay-btn" style="margin-top:18px;">
+📩 إرسال العملية للمراجعة
+</button>
+
+</form>
+
+</div>
 
 <div class="secure-note">
 🔐 الدفع يتم بشكل آمن  

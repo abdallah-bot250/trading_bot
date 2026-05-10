@@ -549,6 +549,20 @@ def init_db():
         """)
 
         c.execute("""
+        CREATE TABLE IF NOT EXISTS manual_payments (
+            id SERIAL PRIMARY KEY,
+            chat_id TEXT,
+            email TEXT,
+            plan TEXT,
+            txid TEXT,
+            amount REAL,
+            network TEXT,
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        c.execute("""
         CREATE TABLE IF NOT EXISTS trades_log (
             id SERIAL PRIMARY KEY,
             chat_id TEXT,
@@ -1586,6 +1600,13 @@ def admin():
             ORDER BY id DESC
         """)
         withdrawals = c.fetchall()
+        c.execute("""
+           SELECT id, chat_id, email, plan, txid, amount, network, status, created_at
+           FROM manual_payments
+           ORDER BY id DESC
+        """)
+
+        manual_payments = c.fetchall()
 
         conn.close()
 
@@ -1596,7 +1617,8 @@ def admin():
             revenue=revenue,
             total_affiliate_paid=total_affiliate_paid,
             users=users,
-            withdrawals=withdrawals
+            withdrawals=withdrawals,
+            manual_payments=manual_payments
         )
 
     except Exception as e:
@@ -1702,6 +1724,82 @@ def mark_withdrawal_paid():
     except Exception as e:
         log(f"mark_withdrawal_paid error: {e}")
         return f"❌ Error: {str(e)}"
+    
+@app.route("/approve-manual-payment", methods=["POST"])
+def approve_manual_payment():
+
+    if not session.get("user"):
+        return redirect("/login")
+
+    if not is_current_admin():
+        return "❌ غير مصرح"
+
+    try:
+
+        payment_id = request.form.get("payment_id", "").strip()
+        chat_id = request.form.get("chat_id", "").strip()
+        plan = request.form.get("plan", "basic").strip().lower()
+
+        conn = db()
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT status
+            FROM manual_payments
+            WHERE id = %s
+            LIMIT 1
+        """, (payment_id,))
+
+        row = c.fetchone()
+
+        if not row:
+            conn.close()
+            return "❌ الطلب غير موجود"
+
+        if row[0] == "approved":
+            conn.close()
+            return redirect("/admin")
+
+        if plan == "pro_2y":
+            expiry = (datetime.now() + timedelta(days=730)).strftime("%Y-%m-%d")
+        else:
+            expiry = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+
+        c.execute("""
+            UPDATE users
+            SET is_paid = 1,
+                plan = %s,
+                expiry = %s,
+                bot_active = CASE
+                    WHEN %s IN ('vip', 'pro_2y')
+                    THEN 1
+                    ELSE bot_active
+                END
+            WHERE chat_id = %s
+        """, (plan, expiry, plan, chat_id))
+
+        c.execute("""
+            UPDATE manual_payments
+            SET status = 'approved'
+            WHERE id = %s
+        """, (payment_id,))
+
+        conn.commit()
+        conn.close()
+
+        send(chat_id, f"""
+🔥 تم تفعيل اشتراكك بنجاح!
+
+📦 الباقة: {plan.upper()}
+
+🚀 تم تأكيد الدفع اليدوي وتفعيل حسابك.
+""")
+
+        return redirect("/admin")
+
+    except Exception as e:
+        log(f"approve_manual_payment error: {e}")
+        return f"❌ Error: {str(e)}"    
 
 
 # ================= TELEGRAM WEBHOOK =================
@@ -1978,7 +2076,7 @@ def payment_webhook():
         plan = (data.get("order_description") or "basic").strip().lower()
 
         # 🔒 Validate plan
-        if plan not in ["basic", "pro", "vip", "por_2y"]:
+        if plan not in ["basic", "pro", "vip", "pro_2y"]:
             log(f"⚠️ Invalid plan received: {plan}")
             plan = "basic"
 
@@ -2188,6 +2286,127 @@ def payment_webhook():
 
     return "OK"
 
+# ================= MANUAL PAYMENT =================
+@app.route("/manual-payment", methods=["POST"])
+def manual_payment():
+
+    if not session.get("user"):
+        return redirect("/login")
+
+    try:
+        txid = request.form.get("txid", "").strip()
+        plan = request.form.get("plan", "").strip().lower()
+        network = request.form.get("network", "").strip().upper()
+
+        if not txid:
+            return "❌ لازم تدخل TXID"
+
+        if len(txid) < 10 or len(txid) > 200:
+            return "❌ TXID غير صالح"
+
+        if plan not in ["basic", "pro", "vip", "pro_2y"]:
+            return "❌ خطة غير صحيحة"
+
+        if network not in ["TRC20", "BEP20"]:
+            return "❌ شبكة غير مدعومة"
+
+        conn = db()
+        c = conn.cursor()
+
+        c.execute("""
+            SELECT email, chat_id
+            FROM users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+        """, (session["user"].lower(),))
+
+        user = c.fetchone()
+
+        if not user:
+            conn.close()
+            return "❌ المستخدم غير موجود"
+
+        email = user[0]
+        chat_id = str(user[1] or "").strip()
+
+        if not chat_id:
+            conn.close()
+            return "❌ لازم تربط حساب التليجرام الأول"
+
+        # منع تكرار TXID
+        c.execute("""
+            SELECT id
+            FROM manual_payments
+            WHERE txid = %s
+            LIMIT 1
+        """, (txid,))
+
+        exists = c.fetchone()
+
+        if exists:
+            conn.close()
+            return "❌ TXID مستخدم بالفعل"
+
+        amount_map = {
+            "basic": 25,
+            "pro": 59.99,
+            "vip": 99.99,
+            "pro_2y": 999
+        }
+
+        amount = amount_map.get(plan, 0)
+
+        c.execute("""
+            INSERT INTO manual_payments (
+                chat_id,
+                email,
+                plan,
+                txid,
+                amount,
+                network,
+                status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            chat_id,
+            email,
+            plan,
+            txid,
+            amount,
+            network,
+            "pending"
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # إشعار تيليجرام للأدمن
+        admin_chat_id = os.environ.get("ADMIN_CHAT_ID")
+
+        if admin_chat_id:
+            send(admin_chat_id, f"""
+🔥 طلب دفع يدوي جديد
+
+👤 {email}
+📦 {plan.upper()}
+🌐 {network}
+💰 ${amount}
+
+TXID:
+{txid}
+""")
+
+        return "✅ تم إرسال العملية للمراجعة"
+
+    except Exception as e:
+
+        try:
+            conn.close()
+        except:
+            pass
+
+        log(f"manual_payment error: {e}")
+        return f"❌ Error: {str(e)}"
 
 # ================= CHECK OPEN TRADES =================
 def check_open_trades():

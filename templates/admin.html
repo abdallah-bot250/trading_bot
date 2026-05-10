@@ -328,6 +328,77 @@ small {
         {% endfor %}
     </table>
 </div>
+<!-- MANUAL PAYMENTS -->
+<div class="section">
+    <h2>💳 Manual Payments</h2>
+    <small>طلبات الدفع اليدوي الجديدة</small>
+
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Chat ID</th>
+            <th>Email</th>
+            <th>Plan</th>
+            <th>TXID</th>
+            <th>Amount</th>
+            <th>Network</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Action</th>
+        </tr>
+
+        {% for p in manual_payments %}
+        <tr>
+
+            <td>{{p[0]}}</td>
+            <td>{{p[1]}}</td>
+            <td>{{p[2]}}</td>
+            <td>{{p[3]}}</td>
+
+            <td style="max-width:220px; word-break:break-all;">
+                {{p[4]}}
+            </td>
+
+            <td>${{p[5]}}</td>
+            <td>{{p[6]}}</td>
+
+            <td>
+                {% if p[7] == 'approved' %}
+                    <span class="badge badge-done">APPROVED</span>
+                {% else %}
+                    <span class="badge badge-pending">PENDING</span>
+                {% endif %}
+            </td>
+
+            <td>{{p[8]}}</td>
+
+            <td>
+
+                {% if p[7] != 'approved' %}
+
+                <form action="/approve-manual-payment" method="POST" style="display:inline;">
+
+                    <input type="hidden" name="payment_id" value="{{p[0]}}">
+                    <input type="hidden" name="chat_id" value="{{p[1]}}">
+                    <input type="hidden" name="plan" value="{{p[3]}}">
+
+                    <button class="btn paid">
+                        Approve
+                    </button>
+
+                </form>
+
+                {% else %}
+                    ✅ Done
+                {% endif %}
+
+            </td>
+
+        </tr>
+        {% endfor %}
+
+    </table>
+</div>
 
 </body>
 </html>
