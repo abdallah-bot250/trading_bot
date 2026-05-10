@@ -701,22 +701,16 @@ $25
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="basic">
-            <div class="pay-buttons">
-
-    <a href="/auto-payment/{{ plan }}">
-        <button class="auto-btn">
-            ⚡ دفع تلقائي
-        </button>
-    </a>
-
-    <a href="/manual-payment/{{ plan }}">
-        <button class="manual-btn">
-            🔥 دفع يدوي (رسوم أقل)
-        </button>
-    </a>
-
-</div>
+            <button class="pay">📊 Start Basic Plan</button>
         </form>
+        <form action="/manual-payment" method="GET">
+    <input type="hidden" name="plan" value="basic">
+
+    <button class="pay basic-manual-btn">
+        💎 Manual Payment
+        <span>Save up to $10 in fees</span>
+    </button>
+</form>
     </div>
 
     <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
@@ -758,27 +752,17 @@ $59.99
 </ul>
 
         <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="pro">
+            <button class="pay">🚀 Upgrade to PRO</button>
+        </form>
+        <form action="/manual-payment" method="GET">
     <input type="hidden" name="plan" value="pro">
 
-    <div class="pay-buttons">
-
-        <button type="submit" class="pay auto-pay">
-            ⚡ دفع تلقائي
-        </button>
-
-    </form>
-
-    <a href="/manual-payment/pro">
-        <button type="button" class="pay manual-pay">
-            💎 دفع يدوي
-        </button>
-    </a>
-
-</div>
-
-<p class="manual-note">
-💰 وفر حتى 10$ رسوم عند اختيار الدفع اليدوي
-</p>
+    <button class="pay pro-manual-btn">
+        💎 Manual Payment
+        <span>Save up to $10 in fees</span>
+    </button>
+</form>
 
     </div>
 
@@ -822,27 +806,17 @@ $99.99
 </ul>
 
         <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="vip">
+            <button class="pay">💎 Activate VIP System</button>
+        </form>
+        <form action="/manual-payment" method="GET">
     <input type="hidden" name="plan" value="vip">
 
-    <div class="pay-buttons">
-
-        <button type="submit" class="pay auto-pay">
-            ⚡ دفع تلقائي
-        </button>
-
-    </form>
-
-    <a href="/manual-payment/vip">
-        <button type="button" class="pay manual-pay vip-manual">
-            👑 دفع VIP يدوي
-        </button>
-    </a>
-
-</div>
-
-<p class="manual-note vip-note">
-🔥 الدفع اليدوي VIP بدون رسوم الشبكة المرتفعة
-</p>
+    <button class="pay vip-manual-btn">
+        👑 Manual Payment
+        <span>Save up to $10 in fees</span>
+    </button>
+</form>
 
     </div>
 
@@ -888,26 +862,18 @@ $999
 </ul>
 
     <form action="/create-payment" method="GET">
+        <input type="hidden" name="plan" value="pro_2y">
+        <button class="pay" style="font-size:16px;">
+👑 Unlock Elite System
+</button>
+<form action="/manual-payment" method="GET">
     <input type="hidden" name="plan" value="pro_2y">
 
-    <div class="pay-buttons">
-
-        <button type="submit" class="pay auto-pay">
-            ⚡ دفع تلقائي
-        </button>
-
-    </div>
-</form>
-
-<a href="/manual-payment/pro_2y">
-    <button type="button" class="pay elite-manual">
-        👑 دفع Elite يدوي
+    <button class="pay elite-manual-btn">
+        🚀 Elite Manual Payment
+        <span>Save up to $10+ in fees</span>
     </button>
-</a>
-
-<p class="manual-note elite-note">
-🔥 وفر حتى 10$+ رسوم شبكة عند الدفع اليدوي
-</p>
+</form>
 
 <p style="font-size:12px; color:#94a3b8; margin-top:6px;">
 🚀 وصول فوري + تفعيل مباشر بعد الدفع

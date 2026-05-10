@@ -551,3 +551,107 @@ textarea {
 .vip-note{
     color:gold;
 }
+.basic-manual-btn {
+    margin-top: 12px;
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    cursor: pointer;
+    font-weight: bold;
+    color: white;
+    background: linear-gradient(45deg,#22c55e,#16a34a);
+    transition: 0.3s;
+    box-shadow: 0 0 18px rgba(34,197,94,0.35);
+}
+
+.basic-manual-btn span {
+    display: block;
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.9;
+    font-weight: normal;
+}
+
+.basic-manual-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 0 24px rgba(34,197,94,0.55);
+}
+.pro-manual-btn {
+    margin-top: 12px;
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    cursor: pointer;
+    font-weight: bold;
+    color: white;
+    background: linear-gradient(45deg,#3b82f6,#2563eb);
+    transition: 0.3s;
+    box-shadow: 0 0 18px rgba(59,130,246,0.35);
+}
+
+.pro-manual-btn span {
+    display: block;
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.9;
+    font-weight: normal;
+}
+
+.pro-manual-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 0 24px rgba(59,130,246,0.55);
+}
+.vip-manual-btn {
+    margin-top: 12px;
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    cursor: pointer;
+    font-weight: bold;
+    color: white;
+    background: linear-gradient(45deg,#f59e0b,#d97706);
+    transition: 0.3s;
+    box-shadow: 0 0 18px rgba(245,158,11,0.35);
+}
+
+.vip-manual-btn span {
+    display: block;
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.9;
+    font-weight: normal;
+}
+
+.vip-manual-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 0 24px rgba(245,158,11,0.55);
+}
+.elite-manual-btn {
+    margin-top: 12px;
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    cursor: pointer;
+    font-weight: bold;
+    color: #111827;
+    background: linear-gradient(45deg,#facc15,#eab308);
+    transition: 0.3s;
+    box-shadow: 0 0 18px rgba(250,204,21,0.35);
+}
+
+.elite-manual-btn span {
+    display: block;
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.9;
+    font-weight: normal;
+}
+
+.elite-manual-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 0 26px rgba(250,204,21,0.55);
+}
