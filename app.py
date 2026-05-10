@@ -1351,15 +1351,17 @@ def create_payment():
 
         chat_id = str(user[0]).strip()
 
+        order_id = f"{chat_id}_{int(time.time())}"
+
         payload = {
-            "price_amount": amount,
-            "price_currency": "usd",
-            "pay_currency": "usdttrc20",
-            "order_id": chat_id,
-            "order_description": plan,
-            "success_url": f"{BASE_URL}/success",
-            "cancel_url": f"{BASE_URL}/cancel",
-            "ipn_callback_url": f"{BASE_URL}/payment-webhook"
+          "price_amount": amount,
+          "price_currency": "usd",
+          "pay_currency": "usdtbsc",
+          "order_id": order_id,
+          "order_description": plan,
+          "success_url": f"{BASE_URL}/success",
+          "cancel_url": f"{BASE_URL}/cancel",
+          "ipn_callback_url": f"{BASE_URL}/payment-webhook"
         }
 
         headers = {

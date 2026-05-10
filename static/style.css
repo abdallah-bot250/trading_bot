@@ -494,3 +494,60 @@ textarea {
     font-size: 12px;
     font-weight: bold;
 }
+.pay-buttons{
+    display:flex;
+    gap:12px;
+    margin-top:18px;
+}
+
+.auto-pay{
+    flex:1;
+    background:linear-gradient(135deg,#2563eb,#38bdf8);
+}
+
+.manual-pay{
+    flex:1;
+    background:transparent;
+    border:1px solid #38bdf8;
+    color:#38bdf8;
+    transition:.3s;
+}
+
+.manual-pay:hover{
+    background:#38bdf8;
+    color:white;
+    transform:translateY(-2px);
+}
+
+.vip-manual{
+    border:1px solid gold;
+    color:gold;
+}
+
+.vip-manual:hover{
+    background:gold;
+    color:black;
+}
+
+.premium-manual{
+    border:1px solid #a855f7;
+    color:#c084fc;
+}
+
+.premium-manual:hover{
+    background:#a855f7;
+    color:white;
+}
+
+.manual-note{
+    margin-top:14px;
+    text-align:center;
+    font-size:14px;
+    color:#38bdf8;
+    font-weight:600;
+    opacity:.95;
+}
+
+.vip-note{
+    color:gold;
+}
