@@ -1076,7 +1076,7 @@ def save_api():
         )
         user = c.fetchone()
 
-        if not user or user[0] != "vip":
+        if not user or user[0] not in ["vip", "pro_2y"]:
             conn.close()
             return "❌ API متاح فقط لباقة VIP"
 
@@ -1172,7 +1172,7 @@ def dashboard():
                 user = c.fetchone()
 
             bot_link = os.environ.get("BOT_LINK", "https://t.me/your_bot")
-            referral_link = f"{bot_link}?start=ref_{user['referral_code']}"
+            referral_link = f"{BASE_URL}?ref={user['referral_code']}"
 
         c.execute("""
             SELECT COUNT(*) AS total_refs
@@ -2307,7 +2307,7 @@ def manual_payment():
         amount = amount_map.get(plan, 25)
 
         return render_template(
-            "manual.html",
+            "manual_payment.html",
             plan=plan,
             amount=amount
         )
