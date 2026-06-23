@@ -1,724 +1,156 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Manual Payment | AI Crypto Trader</title>
-
-<link rel="stylesheet"
-href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-
+<title>Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ | Nexora AI Trader</title>
 <style>
-
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:Arial,sans-serif;
-}
-
-body{
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
     background:
-    radial-gradient(circle at top,#1e293b 0%,#0f172a 45%,#020617 100%);
-    color:white;
-    min-height:100vh;
-    padding:40px 20px;
+        radial-gradient(circle at top right, rgba(34,197,94,0.14), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(56,189,248,0.12), transparent 30%),
+        linear-gradient(135deg, #020617, #0f172a 58%, #111827);
+    color: #f8fafc;
+    min-height: 100vh;
+    padding: 24px;
 }
-
-/* FLOATING SUPPORT */
-
-.support-float{
-    position:fixed;
-    right:20px;
-    bottom:20px;
-    z-index:9999;
-    display:flex;
-    flex-direction:column;
-    gap:12px;
+a { color: inherit; text-decoration: none; }
+.wrap {
+    width: 100%;
+    max-width: 760px;
+    margin: 30px auto;
 }
-
-.support-btn{
-    width:58px;
-    height:58px;
-    border-radius:50%;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    color:white;
-    font-size:24px;
-    text-decoration:none;
-    box-shadow:0 10px 30px rgba(0,0,0,.35);
-    transition:.3s;
+.card {
+    background: rgba(15,23,42,0.92);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 22px 60px rgba(0,0,0,0.34);
 }
-
-.support-btn:hover{
-    transform:scale(1.1);
+.badge {
+    display: inline-block;
+    color: #86efac;
+    background: rgba(34,197,94,0.12);
+    border: 1px solid rgba(34,197,94,0.22);
+    border-radius: 999px;
+    padding: 9px 14px;
+    font-weight: 800;
+    margin-bottom: 16px;
 }
-
-.whatsapp{
-    background:#22c55e;
+h1 { margin: 0 0 12px; font-size: 36px; }
+.sub { color: #cbd5e1; line-height: 1.9; margin-bottom: 24px; }
+.plan-box, .wallet-box, .steps, .warning {
+    border-radius: 18px;
+    padding: 20px;
+    margin-top: 18px;
 }
-
-.telegram{
-    background:#38bdf8;
+.plan-box {
+    background: rgba(34,197,94,0.08);
+    border: 1px solid rgba(34,197,94,0.18);
 }
-
-/* CONTAINER */
-
-.container{
-    width:100%;
-    max-width:900px;
-    margin:auto;
+.plan-name { font-size: 28px; font-weight: 900; color: #22c55e; }
+.price { font-size: 34px; font-weight: 900; margin-top: 8px; }
+.wallet-box {
+    background: #020617;
+    border: 1px solid rgba(56,189,248,0.24);
 }
-
-/* HEADER */
-
-.hero{
-    text-align:center;
-    margin-bottom:35px;
+.wallet-label { color: #94a3b8; margin-bottom: 8px; }
+.wallet-value {
+    direction: ltr;
+    text-align: left;
+    color: #d1fae5;
+    word-break: break-all;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 16px;
 }
-
-.top-badge{
-    display:inline-block;
-    background:linear-gradient(45deg,#22c55e,#16a34a);
-    padding:10px 18px;
-    border-radius:999px;
-    font-size:13px;
-    font-weight:bold;
-    margin-bottom:20px;
-    box-shadow:0 0 20px rgba(34,197,94,.3);
+.steps {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07);
 }
-
-.hero h1{
-    font-size:42px;
-    margin-bottom:12px;
+.steps ol {
+    margin: 0;
+    padding-right: 22px;
+    color: #e2e8f0;
+    line-height: 2;
 }
-
-.subtitle{
-    color:#94a3b8;
-    max-width:700px;
-    margin:auto;
-    line-height:1.8;
+.warning {
+    background: rgba(245,158,11,0.10);
+    border: 1px solid rgba(245,158,11,0.22);
+    color: #fde68a;
+    line-height: 1.85;
 }
-
-/* TRUST */
-
-.trust-box{
-    display:flex;
-    justify-content:center;
-    gap:20px;
-    flex-wrap:wrap;
-    margin:35px 0;
+.actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 24px;
 }
-
-.trust-item{
-    background:rgba(15,23,42,.7);
-    border:1px solid rgba(255,255,255,.06);
-    border-radius:16px;
-    padding:18px 22px;
-    min-width:220px;
-    text-align:center;
-    backdrop-filter:blur(10px);
+.btn {
+    display: inline-block;
+    padding: 14px 20px;
+    border-radius: 14px;
+    font-weight: 900;
 }
-
-.trust-item i{
-    font-size:24px;
-    margin-bottom:10px;
-    color:#22c55e;
+.btn-primary { background: linear-gradient(90deg, #22c55e, #16a34a); color: #04111f; }
+.btn-secondary { background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.08); }
+@media (max-width: 640px) {
+    body { padding: 14px; }
+    h1 { font-size: 30px; }
+    .card { padding: 22px; }
+    .actions { flex-direction: column; }
+    .btn { text-align: center; }
 }
-
-/* STEP BAR */
-
-.steps{
-    display:flex;
-    justify-content:space-between;
-    gap:15px;
-    flex-wrap:wrap;
-    margin-bottom:30px;
-}
-
-.step{
-    flex:1;
-    min-width:180px;
-    background:rgba(15,23,42,.75);
-    border:1px solid rgba(255,255,255,.06);
-    padding:16px;
-    border-radius:16px;
-    text-align:center;
-}
-
-.step.active{
-    border-color:#22c55e;
-    box-shadow:0 0 20px rgba(34,197,94,.2);
-}
-
-/* GRID */
-
-.grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:24px;
-}
-
-@media(max-width:850px){
-    .grid{
-        grid-template-columns:1fr;
-    }
-}
-
-/* GLASS CARD */
-
-.card{
-    background:rgba(15,23,42,.82);
-    border:1px solid rgba(255,255,255,.06);
-    border-radius:24px;
-    padding:28px;
-    backdrop-filter:blur(12px);
-    box-shadow:0 10px 40px rgba(0,0,0,.35);
-}
-
-/* PLAN BOX */
-
-.plan-box{
-    margin-bottom:25px;
-    background:linear-gradient(135deg,
-    rgba(34,197,94,.15),
-    rgba(56,189,248,.08));
-    border:1px solid rgba(34,197,94,.25);
-    border-radius:18px;
-    padding:22px;
-}
-
-.plan-box h2{
-    margin-bottom:10px;
-}
-
-.plan-price{
-    font-size:34px;
-    color:#22c55e;
-    font-weight:bold;
-    margin:10px 0;
-}
-
-/* PAYMENT METHODS */
-
-.methods{
-    display:flex;
-    flex-direction:column;
-    gap:18px;
-}
-
-.method{
-    background:#111827;
-    border:1px solid rgba(255,255,255,.06);
-    border-radius:18px;
-    padding:22px;
-    transition:.3s;
-}
-
-.method:hover{
-    transform:translateY(-4px);
-}
-
-.method-header{
-    display:flex;
-    align-items:center;
-    gap:14px;
-    margin-bottom:18px;
-}
-
-.logo{
-    width:54px;
-    height:54px;
-    border-radius:14px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:26px;
-}
-
-.binance-logo{
-    background:#facc15;
-    color:black;
-}
-
-.insta-logo{
-    background:#22c55e;
-}
-
-.uae-logo{
-    background:#38bdf8;
-}
-
-.method h3{
-    font-size:22px;
-}
-
-.wallet{
-    background:#0f172a;
-    border-radius:14px;
-    padding:18px;
-    line-height:1.9;
-    word-break:break-all;
-    border:1px solid rgba(255,255,255,.05);
-}
-
-.copy-btn{
-    margin-top:14px;
-    width:100%;
-    border:none;
-    padding:13px;
-    border-radius:12px;
-    background:#1e293b;
-    color:white;
-    cursor:pointer;
-    font-weight:bold;
-    transition:.3s;
-}
-
-.copy-btn:hover{
-    background:#334155;
-}
-
-.fee{
-    margin-top:12px;
-    color:#94a3b8;
-    font-size:13px;
-}
-
-/* FORM */
-
-.form-title{
-    margin-bottom:18px;
-    font-size:26px;
-}
-
-.alert{
-    background:rgba(34,197,94,.12);
-    border:1px solid rgba(34,197,94,.25);
-    color:#86efac;
-    padding:16px;
-    border-radius:14px;
-    margin-bottom:20px;
-    line-height:1.8;
-}
-
-input,
-select{
-    width:100%;
-    padding:16px;
-    margin-bottom:16px;
-    border:none;
-    border-radius:14px;
-    background:#111827;
-    color:white;
-    font-size:15px;
-}
-
-.submit-btn{
-    width:100%;
-    border:none;
-    padding:17px;
-    border-radius:16px;
-    background:linear-gradient(45deg,#22c55e,#16a34a);
-    color:white;
-    font-size:16px;
-    font-weight:bold;
-    cursor:pointer;
-    transition:.3s;
-}
-
-.submit-btn:hover{
-    transform:scale(1.02);
-}
-
-.note{
-    margin-top:18px;
-    color:#94a3b8;
-    line-height:1.8;
-    font-size:13px;
-}
-
-/* POPUP */
-
-.popup{
-    position:fixed;
-    left:20px;
-    bottom:20px;
-    background:rgba(15,23,42,.95);
-    border:1px solid rgba(34,197,94,.25);
-    padding:14px 18px;
-    border-radius:14px;
-    display:none;
-    z-index:9999;
-    animation:fade .4s ease;
-}
-
-@keyframes fade{
-    from{
-        opacity:0;
-        transform:translateY(10px);
-    }
-    to{
-        opacity:1;
-        transform:translateY(0);
-    }
-}
-
 </style>
+<link rel="stylesheet" href="/static/premium.css">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#20D68A">
 </head>
 <body>
-
-<!-- SUPPORT -->
-
-<div class="support-float">
-
-<a href="https://wa.me/201005794633"
-target="_blank"
-class="support-btn whatsapp">
-<i class="fab fa-whatsapp"></i>
-</a>
-
-<a href="https://t.me/AbdallaElnhrawy10"
-target="_blank"
-class="support-btn telegram">
-<i class="fab fa-telegram"></i>
-</a>
-
-</div>
-
-<div class="container">
-
-<!-- HERO -->
-
-<div class="hero">
-
-<div class="top-badge">
-⚡ SAVE UP TO $10 FEES WITH MANUAL PAYMENT
-</div>
-
-<h1>Manual Payment</h1>
-
-<p class="subtitle">
-Complete your payment manually using one of the secure methods below then submit your transaction details for fast activation.
-</p>
-
-</div>
-
-<!-- TRUST -->
-
-<div class="trust-box">
-
-<div class="trust-item">
-<i class="fas fa-lock"></i>
-<h3>Secure Payment</h3>
-<p>Protected & verified manually</p>
-</div>
-
-<div class="trust-item">
-<i class="fas fa-bolt"></i>
-<h3>Fast Activation</h3>
-<p>Usually within 1-15 minutes</p>
-</div>
-
-<div class="trust-item">
-<i class="fas fa-users"></i>
-<h3>1000+ Traders</h3>
-<p>Using our AI trading system</p>
-</div>
-
-</div>
-
-<!-- STEPS -->
-
-<div class="steps">
-
-<div class="step active">
-1️⃣ Choose Method
-</div>
-
-<div class="step active">
-2️⃣ Send Payment
-</div>
-
-<div class="step">
-3️⃣ Submit TXID
-</div>
-
-<div class="step">
-4️⃣ Activation 🚀
-</div>
-
-</div>
-
-<div class="grid">
-
-<!-- LEFT -->
-
-<div class="card">
-
-<div class="plan-box">
-
-<h2>🔥 {{ plan|upper }} PLAN</h2>
-
-<div class="plan-price">
-${{ amount }}
-</div>
-
-<p>
-30 Days Access • AI Signals • Premium Features
-</p>
-
-</div>
-
-<div class="methods">
-
-<!-- BINANCE -->
-
-<div class="method">
-
-<div class="method-header">
-
-<div class="logo binance-logo">
-<i class="fab fa-bitcoin"></i>
-</div>
-
-<div>
-<h3>Binance Pay</h3>
-<p>Recommended</p>
-</div>
-
-</div>
-
-<div class="wallet" id="binanceText">
-Binance ID:<br><br>
-378168527
-</div>
-
-<button class="copy-btn"
-onclick="copyText('binanceText')">
-📋 Copy Binance ID
-</button>
-
-<div class="fee">
-⚡ Lowest fees + fastest transfer
-</div>
-
-</div>
-
-<!-- INSTAPAY -->
-
-<div class="method">
-
-<div class="method-header">
-
-<div class="logo insta-logo">
-<i class="fas fa-mobile-alt"></i>
-</div>
-
-<div>
-<h3>InstaPay Egypt</h3>
-<p>Local Transfer</p>
-</div>
-
-</div>
-
-<div class="wallet" id="instaText">
-01005794633
-<br><br>
-Abdullah M A
-</div>
-
-<button class="copy-btn"
-onclick="copyText('instaText')">
-📋 Copy InstaPay Info
-</button>
-
-<div class="fee">
-💎 Fast local transfer داخل مصر
-</div>
-
-</div>
-
-<!-- UAE -->
-
-<div class="method">
-
-<div class="method-header">
-
-<div class="logo uae-logo">
-<i class="fas fa-building-columns"></i>
-</div>
-
-<div>
-<h3>UAE Payment</h3>
-<p>Coming Soon</p>
-</div>
-
-</div>
-
-<div class="wallet">
-This payment method is currently under development.
-</div>
-
-<div class="fee">
-🚧 UAE local payments coming soon
-</div>
-
-</div>
-
-</div>
-
-</div>
-
-<!-- RIGHT -->
-
-<div class="card">
-
-<h2 class="form-title">
-📤 Submit Payment
-</h2>
-
-<div class="alert">
-✅ Manual payments are reviewed by admins for maximum security and fast activation.
-</div>
-
-<form action="/manual-payment"
-method="POST"
-onsubmit="handleSubmit()">
-
-<input type="hidden"
-name="plan"
-value="{{ plan }}">
-
-<input
-type="text"
-name="txid"
-placeholder="Enter TXID / Reference Number"
-required>
-
-<select name="network" required>
-
-<option value="">
-Select Payment Method
-</option>
-
-<option value="TRC20">
-Binance Pay / TRC20
-</option>
-
-<option value="BEP20">
-BEP20
-</option>
-
-<option value="INSTAPAY">
-InstaPay Egypt
-</option>
-
-</select>
-
-<button type="submit"
-class="submit-btn"
-id="submitBtn">
-
-🚀 Submit Payment For Review
-
-</button>
-
-</form>
-
-<div class="note">
-
-• Fake transactions will permanently ban the account.<br>
-• Please double-check your TXID before submitting.<br>
-• Activation usually takes from 1 to 15 minutes.
-
-</div>
-
-</div>
-
-</div>
-
-</div>
-
-<!-- POPUP -->
-
-<div class="popup" id="popup"></div>
-
-<script>
-
-function copyText(id){
-
-let text =
-document.getElementById(id).innerText;
-
-navigator.clipboard.writeText(text);
-
-showPopup("✅ Copied Successfully");
-
-}
-
-function showPopup(message){
-
-let popup =
-document.getElementById("popup");
-
-popup.innerText = message;
-popup.style.display = "block";
-
-setTimeout(()=>{
-popup.style.display = "none";
-},3000);
-
-}
-
-function handleSubmit(){
-
-let btn =
-document.getElementById("submitBtn");
-
-btn.innerHTML =
-"⏳ Processing Payment...";
-
-btn.disabled = true;
-
-}
-
-/* FAKE LIVE ACTIVITY */
-
-const names = [
-"Ahmed",
-"Mohamed",
-"Omar",
-"Ali",
-"Youssef",
-"Khaled"
-];
-
-const plans = [
-"VIP 💎",
-"PRO 🔥",
-"ELITE 👑"
-];
-
-function liveActivity(){
-
-let name =
-names[Math.floor(Math.random()*names.length)];
-
-let plan =
-plans[Math.floor(Math.random()*plans.length)];
-
-showPopup(
-`🔥 ${name} just activated ${plan}`
-);
-
-}
-
-setInterval(liveActivity,9000);
-
-</script>
-
+<nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
+<main class="wrap">
+    <section class="card">
+        <div class="badge">Manual Payment</div>
+        <h1>Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ù„Ø®Ø·Ø© {{ plan_label }}</h1>
+        <p class="sub">
+            Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© Ù…Ø®ØµØµØ© Ù„Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ. Ø¨Ø¹Ø¯ Ø§Ù„ØªØ­ÙˆÙŠÙ„ØŒ Ø£Ø±Ø³Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹ Ù„Ù„Ø£Ø¯Ù…Ù† ÙˆØ³ÙŠØªÙ… ØªÙØ¹ÙŠÙ„ Ø®Ø·ØªÙƒ ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ….
+        </p>
+
+        <div class="plan-box">
+            <div class="plan-name">{{ plan_label }}</div>
+            <div class="price">${{ "%.2f"|format(price) }}</div>
+        </div>
+
+        <div class="wallet-box">
+            <div class="wallet-label">Ø§Ù„Ø´Ø¨ÙƒØ©</div>
+            <div class="wallet-value">{{ manual_network }}</div>
+            <br>
+            <div class="wallet-label">Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©</div>
+            <div class="wallet-value">{{ manual_wallet }}</div>
+        </div>
+
+        <div class="steps">
+            <ol>
+                <li>Ø­ÙˆÙ‘Ù„ Ù…Ø¨Ù„Øº Ø§Ù„Ø®Ø·Ø© Ø¨Ø§Ù„Ø¶Ø¨Ø· Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø¨ÙƒØ© Ø§Ù„Ù…ÙˆØ¶Ø­Ø©.</li>
+                <li>Ø§Ø­ØªÙØ¸ Ø¨ØµÙˆØ±Ø© Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ù…Ø¹Ø§Ù…Ù„Ø©.</li>
+                <li>Ø£Ø±Ø³Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹ Ù„Ù„Ø¯Ø¹Ù… Ù…Ø¹ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ø§Ù„Ù…Ø³Ø¬Ù„ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹.</li>
+                <li>Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©ØŒ ÙŠØªÙ… ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø·Ø© ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø£Ø¯Ù…Ù†.</li>
+            </ol>
+        </div>
+
+        <div class="warning">
+            Ù„Ø§ ØªØ±Ø³Ù„ Ø£ÙŠ Ù…ÙØ§ØªÙŠØ­ API Ø£Ùˆ ÙƒÙ„Ù…Ø§Øª Ù…Ø±ÙˆØ± ÙÙŠ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹. Ø§Ù„ØªÙØ¹ÙŠÙ„ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ù„Ø§ ÙŠØªÙ… ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ØŒ ÙˆÙŠØ­ØªØ§Ø¬ Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ù† Ø§Ù„Ø£Ø¯Ù…Ù†.
+        </div>
+
+        <div class="actions">
+            <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹</a>
+            <a class="btn btn-secondary" href="/dashboard">Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯</a>
+            <a class="btn btn-secondary" href="/bot-check">ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ</a>
+        </div>
+    </section>
+</main>
 </body>
 </html>

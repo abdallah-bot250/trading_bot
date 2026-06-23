@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تفعيل الحساب - AI Crypto Trader</title>
+    <title>ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨ - Nexora AI Trader</title>
     <style>
         * {
             box-sizing: border-box;
@@ -129,29 +129,35 @@
             }
         }
     </style>
+<link rel="stylesheet" href="/static/premium.css">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#20D68A">
 </head>
 <body>
+<nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
 
     <div class="verify-box">
-        <div class="logo">🔐</div>
-        <h1>تفعيل الحساب</h1>
+        <div class="logo">ðŸ”</div>
+        <h1>ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨</h1>
         <div class="sub">
-            أدخل كود التفعيل الخاص بك لإكمال ربط الحساب
-            وتفعيل الوصول إلى النظام.
+            Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ Ù„Ø¥ÙƒÙ…Ø§Ù„ Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨
+            ÙˆØªÙØ¹ÙŠÙ„ Ø§Ù„ÙˆØµÙˆÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù†Ø¸Ø§Ù….
         </div>
 
         <form method="POST">
-            <label for="code">كود التفعيل</label>
-            <input type="text" id="code" name="code" placeholder="أدخل كود التفعيل هنا" required>
-            <button type="submit">تفعيل الآن</button>
+            {{ csrf_field() }}
+            <label for="code">ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„</label>
+            <input type="text" id="code" name="code" placeholder="Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„ Ù‡Ù†Ø§" required>
+            <button type="submit">ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø¢Ù†</button>
         </form>
 
         <div class="note">
-            📌 إذا لم يكن لديك كود تفعيل بعد، تأكد من إتمام التسجيل أو الدفع أولاً.
+            ðŸ“Œ Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† Ù„Ø¯ÙŠÙƒ ÙƒÙˆØ¯ ØªÙØ¹ÙŠÙ„ Ø¨Ø¹Ø¯ØŒ ØªØ£ÙƒØ¯ Ù…Ù† Ø¥ØªÙ…Ø§Ù… Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ø¯ÙØ¹ Ø£ÙˆÙ„Ø§Ù‹.
         </div>
 
         <div class="footer">
-            AI Crypto Trader ©
+            Nexora AI Trader Â©
         </div>
     </div>
 

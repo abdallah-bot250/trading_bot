@@ -1,0 +1,199 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª | Nexora AI Trader</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background:
+        radial-gradient(circle at top right, rgba(56,189,248,0.14), transparent 28%),
+        radial-gradient(circle at bottom left, rgba(34,197,94,0.12), transparent 30%),
+        linear-gradient(135deg, #020617, #0f172a 58%, #111827);
+    color: #f8fafc;
+}
+a { color: inherit; text-decoration: none; }
+.container { width: 92%; max-width: 1120px; margin: auto; }
+.navbar {
+    position: sticky;
+    top: 0;
+    background: rgba(2,6,23,0.78);
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    backdrop-filter: blur(14px);
+}
+.nav-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    padding: 17px 0;
+    flex-wrap: wrap;
+}
+.logo { color: #22c55e; font-size: 23px; font-weight: 900; }
+.nav-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.nav-btn, .btn {
+    display: inline-block;
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-weight: 800;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+.nav-btn.primary, .btn-primary {
+    background: linear-gradient(90deg, #22c55e, #16a34a);
+    color: #04111f;
+    border: 0;
+}
+.nav-btn.secondary, .btn-secondary {
+    background: rgba(255,255,255,0.04);
+    color: #e2e8f0;
+}
+.hero { padding: 78px 0 40px; text-align: center; }
+.badge {
+    display: inline-block;
+    color: #bae6fd;
+    background: rgba(56,189,248,0.12);
+    border: 1px solid rgba(56,189,248,0.22);
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-weight: 800;
+    margin-bottom: 18px;
+}
+h1 { font-size: 48px; line-height: 1.25; margin: 0 0 18px; }
+.hero p {
+    color: #cbd5e1;
+    max-width: 850px;
+    margin: auto;
+    line-height: 1.95;
+    font-size: 19px;
+}
+.check-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    padding: 34px 0 42px;
+}
+.panel {
+    background: rgba(15,23,42,0.9);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 22px;
+    padding: 28px;
+    box-shadow: 0 18px 42px rgba(0,0,0,0.28);
+}
+.panel h2 { margin-top: 0; color: #38bdf8; }
+.panel p, .panel li { color: #cbd5e1; line-height: 1.9; }
+.panel ul { padding: 0; list-style: none; margin: 16px 0 0; }
+.panel li {
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.panel li:last-child { border-bottom: 0; }
+.official-box {
+    direction: ltr;
+    text-align: left;
+    background: #020617;
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 16px;
+    padding: 18px;
+    color: #d1fae5;
+    word-break: break-all;
+    margin: 18px 0;
+}
+.warning {
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.18);
+    color: #fecaca;
+    padding: 18px;
+    border-radius: 18px;
+    line-height: 1.9;
+    margin-bottom: 58px;
+}
+.cta { text-align: center; padding-bottom: 68px; }
+.cta .btn { margin: 7px; min-width: 170px; }
+@media (max-width: 800px) {
+    h1 { font-size: 34px; }
+    .check-grid { grid-template-columns: 1fr; }
+    .nav-inner { justify-content: center; text-align: center; }
+}
+</style>
+<link rel="stylesheet" href="/static/premium.css">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#20D68A">
+</head>
+<body>
+<div class="navbar">
+    <div class="container nav-inner">
+        <a class="logo" href="/">Nexora AI Trader</a>
+        <div class="nav-actions">
+            <a class="nav-btn secondary" href="/">Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+            <a class="nav-btn secondary" href="/proof">ØªØ¬Ø§Ø±Ø¨ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</a>
+            <a class="nav-btn primary" href="/register">Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø¢Ù†</a>
+        </div>
+    </div>
+</div>
+
+<section class="hero">
+    <div class="container">
+        <div class="badge">ØµÙØ­Ø© Ø§Ù„ØªØ­Ù‚Ù‚ Ø§Ù„Ø±Ø³Ù…ÙŠØ©</div>
+        <h1>ØªØ£ÙƒØ¯ Ø¥Ù†Ùƒ ØªØ³ØªØ®Ø¯Ù… Ø§Ù„Ø¨ÙˆØª Ø§Ù„ØµØ­ÙŠØ­</h1>
+        <p>
+            Ù‚Ø¨Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ø¯ÙØ¹ Ø£Ùˆ Ø±Ø¨Ø· TelegramØŒ ØªØ£ÙƒØ¯ Ø¥Ù†Ùƒ Ø¯Ø§Ø®Ù„ Ù…Ù† Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø³Ù…ÙŠ.
+            Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© ØªØ³Ø§Ø¹Ø¯ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ÙŠÙ…ÙŠÙ‘Ø² Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ Ù…Ù† Ø£ÙŠ Ø±Ø§Ø¨Ø· Ù…Ù‚Ù„Ø¯.
+        </p>
+    </div>
+</section>
+
+<main class="container">
+    <div class="check-grid">
+        <section class="panel">
+            <h2>Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø³Ù…ÙŠ Ù„Ù„Ø¨ÙˆØª</h2>
+            <p>Ø§Ø³ØªØ®Ø¯Ù… Ù‡Ø°Ø§ Ø§Ù„Ø±Ø§Ø¨Ø· ÙÙ‚Ø· Ù„ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø¹Ù„Ù‰ Telegram:</p>
+            <div class="official-box">{{ bot_link }}</div>
+            <a class="btn btn-primary" href="{{ bot_link }}" target="_blank" rel="noopener">Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ</a>
+        </section>
+
+        <section class="panel">
+            <h2>Ø¹Ù„Ø§Ù…Ø§Øª Ø§Ù„ØªØ£ÙƒØ¯</h2>
+            <ul>
+                <li>Ø§Ù„Ø±Ø§Ø¨Ø· ÙŠØ·Ø§Ø¨Ù‚ Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø³Ù…ÙŠ Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶ ÙÙŠ Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø©.</li>
+                <li>Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØ§Ù„Ø¯ÙØ¹ ÙŠØªÙ…Ø§Ù† Ù…Ù† Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø±Ø³Ù…ÙŠ ÙÙ‚Ø·.</li>
+                <li>Ø±Ø¨Ø· Telegram ÙŠØªÙ… Ø¨Ø¹Ø¯ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ØŒ ÙˆÙ„ÙŠØ³ Ø¨Ù…Ø¬Ø±Ø¯ ÙƒØªØ§Ø¨Ø© Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„.</li>
+                <li>Ø§Ù„Ø¨ÙˆØª Ù„Ø§ ÙŠØ·Ù„Ø¨ Ù…ÙØ§ØªÙŠØ­ API Ø¯Ø§Ø®Ù„ Telegram.</li>
+                <li>Ù„Ø§ ØªØ´Ø§Ø±Ùƒ ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø± Ø£Ùˆ Ù…ÙØ§ØªÙŠØ­ Binance Ù…Ø¹ Ø£ÙŠ Ø´Ø®Øµ.</li>
+            </ul>
+        </section>
+
+        <section class="panel">
+            <h2>Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø±Ø¨Ø· Ø§Ù„Ø¢Ù…Ù†Ø©</h2>
+            <ul>
+                <li>Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ.</li>
+                <li>Ø§Ø¶ØºØ· Start Ø£Ùˆ Ø£Ø±Ø³Ù„ /start.</li>
+                <li>Ø§Ø³ØªØ®Ø¯Ù… Ø±Ø§Ø¨Ø· Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø°ÙŠ ÙŠØ¸Ù‡Ø± Ù„Ùƒ.</li>
+                <li>Ø³Ø¬Ù„ Ø¯Ø®ÙˆÙ„Ùƒ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ù„ÙŠØªÙ… Ø±Ø¨Ø· Telegram Ø¨Ø§Ù„Ø­Ø³Ø§Ø¨.</li>
+            </ul>
+        </section>
+
+        <section class="panel">
+            <h2>Ù„Ùˆ Ø¹Ù†Ø¯Ùƒ Ø´Ùƒ</h2>
+            <p>
+                Ù„Ø§ ØªØ¯ÙØ¹ ÙˆÙ„Ø§ ØªØ±Ø³Ù„ Ø¨ÙŠØ§Ù†Ø§Øª. Ø§Ø±Ø¬Ø¹ Ù„Ù„ØµÙØ­Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ© ÙˆØ§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ù…Ù† Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø³Ù…ÙŠ ÙÙ‚Ø·.
+                Ø£ÙŠ Ø±Ø§Ø¨Ø· Ù…Ø®ØªÙ„Ù Ø£Ùˆ Ø­Ø³Ø§Ø¨ ÙŠØ·Ù„Ø¨ Ù…ÙØ§ØªÙŠØ­Ùƒ Ø¯Ø§Ø®Ù„ Telegram ÙŠØ¬Ø¨ Ø§Ø¹ØªØ¨Ø§Ø±Ù‡ ØºÙŠØ± Ø¢Ù…Ù†.
+            </p>
+            <a class="btn btn-secondary" href="/">Ø§Ø±Ø¬Ø¹ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
+        </section>
+    </div>
+
+    <div class="warning">
+        ØªÙ†Ø¨ÙŠÙ‡: Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© Ù„Ø§ ØªØ·Ù„Ø¨ Ù…Ù†Ùƒ Ø£ÙŠ Ø¨ÙŠØ§Ù†Ø§Øª Ø­Ø³Ø§Ø³Ø©. Ù„Ø§ ØªØ¯Ø®Ù„ Ù…ÙØ§ØªÙŠØ­ API Ø£Ùˆ ÙƒÙ„Ù…Ø§Øª Ù…Ø±ÙˆØ± Ø®Ø§Ø±Ø¬ ØµÙØ­Ø§Øª Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø±Ø³Ù…ÙŠØ©.
+    </div>
+</main>
+
+<section class="cta">
+    <a class="btn btn-primary" href="/register">Ø³Ø¬Ù„ ÙˆØ§Ø¨Ø¯Ø£ Ø§Ù„ØªØ¬Ø±Ø¨Ø©</a>
+    <a class="btn btn-secondary" href="/proof">Ø´Ø§Ù‡Ø¯ ØªØ¬Ø§Ø±Ø¨ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</a>
+</section>
+</body>
+</html>

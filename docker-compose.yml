@@ -1,0 +1,67 @@
+services:
+  web:
+    build: .
+    command: gunicorn -c gunicorn.conf.py app:app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 8080
+      STRICT_HTTPS: "false"
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/nexora
+      RATELIMIT_STORAGE_URI: memory://
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    build: .
+    command: python auto_sender.py
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/nexora
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: nexora
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nexora"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./static:/app/static:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

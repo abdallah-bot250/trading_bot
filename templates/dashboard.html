@@ -1,12 +1,12 @@
-
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Crypto Trader</title>
+<title>Nexora AI Trader</title>
 
 <link rel="stylesheet" href="/static/style.css">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -55,12 +55,7 @@ body::before {
     margin-top: 0;
     font-size: 15px;
 }
-.live-users {
-    margin-top: 10px;
-    color: #38bdf8;
-    font-weight: bold;
-    font-size: 15px;
-}
+
 /* GLASS BOX */
 .glass-box {
     background: rgba(15,23,42,0.85);
@@ -337,28 +332,195 @@ input, select {
     color: #bbf7d0;
 }
 
+.plan-dashboard {
+    margin: 30px auto;
+    max-width: 1180px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(226,232,240,0.12);
+    background: rgba(5, 7, 13, 0.58);
+    box-shadow: 0 24px 75px rgba(0,0,0,0.36);
+}
+
+.plan-dashboard.starter {
+    border-color: rgba(32,214,138,0.28);
+}
+
+.plan-dashboard.pro {
+    border-color: rgba(52,211,255,0.34);
+}
+
+.plan-dashboard.elite {
+    border-color: rgba(244,191,95,0.46);
+}
+
+.dashboard-top {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 20px;
+    align-items: stretch;
+    padding: 26px;
+    background:
+        linear-gradient(135deg, rgba(32,214,138,0.11), transparent 34%),
+        linear-gradient(225deg, rgba(52,211,255,0.08), transparent 42%);
+}
+
+.plan-dashboard.elite .dashboard-top {
+    background:
+        linear-gradient(135deg, rgba(244,191,95,0.13), transparent 34%),
+        linear-gradient(225deg, rgba(159,140,255,0.1), transparent 42%);
+}
+
+.dashboard-title {
+    text-align: right;
+}
+
+.dashboard-title .kicker {
+    display: inline-flex;
+    padding: 8px 12px;
+    border-radius: 999px;
+    color: #04111f;
+    background: #20d68a;
+    font-weight: 900;
+    margin-bottom: 12px;
+}
+
+.plan-dashboard.pro .dashboard-title .kicker {
+    background: #34d3ff;
+}
+
+.plan-dashboard.elite .dashboard-title .kicker {
+    background: #f4bf5f;
+}
+
+.dashboard-title h2 {
+    margin: 0 0 10px;
+    color: #f8fafc;
+    font-size: 34px;
+}
+
+.dashboard-title p {
+    margin: 0;
+    color: #a5b4c7;
+    line-height: 1.8;
+}
+
+.tier-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.tier-actions a {
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(226,232,240,0.12);
+    background: rgba(15,23,42,0.78);
+    color: #f8fafc;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.tier-actions a.primary-tier {
+    background: linear-gradient(135deg, #20d68a, #10b981);
+    color: #03100a;
+}
+
+.widget-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    padding: 0 26px 24px;
+}
+
+.widget {
+    min-height: 128px;
+    padding: 18px;
+    border-radius: 8px;
+    background: rgba(12,18,31,0.78);
+    border: 1px solid rgba(226,232,240,0.1);
+}
+
+.widget span {
+    display: block;
+    color: #94a3b8;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.widget strong {
+    display: block;
+    color: #f8fafc;
+    font-size: 28px;
+    line-height: 1.1;
+}
+
+.widget small {
+    display: block;
+    color: #20d68a;
+    margin-top: 8px;
+}
+
+.dashboard-lower {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 16px;
+    padding: 0 26px 26px;
+}
+
+.dashboard-panel {
+    padding: 20px;
+    border-radius: 8px;
+    background: rgba(12,18,31,0.78);
+    border: 1px solid rgba(226,232,240,0.1);
+}
+
+.dashboard-panel h3 {
+    margin: 0 0 14px;
+    color: #f8fafc;
+}
+
+.activity-list,
+.notification-list {
+    display: grid;
+    gap: 10px;
+}
+
+.activity-row,
+.notification-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(2,6,23,0.46);
+    border: 1px solid rgba(226,232,240,0.07);
+    color: #cbd5e1;
+}
+
+.notification-row {
+    justify-content: flex-start;
+    line-height: 1.7;
+}
+
+.activity-row strong {
+    color: #20d68a;
+    text-align: left;
+}
+
+.dashboard-chart-wrap {
+    min-height: 240px;
+}
+
+#tierChart {
+    max-height: 250px;
+}
+
 /* mini stats */
 .mini-stat {
     width: 220px;
-}
-.fake-popup {
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    background: rgba(15,23,42,0.95);
-    border: 1px solid rgba(34,197,94,0.3);
-    padding: 12px 18px;
-    border-radius: 12px;
-    color: #bbf7d0;
-    font-size: 14px;
-    display: none;
-    animation: fadeIn 0.5s ease;
-    z-index: 9999;
-}
-
-@keyframes fadeIn {
-    from {opacity:0; transform:translateY(10px);}
-    to {opacity:1; transform:translateY(0);}
 }
 
 /* responsive */
@@ -370,6 +532,24 @@ input, select {
     .card {
         width: 100%;
         max-width: 340px;
+    }
+
+    .dashboard-top,
+    .dashboard-lower {
+        grid-template-columns: 1fr;
+    }
+
+    .widget-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tier-actions {
+        justify-content: stretch;
+    }
+
+    .tier-actions a {
+        width: 100%;
+        text-align: center;
     }
 }
 
@@ -406,14 +586,27 @@ input, select {
         max-width: 320px;
         text-align: center;
     }
-    
 
     .notice-box {
         padding: 16px 14px;
     }
-    
+
+    .dashboard-top,
+    .widget-grid,
+    .dashboard-lower {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .widget-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
+<link rel="stylesheet" href="/static/premium.css">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#20D68A">
 </head>
 
 <body>
@@ -426,76 +619,59 @@ input, select {
 {% if not is_linked %}
 <div class="notice-box notice-warning">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        ⚠️ حسابك غير مربوط بالبوت
+        âš ï¸ Ø­Ø³Ø§Ø¨Ùƒ ØºÙŠØ± Ù…Ø±Ø¨ÙˆØ· Ø¨Ø§Ù„Ø¨ÙˆØª
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #fef3c7;">
-        علشان تستلم الإشارات المجانية أو المدفوعة لازم تكمل خطوة واحدة فقط:
+        Ø¹Ù„Ø´Ø§Ù† ØªØ³ØªÙ„Ù… Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠØ© Ø£Ùˆ Ø§Ù„Ù…Ø¯ÙÙˆØ¹Ø© Ù„Ø§Ø²Ù… ØªÙƒÙ…Ù„ Ø®Ø·ÙˆØ© ÙˆØ§Ø­Ø¯Ø© ÙÙ‚Ø·:
         <br><br>
-        1️⃣ افتح البوت
+        1ï¸âƒ£ Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª
         <br>
-        2️⃣ ابعت نفس الإيميل اللي سجلت بيه في الموقع
+        افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.
         <br><br>
-        ❗ بدون الخطوة دي الإشارات مش هتوصلك
+        â— Ø¨Ø¯ÙˆÙ† Ø§Ù„Ø®Ø·ÙˆØ© Ø¯ÙŠ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù…Ø´ Ù‡ØªÙˆØµÙ„Ùƒ
     </div>
 
-    <a href="{{ bot_link }}" target="_blank" style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
+    <a href="{{ bot_link }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       🤖 افتح البوت الآن
+       ðŸ¤– Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø¢Ù†
     </a>
 </div>
 {% else %}
 <div class="notice-box notice-success">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        ✅ حسابك مربوط بالبوت
+        âœ… Ø­Ø³Ø§Ø¨Ùƒ Ù…Ø±Ø¨ÙˆØ· Ø¨Ø§Ù„Ø¨ÙˆØª
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #dcfce7;">
-        ممتاز — الإشارات هتوصلك على تيليجرام حسب الباقة الخاصة بك وحالة السوق.
+        Ù…Ù…ØªØ§Ø² â€” Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù‡ØªÙˆØµÙ„Ùƒ Ø¹Ù„Ù‰ ØªÙŠÙ„ÙŠØ¬Ø±Ø§Ù… Ø­Ø³Ø¨ Ø§Ù„Ø¨Ø§Ù‚Ø© Ø§Ù„Ø®Ø§ØµØ© Ø¨Ùƒ ÙˆØ­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚.
         <br>
-        لو البوت شغال والفرصة قوية، هتوصلك مباشرة.
+        Ù„Ùˆ Ø§Ù„Ø¨ÙˆØª Ø´ØºØ§Ù„ ÙˆØ§Ù„ÙØ±ØµØ© Ù‚ÙˆÙŠØ©ØŒ Ù‡ØªÙˆØµÙ„Ùƒ Ù…Ø¨Ø§Ø´Ø±Ø©.
     </div>
 
-    <a href="{{ bot_link }}" target="_blank">
+    <a href="{{ bot_link }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       💬 افتح البوت
+       ðŸ’¬ Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª
     </a>
 </div>
 {% endif %}
 
-    <h1>🚀 AI Crypto Trader</h1>
-    <p>Smart Trading • AI Powered • Passive Income</p>
-    {% if plan == "basic" %}
-<div class="urgency-box">
-🚀 Upgrade الآن إلى PRO أو VIP واحصل على إشارات أقوى وتنفيذ أفضل
-⏳ العرض ينتهي خلال:
-<span id="countdown">05:00</span>
-</div>
-
-{% elif plan == "pro" %}
-<div class="urgency-box">
-💎 أنت قريب جدًا من أعلى مستوى — ابدأ VIP الآن واستمتع بالتداول التلقائي الكامل
-⏳ العرض ينتهي خلال:
-<span id="countdown">05:00</span>
-</div>
-{% endif %}
-<div class="live-users">
-👥 <span id="usersCount">127</span> مستخدم متواجد الآن
-</div>
+    <h1>ðŸš€ Nexora AI Trader</h1>
+    <p>Smart Trading â€¢ AI Powered â€¢ Passive Income</p>
 
     <div class="status-strip">
         <div class="status-pill">
-            📦 Plan:
+            ðŸ“¦ Plan:
             <span class="status-plan">{{plan}}</span>
         </div>
 
         <div class="status-pill">
-            ⏳ Expiry:
+            â³ Expiry:
             <span class="status-expiry">{{expiry}}</span>
         </div>
 
         <div class="status-pill">
-            🤖 Bot Status:
+            ðŸ¤– Bot Status:
             {% if bot_active == 1 %}
                 <span class="status-on">Running</span>
             {% else %}
@@ -505,67 +681,188 @@ input, select {
     </div>
 
     <div class="helper-text">
-        ⚠️ البوت لا يرسل صفقات عشوائية — يتم الإرسال فقط عند وجود فرصة واضحة وقوية
+        âš ï¸ Ø§Ù„Ø¨ÙˆØª Ù„Ø§ ÙŠØ±Ø³Ù„ ØµÙÙ‚Ø§Øª Ø¹Ø´ÙˆØ§Ø¦ÙŠØ© â€” ÙŠØªÙ… Ø§Ù„Ø¥Ø±Ø³Ø§Ù„ ÙÙ‚Ø· Ø¹Ù†Ø¯ ÙˆØ¬ÙˆØ¯ ÙØ±ØµØ© ÙˆØ§Ø¶Ø­Ø© ÙˆÙ‚ÙˆÙŠØ©
     </div>
 
     <div class="quick-actions">
         <a href="/manual" style="text-decoration:none;">
             <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
-                📘 دليل الاستخدام
+                ðŸ“˜ Ø¯Ù„ÙŠÙ„ Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…
             </button>
         </a>
 
         <a href="/logout">
             <button type="button" style="background:#ef4444; color:white;">
-                🚪 تسجيل الخروج
+                ðŸšª ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø®Ø±ÙˆØ¬
             </button>
         </a>
     </div>
 
+    <section class="plan-dashboard {{dashboard_tier}}">
+        <div class="dashboard-top">
+            <div class="dashboard-title">
+                <div class="kicker">
+                    {% if dashboard_tier == "elite" %}
+                        ELITE
+                    {% elif dashboard_tier == "pro" %}
+                        PRO
+                    {% else %}
+                        STARTER
+                    {% endif %}
+                </div>
+                <h2>{{dashboard_title}}</h2>
+                <p>{{dashboard_subtitle}}</p>
+            </div>
+
+            <div class="tier-actions">
+                {% if dashboard_tier == "starter" %}
+                    <a class="primary-tier" href="#pricing">Upgrade to Pro</a>
+                    <a href="/bot-check">Verify Bot</a>
+                {% elif dashboard_tier == "pro" %}
+                    <a class="primary-tier" href="/create-payment?plan=vip">Upgrade to Elite</a>
+                    <a href="/proof">View Proof</a>
+                {% else %}
+                    <a class="primary-tier" href="#vip-settings">Manage Automation</a>
+                    <a href="/proof">Performance Proof</a>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="widget-grid">
+            <div class="widget">
+                <span>Portfolio</span>
+                <strong>${{dashboard_widgets.portfolio}}</strong>
+                <small>Trade capital + profit + affiliate balance</small>
+            </div>
+            <div class="widget">
+                <span>ROI</span>
+                <strong>{{dashboard_widgets.roi}}%</strong>
+                <small>Based on current tracked profit</small>
+            </div>
+            <div class="widget">
+                <span>Win Rate</span>
+                <strong>{{dashboard_widgets.win_rate}}%</strong>
+                <small>Plan-adjusted signal quality estimate</small>
+            </div>
+            <div class="widget">
+                <span>AI Score</span>
+                <strong>{{dashboard_widgets.ai_score}}/100</strong>
+                <small>Telegram, bot state, and plan readiness</small>
+            </div>
+            <div class="widget">
+                <span>Balance</span>
+                <strong>${{dashboard_widgets.balance}}</strong>
+                <small>Portfolio plus commissions minus withdrawals</small>
+            </div>
+            <div class="widget">
+                <span>Open Trades</span>
+                <strong>{{dashboard_widgets.open_trades}}</strong>
+                <small>{% if dashboard_tier == "elite" %}Automation watchlist{% else %}Manual signal workspace{% endif %}</small>
+            </div>
+            <div class="widget">
+                <span>Closed Trades</span>
+                <strong>{{dashboard_widgets.closed_trades}}</strong>
+                <small>Total tracked signal usage</small>
+            </div>
+            <div class="widget">
+                <span>Notifications</span>
+                <strong>{{notifications|length}}</strong>
+                <small>Important account and bot messages</small>
+            </div>
+            <div class="widget">
+                <span>Spot Signals Today</span>
+                <strong>{{dashboard_widgets.spot_today}}</strong>
+                <small>Spot engine status: {% if spot_enabled == 1 %}Enabled{% else %}Paused{% endif %}</small>
+            </div>
+            <div class="widget">
+                <span>Futures Signals Today</span>
+                <strong>{{dashboard_widgets.futures_today}}</strong>
+                <small>Futures engine status: {% if futures_enabled == 1 %}Enabled{% else %}Paused{% endif %}</small>
+            </div>
+            <div class="widget">
+                <span>Spot Win Rate</span>
+                <strong>{{dashboard_widgets.spot_win_rate}}%</strong>
+                <small>Spot profit: ${{dashboard_widgets.spot_profit}}</small>
+            </div>
+            <div class="widget">
+                <span>Futures Win Rate</span>
+                <strong>{{dashboard_widgets.futures_win_rate}}%</strong>
+                <small>Futures profit: ${{dashboard_widgets.futures_profit}}</small>
+            </div>
+        </div>
+
+        <div class="dashboard-lower">
+            <div class="dashboard-panel dashboard-chart-wrap">
+                <h3>Charts</h3>
+                <canvas id="tierChart"></canvas>
+            </div>
+
+            <div class="dashboard-panel">
+                <h3>Notifications</h3>
+                <div class="notification-list">
+                    {% for item in notifications %}
+                    <div class="notification-row">{{item}}</div>
+                    {% endfor %}
+                </div>
+
+                <h3 style="margin-top:20px;">Recent Activity</h3>
+                <div class="activity-list">
+                    {% for item in recent_activity %}
+                    <div class="activity-row">
+                        <span>{{item.label}}</span>
+                        <strong>{{item.value}}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- AFFILIATE PROGRAM -->
     <div class="glass-box" style="margin-top:30px; padding:24px; max-width:1000px; margin-left:auto; margin-right:auto;">
-        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">💸 Affiliate Program</h2>
-        <p style="color:#cbd5e1; margin-top:0;">اكسب من مشاركة البوت مع غيرك — وكل اشتراك جديد من رابطك يتحسب لك.</p>
+        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">ðŸ’¸ Affiliate Program</h2>
+        <p style="color:#cbd5e1; margin-top:0;">Ø§ÙƒØ³Ø¨ Ù…Ù† Ù…Ø´Ø§Ø±ÙƒØ© Ø§Ù„Ø¨ÙˆØª Ù…Ø¹ ØºÙŠØ±Ùƒ â€” ÙˆÙƒÙ„ Ø§Ø´ØªØ±Ø§Ùƒ Ø¬Ø¯ÙŠØ¯ Ù…Ù† Ø±Ø§Ø¨Ø·Ùƒ ÙŠØªØ­Ø³Ø¨ Ù„Ùƒ.</p>
 
-        <p>🔗 <b>رابط الإحالة الخاص بك:</b></p>
+        <p>ðŸ”— <b>Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø© Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ:</b></p>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:15px;">
             <input id="refLink" type="text" value="{{referral_link}}" readonly
                    style="width:70%; min-width:260px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
             <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">
-                📋 Copy
+                ðŸ“‹ Copy
             </button>
         </div>
 
         <div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap; margin-top:15px;">
             <div class="card mini-stat">
-                <h3>👥 Referrals</h3>
+                <h3>ðŸ‘¥ Referrals</h3>
                 <p>{{total_referrals}}</p>
             </div>
 
             <div class="card mini-stat">
-                <h3>💰 Balance</h3>
+                <h3>ðŸ’° Balance</h3>
                 <p>${{affiliate_balance}}</p>
             </div>
 
             <div class="card mini-stat">
-                <h3>🏦 Withdrawn</h3>
+                <h3>ðŸ¦ Withdrawn</h3>
                 <p>${{total_withdrawn}}</p>
             </div>
         </div>
 
         <div style="margin-top:28px;">
-            <h3 style="color:#22c55e;">🏧 طلب سحب العمولة</h3>
-            <p style="color:#cbd5e1;">الحد الأدنى: $25 | الحد الأقصى: $300 | خلال 24 ساعة</p>
+            <h3 style="color:#22c55e;">ðŸ§ Ø·Ù„Ø¨ Ø³Ø­Ø¨ Ø§Ù„Ø¹Ù…ÙˆÙ„Ø©</h3>
+            <p style="color:#cbd5e1;">Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰: $25 | Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰: $300 | Ø®Ù„Ø§Ù„ 24 Ø³Ø§Ø¹Ø©</p>
 
             <form action="/request-withdrawal" method="POST" style="max-width:500px; margin:auto;">
+                {{ csrf_field() }}
                 <input name="wallet_address" type="text" placeholder="USDT Wallet Address"
                        style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;" required>
 
                 <input name="amount" type="number" step="0.01" min="25" max="300" placeholder="Amount in USD"
                        style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;" required>
 
-                <button type="submit" style="background:#22c55e; color:white;">💸 Request Withdrawal</button>
+                <button type="submit" style="background:#22c55e; color:white;">ðŸ’¸ Request Withdrawal</button>
             </form>
         </div>
     </div>
@@ -574,66 +871,109 @@ input, select {
     <div style="margin-top:22px; text-align:center;">
         <a href="/admin">
             <button style="background:#f59e0b; color:white; width:auto; padding:12px 25px;">
-                👑 Admin Dashboard
+                ðŸ‘‘ Admin Dashboard
             </button>
         </a>
 
-        <a href="/owner-free-upgrade">
+        <form action="/owner-free-upgrade" method="POST" style="display:inline;">
+            {{ csrf_field() }}
             <button style="background:#22c55e; color:white; width:auto; padding:12px 25px;">
-                💎 Activate My Lifetime VIP
+                Activate My Lifetime Elite
             </button>
-        </a>
+        </form>
     </div>
     {% endif %}
 </div>
 
 <!-- BOT TOGGLE -->
 <div class="box" style="max-width:850px; margin-top:25px;">
-    <h2 style="margin-top:0;">🤖 Bot Control</h2>
+    <h2 style="margin-top:0;">ðŸ¤– Bot Control</h2>
     <p style="color:#cbd5e1; line-height:1.8;">
-        تحكم في استقبال الإشارات أو تنفيذ التداول التلقائي حسب باقتك وإعداداتك الحالية.
+        ØªØ­ÙƒÙ… ÙÙŠ Ø§Ø³ØªÙ‚Ø¨Ø§Ù„ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø£Ùˆ ØªÙ†ÙÙŠØ° Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ Ø­Ø³Ø¨ Ø¨Ø§Ù‚ØªÙƒ ÙˆØ¥Ø¹Ø¯Ø§Ø¯Ø§ØªÙƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ©.
     </p>
 
     <form action="/toggle-bot" method="POST" style="text-align:center; margin-top:15px;">
+        {{ csrf_field() }}
         {% if bot_active == 1 %}
             <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
-                🔴 إيقاف البوت
+                ðŸ”´ Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ø¨ÙˆØª
             </button>
         {% else %}
             <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
-                🟢 تشغيل البوت
+                ðŸŸ¢ ØªØ´ØºÙŠÙ„ Ø§Ù„Ø¨ÙˆØª
             </button>
         {% endif %}
     </form>
 
     <div class="helper-text">
         {% if bot_active == 1 %}
-            🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
+            ðŸŸ¢ Ø§Ù„Ø¨ÙˆØª ÙŠØ¹Ù…Ù„ Ø§Ù„Ø¢Ù† ÙˆØ³ÙŠØ±Ø³Ù„ Ø§Ù„ØµÙÙ‚Ø§Øª ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø­Ø³Ø¨ Ø­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚ ÙˆØ§Ù„Ø®Ø·Ø© Ø§Ù„Ø®Ø§ØµØ© Ø¨Ùƒ
         {% else %}
-            🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
+            ðŸ”´ Ø§Ù„Ø¨ÙˆØª Ù…ØªÙˆÙ‚Ù Ø­Ø§Ù„ÙŠÙ‹Ø§ â€” Ù‚Ù… Ø¨ØªØ´ØºÙŠÙ„Ù‡ Ù„ØªÙ„Ù‚ÙŠ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø£Ùˆ ØªÙ†ÙÙŠØ° Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ
         {% endif %}
     </div>
 </div>
 
-<!-- VIP SETTINGS -->
+<div class="box" style="max-width:900px; margin-top:25px;">
+    <h2 style="margin-top:0;">Spot & Futures Signal Preferences</h2>
+    <p style="color:#cbd5e1; line-height:1.8;">
+        تحكم في أنواع الإشارات التي يستقبلها حسابك. المحرك سيقيّم Spot و Futures بشكل مستقل ويختار الأفضل حسب الجودة.
+    </p>
+
+    <form action="/save-settings" method="POST" style="max-width:720px; margin:auto;">
+        {{ csrf_field() }}
+        <input name="trade_amount" type="number" step="0.01" min="1" value="{{trade_amount}}"
+               placeholder="Trade Amount"
+               style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
+
+        <select name="trade_type"
+                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
+            <option value="futures" {% if trade_type == "futures" %}selected{% endif %}>Futures priority</option>
+            <option value="spot" {% if trade_type == "spot" %}selected{% endif %}>Spot priority</option>
+        </select>
+
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin:12px 0 16px;">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span>
+                    <strong style="display:block;">Spot Signals</strong>
+                    <small style="color:#94a3b8;">تفعيل أو إيقاف فرص Spot</small>
+                </span>
+                <input name="spot_enabled" type="checkbox" value="1" {% if spot_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
+            </label>
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span>
+                    <strong style="display:block;">Futures Signals</strong>
+                    <small style="color:#94a3b8;">تفعيل أو إيقاف فرص Futures</small>
+                </span>
+                <input name="futures_enabled" type="checkbox" value="1" {% if futures_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
+            </label>
+        </div>
+
+        <button type="submit" style="background:#22c55e; color:white;">Save Spot / Futures Preferences</button>
+    </form>
+</div>
+
+<!-- ELITE SETTINGS -->
 {% if plan == "vip" or is_admin == 1 %}
-<div class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
-    <h2 style="color:#facc15; margin-top:0;">⚙️ VIP Auto Trading Settings</h2>
+<div id="vip-settings" class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
+    <h2 style="color:#facc15; margin-top:0;">Elite Auto Trading Settings</h2>
     <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
-        اربط الـ API الخاص بك واضبط إعدادات التداول — البوت لا يستطيع السحب أو الإيداع، فقط تنفيذ الصفقات.
+        Ø§Ø±Ø¨Ø· Ø§Ù„Ù€ API Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ ÙˆØ§Ø¶Ø¨Ø· Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ¯Ø§ÙˆÙ„ â€” Ø§Ù„Ø¨ÙˆØª Ù„Ø§ ÙŠØ³ØªØ·ÙŠØ¹ Ø§Ù„Ø³Ø­Ø¨ Ø£Ùˆ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹ØŒ ÙÙ‚Ø· ØªÙ†ÙÙŠØ° Ø§Ù„ØµÙÙ‚Ø§Øª.
     </p>
 
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
-        <h3>🔐 ربط API</h3>
+        {{ csrf_field() }}
+        <h3>ðŸ” Ø±Ø¨Ø· API</h3>
         <input name="api_key" type="text" placeholder="Binance API Key"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
         <input name="api_secret" type="text" placeholder="Binance API Secret"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
-        <button type="submit" style="background:#38bdf8; color:white;">💾 Save API</button>
+        <button type="submit" style="background:#38bdf8; color:white;">ðŸ’¾ Save API</button>
     </form>
 
     <form action="/save-settings" method="POST">
-        <h3>📊 إعدادات التداول</h3>
+        {{ csrf_field() }}
+        <h3>ðŸ“Š Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ¯Ø§ÙˆÙ„</h3>
 
         <input name="trade_amount" type="number" step="0.01" min="1" value="{{trade_amount}}"
                placeholder="Trade Amount"
@@ -645,12 +985,32 @@ input, select {
             <option value="spot" {% if trade_type == "spot" %}selected{% endif %}>Spot</option>
         </select>
 
-        <button type="submit" style="background:#22c55e; color:white;">✅ Save Trading Settings</button>
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin:12px 0 16px;">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span>
+                    <strong style="display:block;">Spot Signals</strong>
+                    <small style="color:#94a3b8;">استقبال فرص Spot عند الجودة المناسبة</small>
+                </span>
+                <input name="spot_enabled" type="checkbox" value="1" {% if spot_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
+            </label>
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span>
+                    <strong style="display:block;">Futures Signals</strong>
+                    <small style="color:#94a3b8;">استقبال فرص Futures عند الجودة المناسبة</small>
+                </span>
+                <input name="futures_enabled" type="checkbox" value="1" {% if futures_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
+            </label>
+        </div>
+
+        <button type="submit" style="background:#22c55e; color:white;">âœ… Save Trading Settings</button>
     </form>
 </div>
 {% endif %}
 
-<h2 class="section-title">💳 Subscription Plans</h2>
+<h2 class="section-title">Subscription Plans</h2>
+<div style="text-align:center; margin:-8px 0 22px;">
+    <a href="/invoice-history" style="color:#38bdf8; text-decoration:none; font-weight:700;">Invoice History</a>
+</div>
 
 <!-- PLANS -->
 <div class="plans">
@@ -659,236 +1019,90 @@ input, select {
         {% if plan == "basic" %}
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
-        <h2>Basic</h2>
-       <div class="price">
-<span style="text-decoration:line-through;color:#94a3b8">$49</span><br>
-$25
-</div>
-
-<p style="color:#facc15; font-size:13px;">
-⚠️ خطة محدودة — مناسبة للتجربة فقط
-</p>
+        <h2>Starter</h2>
+        <div class="price">$25</div>
 
         <ul>
-    <li>✔ إشارات تداول محدودة يوميًا</li>
-    <li>✔ تحليل أساسي باستخدام AI</li>
-    <li>✔ دخول عام للسوق بدون تحسينات متقدمة</li>
-
-    <li style="color:#facc15;">
-    ⚠️ عدد فرص أقل مقارنة بالخطط الأعلى
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ دقة دخول متوسطة (غير مخصصة للمناطق القوية)
-    </li>
-
-    <li style="color:#ef4444;">
-    ❌ بدون تحسين نقاط الدخول (Smart Entry)
-    </li>
-
-    <li style="color:#ef4444;">
-    ❌ بدون إدارة مخاطرة ذكية
-    </li>
-
-    <li style="color:#ef4444;">
-    ❌ بدون تنفيذ تلقائي أو متابعة متقدمة
-    </li>
-
-    <li style="color:#94a3b8;">
-    📊 مناسبة للتجربة فقط وليس لتحقيق أفضل النتائج
-    </li>
-</ul>
+            <li>5 Signals / Day</li>
+            <li>Basic Dashboard</li>
+            <li>Telegram Delivery</li>
+            <li>Basic Analysis</li>
+            <li>Starter notifications</li>
+            <li>Best for testing signal quality</li>
+        </ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="basic">
-            <button class="pay">📊 Start Basic Plan</button>
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">ðŸ’³ Subscribe</button>
         </form>
-        <form action="/manual-payment" method="GET">
-    <input type="hidden" name="plan" value="basic">
 
-    <button class="pay basic-manual-btn">
-        💎 Manual Payment
-        <span>Save up to $10 in fees</span>
-    </button>
-</form>
+        <a href="/manual-payment/basic"><button class="manual">ðŸ’¸ Manual</button></a>
     </div>
 
     <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
         {% if plan == "pro" %}
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
-        <h2>Pro 🔥</h2>
-        <div class="price">
-<span style="text-decoration:line-through;color:#94a3b8">$129</span><br>
-$59.99
-</div>
-
-<p style="color:#38bdf8; font-weight:bold;">
-🔥 الخطة الأكثر استخدامًا
-</p>
+        <h2>Pro</h2>
+        <div class="price">$59.99</div>
 
         <ul>
-    <li>✔ إشارات احترافية يومية (Spot & Futures)</li>
-    <li>✔ تحليل متقدم باستخدام AI + Smart Money</li>
-    <li>✔ تحسين نقاط الدخول (Better Entry Timing)</li>
-    <li>✔ فلترة قوية للإشارات (High Probability Setups)</li>
-    <li>✔ إدارة مخاطرة محسنة</li>
-
-    <li style="color:#22c55e;">
-    📊 دقة أعلى واستقرار أفضل من BASIC
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ لا يشمل تنفيذ تلقائي
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ لا يشمل Copy Trading
-    </li>
-
-    <li style="color:#94a3b8;">
-    🔓 مناسب للمتداولين الجادين وليس الاحترافيين بالكامل
-    </li>
-</ul>
+            <li>كل Starter +</li>
+            <li>AI Analysis</li>
+            <li>Portfolio Tracker</li>
+            <li>Email Alerts</li>
+            <li>Advanced Dashboard</li>
+            <li>Risk Analysis</li>
+            <li>History</li>
+        </ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="pro">
-            <button class="pay">🚀 Upgrade to PRO</button>
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">ðŸ’³ Subscribe</button>
         </form>
-        <form action="/manual-payment" method="GET">
-    <input type="hidden" name="plan" value="pro">
 
-    <button class="pay pro-manual-btn">
-        💎 Manual Payment
-        <span>Save up to $10 in fees</span>
-    </button>
-</form>
-
+        <a href="/manual-payment/pro"><button class="manual">ðŸ’¸ Manual</button></a>
     </div>
 
     <div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
         {% if plan == "vip" %}
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
-        <h2>VIP 💎</h2>
-        <div class="price">
-<span style="text-decoration:line-through;color:#94a3b8">$199</span><br>
-$99.99
-</div>
-
-<p style="color:#facc15; font-weight:bold;">
-💎 النظام الأكثر ربحية داخل المنصة
-</p>
+        <h2>Elite</h2>
+        <div class="price">$99.99</div>
 
         <ul>
-    <li>✔ نظام تداول تلقائي متكامل 100% (بدون تدخل)</li>
-    <li>✔ Copy Trading مباشر على حسابك</li>
-    <li>✔ Smart Entry Engine (دخول من أفضل مناطق السوق)</li>
-    <li>✔ AI Risk Management لحماية رأس المال</li>
-    <li>✔ تنفيذ فوري بأقل تأخير (Low Latency)</li>
-    <li>✔ متابعة الصفقة تلقائيًا (TP / SL / إدارة ديناميكية)</li>
-
-    <li style="color:#22c55e;">
-    🚀 نظام كامل: تحليل + تنفيذ + متابعة
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ يعمل فقط على: Bybit / KuCoin / OKX
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ لا يمكن السحب أو الإيداع — أمان كامل 100%
-    </li>
-
-    <li style="color:#94a3b8;">
-    💎 مناسب لمن يريد دخل شبه تلقائي من السوق
-    </li>
-</ul>
+            <li>كل Pro +</li>
+            <li>AI Chat</li>
+            <li>Whale Alerts</li>
+            <li>Private Community</li>
+            <li>Early Signals</li>
+            <li>Live Scanner</li>
+            <li>Elite Dashboard</li>
+            <li>Priority Support</li>
+            <li>Advanced AI</li>
+        </ul>
 
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="vip">
-            <button class="pay">💎 Activate VIP System</button>
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">ðŸ’³ Subscribe</button>
         </form>
-        <form action="/manual-payment" method="GET">
-    <input type="hidden" name="plan" value="vip">
 
-    <button class="pay vip-manual-btn">
-        👑 Manual Payment
-        <span>Save up to $10 in fees</span>
-    </button>
-</form>
-
+        <a href="/manual-payment/vip"><button class="manual">ðŸ’¸ Manual</button></a>
     </div>
-
-</div>
-<div class="card pro2y {% if plan == 'pro_2y' %}current-plan{% endif %}">
-
-    {% if plan == "pro_2y" %}
-    <div class="current-badge">YOUR CURRENT PLAN</div>
-    {% endif %}
-
-    <h2>ELITE SYSTEM 👑</h2>
-
-    <div class="price">
-<span style="text-decoration:line-through;color:#94a3b8">$1499</span><br>
-$999
-</div>
-
-<p style="color:#22c55e; font-weight:bold; margin-top:10px;">
-🔥 احصل على سنتين كاملة مقابل أقل من سعر سنة واحدة
-</p>
-
-<p style="color:#facc15; font-size:13px;">
-⏳ عرض محدود — قد يتم إلغاؤه في أي وقت
-</p>
-
-    <ul>
-    <li>✔ نظام تداول احترافي كامل (Institutional Level)</li>
-    <li>✔ Copy Trading متقدم — نسخ استراتيجيات كاملة</li>
-    <li>✔ AI Multi-Strategy Engine (سكالب + سوينج)</li>
-    <li>✔ Smart Liquidity Entry — دخول من مناطق البنوك</li>
-    <li>✔ Dynamic TP System (أهداف متعددة)</li>
-    <li>✔ Auto Position Management (إدارة الصفقة تلقائي)</li>
-    <li>✔ أعلى دقة دخول بين جميع الخطط</li>
-    <li>✔ نتائج ثابتة وتقليل المخاطرة لأقصى حد</li>
-
-    <li style="color:#22c55e;">
-    🔥 أعلى مستوى أداء داخل النظام بالكامل
-    </li>
-
-    <li style="color:#facc15;">
-    ⚠️ مخصص للمستخدمين المتقدمين فقط
-    </li>
-</ul>
-
-    <form action="/create-payment" method="GET">
-        <input type="hidden" name="plan" value="pro_2y">
-        <button class="pay" style="font-size:16px;">
-👑 Unlock Elite System
-</button>
-<form action="/manual-payment" method="GET">
-    <input type="hidden" name="plan" value="pro_2y">
-
-    <button class="pay elite-manual-btn">
-        🚀 Elite Manual Payment
-        <span>Save up to $10+ in fees</span>
-    </button>
-</form>
-
-<p style="font-size:12px; color:#94a3b8; margin-top:6px;">
-🚀 وصول فوري + تفعيل مباشر بعد الدفع
-</p>
-    </form>
 
 </div>
 
 <!-- PROFIT -->
 <div class="box">
-    <h2>💰 Profit</h2>
-    <p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
+    <h2>ðŸ’° Profit</h2>
+    <p style="color:#38bdf8; margin-top:0;">ðŸ“Š Ø§Ù„Ù†ØªØ§Ø¦Ø¬ Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶Ø© Ù‡Ù†Ø§ Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø­Ø³Ø§Ø¨Ùƒ ÙˆØ¨ÙŠØ§Ù†Ø§Øª ØªØ¯Ø§ÙˆÙ„Ùƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ©</p>
 
     <p id="profit">{{profit}} USDT</p>
-    <p>📊 Trades: {{trades}}</p>
+    <p>ðŸ“Š Trades: {{trades}}</p>
 
     <div class="progress">
         <div class="progress-bar" id="bar"></div>
@@ -897,8 +1111,8 @@ $999
 
 <!-- CHART -->
 <div class="box">
-    <h2>📊 Performance</h2>
-    <p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
+    <h2>ðŸ“Š Performance</h2>
+    <p style="color:#cbd5e1;">Ø£Ø¯Ø§Ø¡ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­ ÙŠØªÙ… ØªØ­Ø¯ÙŠØ«Ù‡ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§</p>
     <canvas id="chart"></canvas>
 </div>
 
@@ -911,7 +1125,7 @@ function copyRef() {
     copyText.select();
     copyText.setSelectionRange(0, 99999);
     navigator.clipboard.writeText(copyText.value);
-    alert("✅ تم نسخ رابط الإحالة");
+    alert("âœ… ØªÙ… Ù†Ø³Ø® Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø©");
 }
 
 let chart = new Chart(document.getElementById("chart"), {
@@ -947,6 +1161,50 @@ let chart = new Chart(document.getElementById("chart"), {
     }
 });
 
+const tierChartNode = document.getElementById("tierChart");
+if (tierChartNode) {
+    new Chart(tierChartNode, {
+        type: "radar",
+        data: {
+            labels: ["Portfolio", "ROI", "Win Rate", "AI Score", "Balance", "Closed Trades"],
+            datasets: [{
+                label: "{{dashboard_title}}",
+                data: [
+                    Math.min({{dashboard_widgets.portfolio}}, 100),
+                    Math.max(0, Math.min({{dashboard_widgets.roi}}, 100)),
+                    {{dashboard_widgets.win_rate}},
+                    {{dashboard_widgets.ai_score}},
+                    Math.min({{dashboard_widgets.balance}}, 100),
+                    Math.min({{dashboard_widgets.closed_trades}}, 100)
+                ],
+                borderColor: "{% if dashboard_tier == 'elite' %}#f4bf5f{% elif dashboard_tier == 'pro' %}#34d3ff{% else %}#20d68a{% endif %}",
+                backgroundColor: "{% if dashboard_tier == 'elite' %}rgba(244,191,95,0.18){% elif dashboard_tier == 'pro' %}rgba(52,211,255,0.16){% else %}rgba(32,214,138,0.16){% endif %}",
+                pointBackgroundColor: "#f8fafc"
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: { color: "#f8fafc" }
+                }
+            },
+            scales: {
+                r: {
+                    angleLines: { color: "rgba(255,255,255,0.12)" },
+                    grid: { color: "rgba(255,255,255,0.12)" },
+                    pointLabels: { color: "#cbd5e1" },
+                    ticks: {
+                        color: "#94a3b8",
+                        backdropColor: "transparent"
+                    }
+                }
+            }
+        }
+    });
+}
+
 setInterval(async ()=>{
  try {
      let r = await fetch("/api/data");
@@ -976,51 +1234,7 @@ setInterval(async ()=>{
      console.log("chart update error", e);
  }
 }, 3000);
-
-
-// 👇 حط هنا 👇
-
-let users = 120 + Math.floor(Math.random() * 20);
-
-function updateUsers() {
-    let change = Math.floor(Math.random() * 5);
-
-    if (Math.random() > 0.5) {
-        users += change;
-    } else {
-        users -= change;
-    }
-
-    if (users < 90) users = 95;
-
-    let el = document.getElementById("usersCount");
-    if (el) el.innerText = users;
-}
-
-setInterval(updateUsers, 3000);
-
-const names = ["Ahmed", "Mohamed", "Ali", "Omar", "Youssef", "Khaled"];
-const plans = ["VIP 💎", "PRO 🔥"];
-
-function showPopup() {
-    let name = names[Math.floor(Math.random() * names.length)];
-    let plan = plans[Math.floor(Math.random() * plans.length)];
-
-    let popup = document.getElementById("popup");
-
-    if (!popup) return;
-
-    popup.innerText = `🔥 ${name} اشترك الآن في ${plan}`;
-    popup.style.display = "block";
-
-    setTimeout(() => {
-        popup.style.display = "none";
-    }, 4000);
-}
-
-setInterval(showPopup, 8000);
-
 </script>
-<div id="popup" class="fake-popup"></div>
+
 </body>
 </html>

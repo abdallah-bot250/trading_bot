@@ -1,0 +1,17 @@
+.env
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+.pytest_cache
+.mypy_cache
+.git
+.gitignore
+*.zip
+local_server.out.log
+local_server.err.log
+flask-design.out.log
+flask-design.err.log

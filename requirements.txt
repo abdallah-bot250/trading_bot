@@ -10,3 +10,8 @@ werkzeug
 psycopg2-binary
 python-dotenv
 cryptography
+flask-talisman
+flask-limiter
+Flask-Compress
+SQLAlchemy
+alembic
