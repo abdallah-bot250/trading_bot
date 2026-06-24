@@ -1264,12 +1264,13 @@ def create_payment():
         )
         user = c.fetchone()
 
-        if not user or not user[0]:
+        if not user:
             conn.close()
-            return "❌ لازم تربط حساب التليجرام الأول"
+            return "Account not found. Please login again."
 
-        chat_id = str(user[0]).strip()
-        email = user[1]
+        chat_id = str(user[0] or "").strip()
+        email = str(user[1] or session["user"]).strip().lower()
+        order_id = chat_id if chat_id else email
         coupon_row = None
 
         if coupon_code:
@@ -1292,7 +1293,7 @@ def create_payment():
             "price_amount": amount,
             "price_currency": "usd",
             "pay_currency": "usdttrc20",
-            "order_id": chat_id,
+            "order_id": order_id,
             "order_description": plan,
             "success_url": f"{BASE_URL}/success",
             "cancel_url": f"{BASE_URL}/cancel",
@@ -1339,7 +1340,7 @@ def create_payment():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             invoice_id,
-            chat_id,
+            chat_id or None,
             email,
             plan,
             "created" if invoice_url else "creation_failed",
@@ -1598,55 +1599,34 @@ def admin_dashboard():
                 log(f"admin rows unavailable: {metric_error}")
                 return []
 
-        c.execute("SELECT COUNT(*) FROM users")
-        total_users = c.fetchone()[0]
+        total_users = int(safe_scalar("SELECT COUNT(*) FROM users", default=0) or 0)
+        paid_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE is_paid = 1", default=0) or 0)
+        linked_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(chat_id, '') != ''", default=0) or 0)
+        active_bots = int(safe_scalar("SELECT COUNT(*) FROM users WHERE bot_active = 1", default=0) or 0)
+        basic_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'basic'", default=0) or 0)
+        pro_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro'", default=0) or 0)
+        vip_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'vip'", default=0) or 0)
+        ultimate_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'ultimate'", default=0) or 0)
+        free_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1", default=0) or 0)
+        total_affiliate_paid = float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions", default=0) or 0)
 
-        c.execute("SELECT COUNT(*) FROM users WHERE is_paid = 1")
-        paid_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE COALESCE(chat_id, '') != ''")
-        linked_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE bot_active = 1")
-        active_bots = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'basic'")
-        basic_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'pro'")
-        pro_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'vip'")
-        vip_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1")
-        free_users = c.fetchone()[0]
-
-        c.execute("SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions")
-        total_affiliate_paid = float(c.fetchone()[0] or 0)
-
-        c.execute("""
+        revenue = round(float(safe_scalar("""
             SELECT COALESCE(SUM(
                 CASE
                     WHEN plan = 'basic' THEN %s
                     WHEN plan = 'pro' THEN %s
                     WHEN plan = 'vip' THEN %s
+                    WHEN plan = 'ultimate' THEN %s
                     ELSE 0
                 END
             ), 0)
             FROM users
             WHERE is_paid = 1
-        """, (PLAN_PRICES["basic"], PLAN_PRICES["pro"], PLAN_PRICES["vip"]))
-        revenue = round(float(c.fetchone()[0] or 0), 2)
+        """, (PLAN_PRICES["basic"], PLAN_PRICES["pro"], PLAN_PRICES["vip"], PLAN_PRICES["ultimate"]), default=0) or 0), 2)
 
-        c.execute("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status != 'paid'")
-        pending_withdrawals = c.fetchone()[0]
-
-        c.execute("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status != 'paid'")
-        pending_withdrawal_amount = round(float(c.fetchone()[0] or 0), 2)
-
-        c.execute("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'paid'")
-        paid_withdrawals = c.fetchone()[0]
+        pending_withdrawals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status != 'paid'", default=0) or 0)
+        pending_withdrawal_amount = round(float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status != 'paid'", default=0) or 0), 2)
+        paid_withdrawals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'paid'", default=0) or 0)
 
         payment_revenue = round(float(safe_scalar("""
             SELECT COALESCE(SUM(amount), 0)
@@ -1717,7 +1697,7 @@ def admin_dashboard():
         affiliate_referrals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_referrals", default=0) or 0)
         affiliate_balance_total = round(float(safe_scalar("SELECT COALESCE(SUM(affiliate_balance), 0) FROM users", default=0) or 0), 2)
         affiliate_withdrawn = round(float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status = 'paid'", default=0) or 0), 2)
-        active_plans_count = int(basic_users or 0) + int(pro_users or 0) + int(vip_users or 0)
+        active_plans_count = int(basic_users or 0) + int(pro_users or 0) + int(vip_users or 0) + int(ultimate_users or 0)
         ai_score = min(99, max(50, round(62 + (signal_win_rate * 0.25) + min(signals_total, 100) * 0.08 + (8 if signals_profit > 0 else 0), 2)))
         avg_signal_pnl = round(signals_profit / signals_closed, 2) if signals_closed else 0
 
@@ -1785,6 +1765,7 @@ def admin_dashboard():
             basic_users=basic_users,
             pro_users=pro_users,
             vip_users=vip_users,
+            ultimate_users=ultimate_users,
             free_users=free_users,
             pending_withdrawals=pending_withdrawals,
             pending_withdrawal_amount=pending_withdrawal_amount,
@@ -2071,7 +2052,8 @@ def build_telegram_admin_stats(c):
             COUNT(*) FILTER (WHERE bot_active = 1) AS active_bots,
             COUNT(*) FILTER (WHERE plan = 'basic') AS starter_users,
             COUNT(*) FILTER (WHERE plan = 'pro') AS pro_users,
-            COUNT(*) FILTER (WHERE plan = 'vip') AS elite_users
+            COUNT(*) FILTER (WHERE plan = 'vip') AS elite_users,
+            COUNT(*) FILTER (WHERE plan = 'ultimate') AS ultimate_users
         FROM users
     """)
     row = c.fetchone()
@@ -2085,6 +2067,7 @@ def build_telegram_admin_stats(c):
         "starter_users": row[4],
         "pro_users": row[5],
         "elite_users": row[6],
+        "ultimate_users": row[7],
         "pending_withdrawals": pending,
     }
 
@@ -2552,14 +2535,14 @@ def payment_webhook():
         payment_status = str(data.get("payment_status") or "").strip().lower()
         payment_id = str(data.get("payment_id") or data.get("invoice_id") or "").strip()
         invoice_id = str(data.get("invoice_id") or data.get("id") or "").strip()
-        chat_id = str(data.get("order_id") or "").strip()
+        order_identifier = str(data.get("order_id") or "").strip()
         plan = (data.get("order_description") or "basic").strip().lower()
 
         if plan not in PLAN_PRICES:
             log(f"❌ Invalid payment plan ignored: {plan}")
             return "invalid plan", 400
 
-        if not chat_id:
+        if not order_identifier:
             return "missing order_id", 400
 
         if not payment_id:
@@ -2569,19 +2552,24 @@ def payment_webhook():
         c = conn.cursor()
 
         c.execute("""
-            SELECT id, amount, original_amount, discount_amount, coupon_code, invoice_url, status
+            SELECT id, amount, original_amount, discount_amount, coupon_code, invoice_url, status, email, chat_id
             FROM payment_invoices
             WHERE (invoice_id = %s AND %s <> '')
                OR (payment_id = %s AND %s <> '')
-               OR (chat_id = %s AND plan = %s)
+               OR (chat_id = %s AND %s <> '')
+               OR (LOWER(email) = LOWER(%s) AND %s <> '')
             ORDER BY created_at DESC
             LIMIT 1
-        """, (invoice_id, invoice_id, payment_id, payment_id, chat_id, plan))
+        """, (invoice_id, invoice_id, payment_id, payment_id, order_identifier, order_identifier, order_identifier, order_identifier))
         invoice = c.fetchone()
         invoice_row_id = invoice[0] if invoice else None
         paid_amount = float(invoice[1] if invoice else PLAN_PRICES.get(plan, PLAN_PRICES["basic"]))
         coupon_code = invoice[4] if invoice else None
         invoice_url = invoice[5] if invoice else None
+        invoice_email = str(invoice[7] or "").strip().lower() if invoice else ""
+        invoice_chat_id = str(invoice[8] or "").strip() if invoice else ""
+        buyer_email_or_chat = invoice_email or order_identifier
+        buyer_chat_id = invoice_chat_id or (order_identifier if order_identifier.isdigit() else "")
 
         bucket = payment_status_bucket(payment_status)
         if bucket != "success":
@@ -2593,7 +2581,7 @@ def payment_webhook():
             """, (
                 payment_id,
                 invoice_id,
-                chat_id,
+                order_identifier,
                 plan,
                 payment_status,
                 bucket,
@@ -2642,15 +2630,18 @@ def payment_webhook():
                 payment_id, order_id, payment_status, plan, amount, currency, invoice_id, invoice_url, raw_payload
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, chat_id, payment_status, plan, paid_amount, "usd", invoice_id, invoice_url, raw_payload))
+        """, (payment_id, order_identifier, payment_status, plan, paid_amount, "usd", invoice_id, invoice_url, raw_payload))
 
         c.execute("""
-            SELECT email, referred_by, expiry, lifetime_owner
+            SELECT email, referred_by, expiry, lifetime_owner, chat_id
             FROM users
-            WHERE chat_id = %s
+            WHERE (chat_id = %s AND %s <> '')
+               OR (LOWER(email) = LOWER(%s) AND %s <> '')
             LIMIT 1
-        """, (chat_id,))
+        """, (buyer_chat_id, buyer_chat_id, buyer_email_or_chat, buyer_email_or_chat))
         buyer = c.fetchone()
+        resolved_email = buyer[0] if buyer else (invoice_email or None)
+        resolved_chat_id = str(buyer[4] or buyer_chat_id or "").strip() if buyer else buyer_chat_id
         previous_expiry = buyer[2] if buyer else None
         new_expiry, is_renewal = calculate_subscription_expiry(previous_expiry)
 
@@ -2660,8 +2651,9 @@ def payment_webhook():
                 plan = %s,
                 expiry = %s,
                 bot_active = CASE WHEN %s = 'vip' THEN 1 ELSE bot_active END
-            WHERE chat_id = %s
-        """, (plan, new_expiry, plan, chat_id))
+            WHERE (chat_id = %s AND %s <> '')
+               OR (LOWER(email) = LOWER(%s) AND %s <> '')
+        """, (plan, new_expiry, plan, resolved_chat_id, resolved_chat_id, resolved_email, resolved_email))
 
         c.execute("""
             INSERT INTO subscription_renewals (
@@ -2669,8 +2661,8 @@ def payment_webhook():
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            chat_id,
-            buyer[0] if buyer else None,
+            resolved_chat_id,
+            resolved_email,
             plan,
             payment_id,
             previous_expiry,
@@ -2720,7 +2712,7 @@ def payment_webhook():
                         WHERE referrer_chat_id = %s
                           AND referred_chat_id = %s
                         LIMIT 1
-                    """, (referrer_chat_id, chat_id))
+                    """, (referrer_chat_id, resolved_chat_id or order_identifier))
                     already_exists = c.fetchone()
 
                     if not already_exists:
@@ -2733,7 +2725,7 @@ def payment_webhook():
                                 referred_email
                             )
                             VALUES (%s, %s, %s)
-                        """, (referrer_chat_id, chat_id, referred_email))
+                        """, (referrer_chat_id, resolved_chat_id or order_identifier, referred_email))
 
                     c.execute("""
                         SELECT id
@@ -2742,7 +2734,7 @@ def payment_webhook():
                           AND referred_chat_id = %s
                           AND payment_id = %s
                         LIMIT 1
-                    """, (referrer_chat_id, chat_id, payment_id))
+                    """, (referrer_chat_id, resolved_chat_id or order_identifier, payment_id))
                     commission_exists = c.fetchone()
 
                     if not commission_exists:
@@ -2758,7 +2750,7 @@ def payment_webhook():
                                 status
                             )
                             VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (referrer_chat_id, chat_id, plan, payment_id, commission_amount, "approved"))
+                        """, (referrer_chat_id, resolved_chat_id or order_identifier, plan, payment_id, commission_amount, "approved"))
 
                         c.execute("""
                             UPDATE users
@@ -2807,7 +2799,7 @@ def payment_webhook():
                         send(referrer_chat_id, f"""💸 تم إضافة عمولة جديدة
 
 👤 مستخدم جديد اشترك من خلالك
-📦 الخطة: {plan.upper()}
+📦 Plan: {PLAN_LABELS.get(plan, plan).upper()}
 💰 العمولة: {commission_amount}$ ({int(commission_percent * 100)}%)
 
 📌 الرصيد يقدر يتسحب من الداشبورد
@@ -2816,8 +2808,11 @@ def payment_webhook():
         conn.commit()
 
         c.execute(
-            "SELECT chat_id FROM users WHERE chat_id = %s",
-            (chat_id,)
+            """SELECT chat_id FROM users
+               WHERE (chat_id = %s AND %s <> '')
+                  OR (LOWER(email) = LOWER(%s) AND %s <> '')
+               LIMIT 1""",
+            (resolved_chat_id, resolved_chat_id, resolved_email, resolved_email)
         )
         user = c.fetchone()
 
@@ -2826,13 +2821,13 @@ def payment_webhook():
         if user and user[0]:
             send(user[0], f"""🔥 تم تفعيل اشتراكك بنجاح!
 
-📦 الباقة: {plan.upper()}
+📦 Plan: {PLAN_LABELS.get(plan, plan).upper()}
 ⏳ الانتهاء: {new_expiry}
 
 🚀 هتوصلك الإشارات تلقائي الآن
 """)
 
-        log(f"✅ Payment activated for chat_id={chat_id}, plan={plan}, payment_id={payment_id}, expiry={new_expiry}")
+        log(f"✅ Payment activated for account={order_identifier}, plan={plan}, payment_id={payment_id}, expiry={new_expiry}")
 
     except Exception as e:
         log(f"❌ Webhook Error: {e}")

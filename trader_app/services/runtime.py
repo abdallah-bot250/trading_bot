@@ -30,12 +30,22 @@ PLAN_PRICES = {
     "basic": 25,
     "pro": 59.99,
     "vip": 99.99,
+    "ultimate": 199.99,
 }
 
 PLAN_LABELS = {
     "basic": "Starter",
     "pro": "Pro",
     "vip": "Elite",
+    "ultimate": "Ultimate",
+}
+
+PLAN_SIGNAL_LIMITS = {
+    "trial": 2,
+    "basic": 5,
+    "pro": 15,
+    "vip": 35,
+    "ultimate": 100,
 }
 
 
@@ -433,12 +443,16 @@ def can_receive_signals(user):
         if user[22] == 1 or user[23] == 1:
             return True
 
-        # trial: أول إشارتين فقط
+        # trial: first two signals only
         if plan == "trial":
-            return trades < 2
+            return trades < PLAN_SIGNAL_LIMITS.get("trial", 2)
 
-        # باقات مدفوعة
+        # paid plans
         if user[4] != 1:
+            return False
+
+        daily_limit = PLAN_SIGNAL_LIMITS.get(plan)
+        if daily_limit is not None and int(trades or 0) >= daily_limit:
             return False
 
         if not expiry:
@@ -456,325 +470,310 @@ def can_receive_signals(user):
 
 
 # ================= INIT DB =================
+def _safe_execute(cursor, sql, params=None, label=None):
+    """Run one schema statement safely. A failed DDL must not poison the transaction."""
+    try:
+        cursor.execute(sql, params or ())
+        return True
+    except Exception as exc:
+        try:
+            cursor.connection.rollback()
+        except Exception:
+            pass
+        log(f"⚠️ schema warning{f' [{label}]' if label else ''}: {exc}")
+        return False
+
+
+def _safe_commit(conn, label=None):
+    try:
+        conn.commit()
+        return True
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log(f"⚠️ schema commit warning{f' [{label}]' if label else ''}: {exc}")
+        return False
+
+
 def init_db():
+    """
+    Production-safe database bootstrap.
+    - Never leaves PostgreSQL in an aborted transaction.
+    - Adds missing columns used by admin, payments, Telegram, and dashboards.
+    - Keeps existing Railway data intact.
+    """
+    # Safe bootstrap is intentionally allowed to run on Railway.
+    # It uses per-statement rollbacks, so it will not poison the transaction.
+
+    conn = None
     try:
         conn = db()
+        conn.autocommit = False
         c = conn.cursor()
 
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            email TEXT UNIQUE,
-            password TEXT,
-            chat_id TEXT,
-            is_paid INTEGER DEFAULT 0,
-            plan TEXT DEFAULT 'trial',
-            trial_start TEXT,
-            trades INTEGER DEFAULT 0,
-            expiry TEXT,
-            api_key TEXT,
-            api_secret TEXT,
-            profit REAL DEFAULT 0,
-            trade_amount REAL DEFAULT 10,
-            trade_type TEXT DEFAULT 'futures',
-            spot_enabled INTEGER DEFAULT 1,
-            futures_enabled INTEGER DEFAULT 1,
-            bot_active INTEGER DEFAULT 0,
-            referral_code TEXT,
-            referred_by TEXT,
-            affiliate_balance REAL DEFAULT 0,
-            total_referrals INTEGER DEFAULT 0,
-            free_basic_unlocked INTEGER DEFAULT 0,
-            free_pro_unlocked INTEGER DEFAULT 0,
-            free_vip_unlocked INTEGER DEFAULT 0,
-            is_admin INTEGER DEFAULT 0,
-            lifetime_owner INTEGER DEFAULT 0
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_referrals (
-            id SERIAL PRIMARY KEY,
-            referrer_chat_id TEXT,
-            referred_chat_id TEXT,
-            referred_email TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_commissions (
-            id SERIAL PRIMARY KEY,
-            referrer_chat_id TEXT,
-            referred_chat_id TEXT,
-            plan TEXT,
-            amount REAL DEFAULT 0,
-            status TEXT DEFAULT 'approved',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
-            id SERIAL PRIMARY KEY,
-            chat_id TEXT,
-            wallet_address TEXT,
-            amount REAL,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS telegram_referrals (
-            telegram_id TEXT PRIMARY KEY,
-            referral_code TEXT
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS processed_payments (
-            payment_id TEXT PRIMARY KEY,
-            order_id TEXT,
-            payment_status TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS payment_invoices (
-            id SERIAL PRIMARY KEY,
-            invoice_id TEXT,
-            payment_id TEXT,
-            chat_id TEXT,
-            email TEXT,
-            plan TEXT,
-            status TEXT DEFAULT 'created',
-            amount REAL DEFAULT 0,
-            original_amount REAL DEFAULT 0,
-            discount_amount REAL DEFAULT 0,
-            currency TEXT DEFAULT 'usd',
-            coupon_code TEXT,
-            invoice_url TEXT,
-            raw_response TEXT,
-            paid_at TIMESTAMP NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS coupons (
-            id SERIAL PRIMARY KEY,
-            code TEXT UNIQUE,
-            discount_percent REAL DEFAULT 0,
-            active INTEGER DEFAULT 1,
-            expires_at TEXT,
-            max_redemptions INTEGER,
-            redemption_count INTEGER DEFAULT 0,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS failed_payments (
-            id SERIAL PRIMARY KEY,
-            payment_id TEXT,
-            invoice_id TEXT,
-            order_id TEXT,
-            plan TEXT,
-            payment_status TEXT,
-            reason TEXT,
-            raw_payload TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS subscription_renewals (
-            id SERIAL PRIMARY KEY,
-            chat_id TEXT,
-            email TEXT,
-            plan TEXT,
-            payment_id TEXT,
-            previous_expiry TEXT,
-            new_expiry TEXT,
-            amount REAL DEFAULT 0,
-            renewal_type TEXT DEFAULT 'new',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        c.execute("""
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id SERIAL PRIMARY KEY,
-            action TEXT,
-            email TEXT,
-            ip_address TEXT,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-
-        # إضافات أمان لو الجدول قديم
-
-        try:
-            c.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
-        except Exception as ext_err:
-            log(f"pgcrypto extension warning: {ext_err}")
-
-        managed_tables = [
-            "users",
-            "affiliate_referrals",
-            "affiliate_commissions",
-            "affiliate_withdrawals",
-            "telegram_referrals",
-            "processed_payments",
-            "payment_invoices",
-            "coupons",
-            "failed_payments",
-            "subscription_renewals",
-            "audit_logs",
+        table_statements = [
+            ("users", """
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    email TEXT UNIQUE,
+                    password TEXT,
+                    chat_id TEXT,
+                    is_paid INTEGER DEFAULT 0,
+                    plan TEXT DEFAULT 'trial',
+                    trial_start TEXT,
+                    trades INTEGER DEFAULT 0,
+                    expiry TEXT,
+                    api_key TEXT,
+                    api_secret TEXT,
+                    profit REAL DEFAULT 0,
+                    trade_amount REAL DEFAULT 10,
+                    trade_type TEXT DEFAULT 'futures',
+                    spot_enabled INTEGER DEFAULT 1,
+                    futures_enabled INTEGER DEFAULT 1,
+                    bot_active INTEGER DEFAULT 0,
+                    referral_code TEXT,
+                    referred_by TEXT,
+                    affiliate_balance REAL DEFAULT 0,
+                    total_referrals INTEGER DEFAULT 0,
+                    free_basic_unlocked INTEGER DEFAULT 0,
+                    free_pro_unlocked INTEGER DEFAULT 0,
+                    free_vip_unlocked INTEGER DEFAULT 0,
+                    is_admin INTEGER DEFAULT 0,
+                    lifetime_owner INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("affiliate_referrals", """
+                CREATE TABLE IF NOT EXISTS affiliate_referrals (
+                    id SERIAL PRIMARY KEY,
+                    referrer_chat_id TEXT,
+                    referred_chat_id TEXT,
+                    referred_email TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("affiliate_commissions", """
+                CREATE TABLE IF NOT EXISTS affiliate_commissions (
+                    id SERIAL PRIMARY KEY,
+                    referrer_chat_id TEXT,
+                    referred_chat_id TEXT,
+                    plan TEXT,
+                    payment_id TEXT,
+                    amount REAL DEFAULT 0,
+                    status TEXT DEFAULT 'approved',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("affiliate_withdrawals", """
+                CREATE TABLE IF NOT EXISTS affiliate_withdrawals (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT,
+                    wallet_address TEXT,
+                    amount REAL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("telegram_referrals", """
+                CREATE TABLE IF NOT EXISTS telegram_referrals (
+                    telegram_id TEXT PRIMARY KEY,
+                    referral_code TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("processed_payments", """
+                CREATE TABLE IF NOT EXISTS processed_payments (
+                    payment_id TEXT PRIMARY KEY,
+                    order_id TEXT,
+                    payment_status TEXT,
+                    plan TEXT,
+                    amount REAL DEFAULT 0,
+                    currency TEXT DEFAULT 'usd',
+                    invoice_id TEXT,
+                    invoice_url TEXT,
+                    raw_payload TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("payment_invoices", """
+                CREATE TABLE IF NOT EXISTS payment_invoices (
+                    id SERIAL PRIMARY KEY,
+                    invoice_id TEXT,
+                    payment_id TEXT,
+                    chat_id TEXT,
+                    email TEXT,
+                    plan TEXT,
+                    status TEXT DEFAULT 'created',
+                    amount REAL DEFAULT 0,
+                    original_amount REAL DEFAULT 0,
+                    discount_amount REAL DEFAULT 0,
+                    currency TEXT DEFAULT 'usd',
+                    coupon_code TEXT,
+                    invoice_url TEXT,
+                    raw_response TEXT,
+                    paid_at TIMESTAMP NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("coupons", """
+                CREATE TABLE IF NOT EXISTS coupons (
+                    id SERIAL PRIMARY KEY,
+                    code TEXT UNIQUE,
+                    discount_percent REAL DEFAULT 0,
+                    active INTEGER DEFAULT 1,
+                    expires_at TEXT,
+                    max_redemptions INTEGER,
+                    redemption_count INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("failed_payments", """
+                CREATE TABLE IF NOT EXISTS failed_payments (
+                    id SERIAL PRIMARY KEY,
+                    payment_id TEXT,
+                    invoice_id TEXT,
+                    order_id TEXT,
+                    plan TEXT,
+                    payment_status TEXT,
+                    reason TEXT,
+                    raw_payload TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("subscription_renewals", """
+                CREATE TABLE IF NOT EXISTS subscription_renewals (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT,
+                    email TEXT,
+                    plan TEXT,
+                    payment_id TEXT,
+                    previous_expiry TEXT,
+                    new_expiry TEXT,
+                    amount REAL DEFAULT 0,
+                    renewal_type TEXT DEFAULT 'new',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
+            ("audit_logs", """
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id SERIAL PRIMARY KEY,
+                    action TEXT,
+                    email TEXT,
+                    ip_address TEXT,
+                    details TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
+                )
+            """),
         ]
 
-        for table_name in managed_tables:
-            c.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS uuid TEXT DEFAULT gen_random_uuid()::text")
-            c.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-            c.execute(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP NULL")
-            c.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_uuid ON {table_name} (uuid)")
-            c.execute(f"CREATE INDEX IF NOT EXISTS ix_{table_name}_deleted_at ON {table_name} (deleted_at)")
+        for label, sql in table_statements:
+            _safe_execute(c, sql, label)
+            _safe_commit(conn, label)
 
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS api_secret TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS profit REAL DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trade_amount REAL DEFAULT 10")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trade_type TEXT DEFAULT 'futures'")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_enabled INTEGER DEFAULT 1")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS futures_enabled INTEGER DEFAULT 1")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_active INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_paid INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'trial'")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_start TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS trades INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS expiry TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_id TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS affiliate_balance REAL DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS total_referrals INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_basic_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_pro_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS free_vip_unlocked INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS lifetime_owner INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified INTEGER DEFAULT 0")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_sent_at TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token TEXT")
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires_at TEXT")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS plan TEXT")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS amount REAL DEFAULT 0")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'usd'")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS invoice_id TEXT")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS invoice_url TEXT")
-        c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS raw_payload TEXT")
-        c.execute("ALTER TABLE affiliate_commissions ADD COLUMN IF NOT EXISTS payment_id TEXT")
+        user_columns = [
+            ("api_key", "TEXT"), ("api_secret", "TEXT"), ("profit", "REAL DEFAULT 0"),
+            ("trade_amount", "REAL DEFAULT 10"), ("trade_type", "TEXT DEFAULT 'futures'"),
+            ("spot_enabled", "INTEGER DEFAULT 1"), ("futures_enabled", "INTEGER DEFAULT 1"),
+            ("bot_active", "INTEGER DEFAULT 0"), ("is_paid", "INTEGER DEFAULT 0"),
+            ("plan", "TEXT DEFAULT 'trial'"), ("trial_start", "TEXT"), ("trades", "INTEGER DEFAULT 0"),
+            ("expiry", "TEXT"), ("chat_id", "TEXT"), ("referral_code", "TEXT"),
+            ("referred_by", "TEXT"), ("affiliate_balance", "REAL DEFAULT 0"),
+            ("total_referrals", "INTEGER DEFAULT 0"), ("free_basic_unlocked", "INTEGER DEFAULT 0"),
+            ("free_pro_unlocked", "INTEGER DEFAULT 0"), ("free_vip_unlocked", "INTEGER DEFAULT 0"),
+            ("is_admin", "INTEGER DEFAULT 0"), ("lifetime_owner", "INTEGER DEFAULT 0"),
+            ("email_verified", "INTEGER DEFAULT 0"), ("email_verification_token", "TEXT"),
+            ("email_verification_sent_at", "TEXT"), ("password_reset_token", "TEXT"),
+            ("password_reset_expires_at", "TEXT"), ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"), ("deleted_at", "TIMESTAMP NULL"),
+        ]
+        for col, ddl in user_columns:
+            _safe_execute(c, f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {ddl}", f"users.{col}")
+            _safe_commit(conn, f"users.{col}")
 
-        # تنظيف chat_id
-        c.execute("""
-            UPDATE users
-            SET chat_id = TRIM(chat_id)
-            WHERE chat_id IS NOT NULL
-        """)
+        extra_columns = {
+            "processed_payments": [("plan", "TEXT"), ("amount", "REAL DEFAULT 0"), ("currency", "TEXT DEFAULT 'usd'"), ("invoice_id", "TEXT"), ("invoice_url", "TEXT"), ("raw_payload", "TEXT")],
+            "affiliate_commissions": [("payment_id", "TEXT")],
+            "payment_invoices": [("payment_id", "TEXT"), ("email", "TEXT"), ("original_amount", "REAL DEFAULT 0"), ("discount_amount", "REAL DEFAULT 0"), ("coupon_code", "TEXT"), ("invoice_url", "TEXT"), ("raw_response", "TEXT"), ("paid_at", "TIMESTAMP NULL")],
+        }
+        common_columns = [("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"), ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"), ("deleted_at", "TIMESTAMP NULL")]
+        for table, cols in extra_columns.items():
+            for col, ddl in cols + common_columns:
+                _safe_execute(c, f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {ddl}", f"{table}.{col}")
+                _safe_commit(conn, f"{table}.{col}")
 
-        # منع تكرار chat_id
-        try:
-            c.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
-                ON users (chat_id)
-                WHERE chat_id IS NOT NULL AND chat_id <> ''
-            """)
+        # Existing older constraints may block the fourth plan. Replace only our named constraints safely.
+        _safe_execute(c, "ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_plan", "drop ck_users_plan")
+        _safe_commit(conn, "drop ck_users_plan")
+        _safe_execute(c, """
+            ALTER TABLE users
+            ADD CONSTRAINT ck_users_plan
+            CHECK (plan IN ('trial', 'basic', 'pro', 'vip', 'ultimate')) NOT VALID
+        """, "add ck_users_plan")
+        _safe_commit(conn, "add ck_users_plan")
 
-            c.execute("CREATE INDEX IF NOT EXISTS ix_users_email ON users (email)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_users_plan_paid ON users (plan, is_paid)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_users_referral_code ON users (referral_code)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_referrals_referrer ON affiliate_referrals (referrer_chat_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_referrals_referred ON affiliate_referrals (referred_chat_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_commissions_referrer ON affiliate_commissions (referrer_chat_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_commissions_status ON affiliate_commissions (status)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_commissions_payment_id ON affiliate_commissions (payment_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_affiliate_withdrawals_chat_status ON affiliate_withdrawals (chat_id, status)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_processed_payments_order_id ON processed_payments (order_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_processed_payments_invoice_id ON processed_payments (invoice_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_payment_invoices_chat_created ON payment_invoices (chat_id, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_payment_invoices_status ON payment_invoices (status)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_payment_invoices_invoice_id ON payment_invoices (invoice_id)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_payment_invoices_status_created ON payment_invoices (status, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_processed_payments_status_created ON processed_payments (payment_status, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_coupons_code ON coupons (code)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_failed_payments_created ON failed_payments (created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_subscription_renewals_chat_created ON subscription_renewals (chat_id, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_subscription_renewals_type_created ON subscription_renewals (renewal_type, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_users_created_at ON users (created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_users_paid_created ON users (is_paid, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_email_created ON audit_logs (email, created_at)")
-            c.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_action_created ON audit_logs (action, created_at)")
-            c.execute("""
-                DO $$
-                BEGIN
-                    IF to_regclass('public.trades_log') IS NOT NULL THEN
-                        CREATE INDEX IF NOT EXISTS ix_trades_log_status_created ON trades_log (status, created_at);
-                        CREATE INDEX IF NOT EXISTS ix_trades_log_type_status ON trades_log (LOWER(COALESCE(trade_type, 'futures')), status);
-                        CREATE INDEX IF NOT EXISTS ix_trades_log_chat_created ON trades_log (chat_id, created_at);
-                        CREATE INDEX IF NOT EXISTS ix_trades_log_closed_pnl ON trades_log (status, pnl);
-                    END IF;
-                END $$;
-            """)
+        index_statements = [
+            "UPDATE users SET chat_id = TRIM(chat_id) WHERE chat_id IS NOT NULL",
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique ON users (chat_id) WHERE chat_id IS NOT NULL AND chat_id <> ''",
+            "CREATE INDEX IF NOT EXISTS ix_users_email ON users (email)",
+            "CREATE INDEX IF NOT EXISTS ix_users_plan_paid ON users (plan, is_paid)",
+            "CREATE INDEX IF NOT EXISTS ix_users_referral_code ON users (referral_code)",
+            "CREATE INDEX IF NOT EXISTS ix_users_created_at ON users (created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_users_paid_created ON users (is_paid, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_invoices_chat_created ON payment_invoices (chat_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_invoices_email_created ON payment_invoices (email, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_invoices_status ON payment_invoices (status)",
+            "CREATE INDEX IF NOT EXISTS ix_payment_invoices_invoice_id ON payment_invoices (invoice_id)",
+            "CREATE INDEX IF NOT EXISTS ix_processed_payments_order_id ON processed_payments (order_id)",
+            "CREATE INDEX IF NOT EXISTS ix_processed_payments_invoice_id ON processed_payments (invoice_id)",
+            "CREATE INDEX IF NOT EXISTS ix_processed_payments_status_created ON processed_payments (payment_status, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_failed_payments_created ON failed_payments (created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_coupons_code ON coupons (code)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_email_created ON audit_logs (email, created_at)",
+            "CREATE INDEX IF NOT EXISTS ix_audit_logs_action_created ON audit_logs (action, created_at)",
+        ]
+        for sql in index_statements:
+            _safe_execute(c, sql, sql[:70])
+            _safe_commit(conn, sql[:70])
 
-            constraints = [
-                ("users", "ck_users_plan", "plan IN ('trial', 'basic', 'pro', 'vip')"),
-                ("users", "ck_users_trade_type", "trade_type IN ('spot', 'futures')"),
-                ("users", "ck_users_flags", "is_paid IN (0, 1) AND bot_active IN (0, 1) AND is_admin IN (0, 1) AND lifetime_owner IN (0, 1) AND spot_enabled IN (0, 1) AND futures_enabled IN (0, 1)"),
-                ("affiliate_commissions", "ck_affiliate_commissions_amount_nonnegative", "amount >= 0"),
-                ("affiliate_withdrawals", "ck_affiliate_withdrawals_amount_positive", "amount > 0"),
-                ("affiliate_withdrawals", "ck_affiliate_withdrawals_status", "status IN ('pending', 'paid', 'rejected')"),
-                ("coupons", "ck_coupons_discount_range", "discount_percent >= 0 AND discount_percent <= 95"),
-                ("coupons", "ck_coupons_active_flag", "active IN (0, 1)"),
-                ("payment_invoices", "ck_payment_invoices_amount_nonnegative", "amount >= 0 AND original_amount >= 0 AND discount_amount >= 0"),
-            ]
-
-            for table_name, constraint_name, condition in constraints:
-                c.execute(f"""
-                    DO $$
-                    BEGIN
-                        IF NOT EXISTS (
-                            SELECT 1
-                            FROM pg_constraint
-                            WHERE conname = '{constraint_name}'
-                        ) THEN
-                            ALTER TABLE {table_name}
-                            ADD CONSTRAINT {constraint_name}
-                            CHECK ({condition}) NOT VALID;
-                        END IF;
-                    END $$;
-                """)
-
-
-        except Exception as idx_err:
-            log(f"⚠️ chat_id unique index warning: {idx_err}")
-
-        # فعّل الأدمن تلقائيًا لو الإيميل موجود
         if ADMIN_EMAIL:
-            c.execute("""
-                UPDATE users
-                SET is_admin = 1
-                WHERE LOWER(email) = %s
-            """, (ADMIN_EMAIL,))
+            _safe_execute(c, "UPDATE users SET is_admin = 1 WHERE LOWER(email) = %s", (ADMIN_EMAIL,), "admin email")
+            _safe_commit(conn, "admin email")
 
-        conn.commit()
-        conn.close()
-        log("✅ DB initialized successfully")
-
+        log("✅ DB initialized safely")
     except Exception as e:
-        log(f"❌ init_db error: {e}")
-
-
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        log(f"❌ init_db fatal error: {e}")
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass

@@ -449,6 +449,14 @@ def signal_allowed_for_plan(plan, signal):
                 and score >= 6
             )
 
+        if plan == "ultimate":
+            return (
+                confidence >= 80
+                and engine_confidence >= 78
+                and risk_score <= 54
+                and score >= 7
+            )
+
         return False
     except:
         return False
@@ -1100,7 +1108,7 @@ def run():
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
-                    if plan == "vip":
+                    if plan in ("vip", "ultimate"):
                         if not elite_trade_filter(signal):
                             log(f"Elite filter rejected for VIP: {signal['pair']}")
                             continue
@@ -1124,7 +1132,7 @@ def run():
                         log(f"Signal failed to send to {chat_id}")
 
                     # ===== AUTO TRADE FOR VIP =====
-                    if plan == "vip" and bot_active == 1 and api_key and api_secret:
+                    if plan in ("vip", "ultimate") and bot_active == 1 and api_key and api_secret:
                         try:
                             can_trade, reason = can_trade_user(chat_id, trade_amount)
                             if not can_trade:

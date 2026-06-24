@@ -550,6 +550,10 @@ a {
         min-height: auto;
     }
 }
+
+.grid-4-pricing { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 1100px) { .grid-4-pricing { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .grid-4-pricing { grid-template-columns: 1fr; } }
 </style>
 <link rel="stylesheet" href="/static/premium.css">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
@@ -697,7 +701,7 @@ a {
                 <h2>خطط واضحة بدون تعقيد</h2>
                 <p>ابدأ بالتجربة، ثم اختر الخطة التي تناسب مستوى استخدامك.</p>
             </div>
-            <div class="grid-3">
+            <div class="grid-4-pricing">
                 <div class="price-card">
                     <h3>Starter</h3>
                     <div class="price">$25 <span>/ شهر</span></div>
@@ -740,6 +744,19 @@ a {
                         <li>Advanced AI</li>
                     </ul>
                     <a class="btn primary" href="/register">ابدأ Elite</a>
+                </div>
+                <div class="price-card vip">
+                    <h3>Ultimate</h3>
+                    <div class="price">$199.99 <span>/ شهر</span></div>
+                    <ul>
+                        <li>Everything in Elite</li>
+                        <li>Highest signal quota</li>
+                        <li>Priority trade monitoring</li>
+                        <li>VIP Telegram support</li>
+                        <li>Spot + Futures priority balancing</li>
+                        <li>Best for serious operators</li>
+                    </ul>
+                    <a class="btn primary" href="/register">Start Ultimate</a>
                 </div>
             </div>
             <div class="risk-note">

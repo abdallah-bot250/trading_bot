@@ -15,6 +15,7 @@ COMMISSION_RATES = {
     "basic": 0.08,
     "pro": 0.12,
     "vip": 0.15,
+    "ultimate": 0.20,
 }
 
 

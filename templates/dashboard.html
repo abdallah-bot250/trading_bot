@@ -1099,6 +1099,31 @@ input, select {
         <a href="/manual-payment/vip"><button class="manual">💸 Manual</button></a>
     </div>
 
+    <div class="card vip {% if plan == 'ultimate' %}current-plan{% endif %}">
+        {% if plan == "ultimate" %}
+        <div class="current-badge">YOUR CURRENT PLAN</div>
+        {% endif %}
+        <h2>Ultimate</h2>
+        <div class="price">$199.99</div>
+
+        <ul>
+            <li>Everything in Elite</li>
+            <li>Up to 100 premium signals / month</li>
+            <li>Priority Spot + Futures balancing</li>
+            <li>VIP Telegram support</li>
+            <li>Advanced monitoring mode</li>
+            <li>Best for serious trading teams</li>
+        </ul>
+
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="ultimate">
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">💳 Subscribe</button>
+        </form>
+
+        <a href="/manual-payment/ultimate"><button class="manual">💸 Manual</button></a>
+    </div>
+
 </div>
 
 <!-- PROFIT -->
