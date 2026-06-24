@@ -883,7 +883,7 @@ input, select {
         <form action="/owner-free-upgrade" method="POST" style="display:inline;">
             {{ csrf_field() }}
             <button style="background:#22c55e; color:white; width:auto; padding:12px 25px;">
-                Activate My Lifetime Elite
+                Activate Admin Elite
             </button>
         </form>
     </div>
@@ -959,7 +959,7 @@ input, select {
 </div>
 
 <!-- ELITE SETTINGS -->
-{% if plan == "vip" or is_admin == 1 %}
+{% if plan in ["vip", "pro_2y"] or is_admin == 1 %}
 <div id="vip-settings" class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
     <h2 style="color:#facc15; margin-top:0;">Elite Auto Trading Settings</h2>
     <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
@@ -1007,6 +1007,25 @@ input, select {
             </label>
         </div>
 
+        <div style="margin:14px 0; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.25); color:#fde68a; padding:14px; border-radius:10px; line-height:1.8;">
+            Auto trading executes real exchange orders only when API keys are saved, the bot is ON, and risk controls are enabled. Keep withdrawal permission disabled on your exchange API.
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin:12px 0 16px;">
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span><strong style="display:block;">Spot Auto Trading</strong><small style="color:#94a3b8;">Optional execution for Spot signals</small></span>
+                <input name="spot_auto_trade_enabled" type="checkbox" value="1" style="width:22px; height:22px;">
+            </label>
+            <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
+                <span><strong style="display:block;">Futures Auto Trading</strong><small style="color:#94a3b8;">Optional execution for Futures signals</small></span>
+                <input name="futures_auto_trade_enabled" type="checkbox" value="1" style="width:22px; height:22px;">
+            </label>
+        </div>
+        <input name="max_trade_size" type="number" step="0.01" min="1" value="{{trade_amount}}" placeholder="Max Trade Size" style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
+        <label style="display:flex; align-items:center; gap:10px; color:#cbd5e1; margin-bottom:12px;">
+            <input name="stop_loss_required" type="checkbox" value="1" checked style="width:20px; height:20px;">
+            Stop-loss required for every auto trade
+        </label>
+
         <button type="submit" style="background:#22c55e; color:white;">✅ Save Trading Settings</button>
     </form>
 </div>
@@ -1025,7 +1044,7 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>Starter</h2>
-        <div class="price">$25</div>
+        <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$49</span> $25</div><div class="current-badge">Limited Time Offer</div>
 
         <ul>
             <li>5 Signals / Day</li>
@@ -1042,7 +1061,7 @@ input, select {
             <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/basic"><button class="manual">💸 Manual</button></a>
+        <a href="/manual-payment/basic"><button class="manual">💸 Manual Payment - No Fees</button></a>
     </div>
 
     <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
@@ -1050,7 +1069,7 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>Pro</h2>
-        <div class="price">$59.99</div>
+        <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$119</span> $59.99</div><div class="current-badge">Limited Time Offer</div>
 
         <ul>
             <li>كل Starter +</li>
@@ -1068,7 +1087,7 @@ input, select {
             <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/pro"><button class="manual">💸 Manual</button></a>
+        <a href="/manual-payment/pro"><button class="manual">💸 Manual Payment - No Fees</button></a>
     </div>
 
     <div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
@@ -1076,7 +1095,7 @@ input, select {
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
         <h2>Elite</h2>
-        <div class="price">$99.99</div>
+        <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$199</span> $99.99</div><div class="current-badge">Limited Time Offer</div>
 
         <ul>
             <li>كل Pro +</li>
@@ -1096,34 +1115,31 @@ input, select {
             <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/vip"><button class="manual">💸 Manual</button></a>
+        <a href="/manual-payment/vip"><button class="manual">💸 Manual Payment - No Fees</button></a>
     </div>
 
-    <div class="card vip {% if plan == 'ultimate' %}current-plan{% endif %}">
-        {% if plan == "ultimate" %}
+
+    <div class="card featured {% if plan == 'pro_2y' %}current-plan{% endif %}">
+        {% if plan == "pro_2y" %}
         <div class="current-badge">YOUR CURRENT PLAN</div>
         {% endif %}
-        <h2>Ultimate</h2>
-        <div class="price">$199.99</div>
-
+        <h2>Pro 2 Years</h2>
+        <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$1499</span> $999</div>
+        <div class="current-badge">Limited Time Offer</div>
         <ul>
-            <li>Everything in Elite</li>
-            <li>Up to 100 premium signals / month</li>
-            <li>Priority Spot + Futures balancing</li>
-            <li>VIP Telegram support</li>
-            <li>Advanced monitoring mode</li>
-            <li>Best for serious trading teams</li>
+            <li>2 years access</li>
+            <li>All Pro features</li>
+            <li>AI Analysis + Risk Filters</li>
+            <li>Telegram signal delivery</li>
+            <li>Best long-term value</li>
         </ul>
-
         <form action="/create-payment" method="GET">
-            <input type="hidden" name="plan" value="ultimate">
+            <input type="hidden" name="plan" value="pro_2y">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe</button>
         </form>
-
-        <a href="/manual-payment/ultimate"><button class="manual">💸 Manual</button></a>
+        <a href="/manual-payment/pro_2y"><button class="manual">💸 Manual Payment - No Fees</button></a>
     </div>
-
 </div>
 
 <!-- PROFIT -->

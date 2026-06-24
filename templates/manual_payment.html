@@ -130,11 +130,20 @@ h1 { margin: 0 0 12px; font-size: 36px; }
         </div>
 
         <div class="wallet-box">
-            <div class="wallet-label">الشبكة</div>
-            <div class="wallet-value">{{ manual_network }}</div>
+            <div class="wallet-label">Manual Payment - No Fees / الدفع اليدوي بدون عمولة</div>
             <br>
-            <div class="wallet-label">عنوان المحفظة</div>
+            <div class="wallet-label">Binance USDT TRC20</div>
             <div class="wallet-value">{{ manual_wallet }}</div>
+            <br>
+            <div class="wallet-label">Bank Transfer - Abu Dhabi Commercial Bank PJSC</div>
+            <div class="wallet-value">Account Title: {{ bank_account_title }}</div>
+            <div class="wallet-value">Account Number: {{ bank_account_number }}</div>
+            <div class="wallet-value">IBAN: {{ bank_iban }}</div>
+            <div class="wallet-value">Currency: {{ bank_currency }}</div>
+            <div class="wallet-value">SWIFT: {{ bank_swift }}</div>
+            <br>
+            <div class="wallet-label">InstaPay</div>
+            <div class="wallet-value">{{ instapay_handle }}</div>
         </div>
 
         <div class="steps">
@@ -151,7 +160,7 @@ h1 { margin: 0 0 12px; font-size: 36px; }
         </div>
 
         <div class="actions">
-            <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">إرسال إثبات الدفع</a>
+            <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">Send Payment Proof</a>
             <a class="btn btn-secondary" href="/dashboard">العودة للداشبورد</a>
             <a class="btn btn-secondary" href="/bot-check">تأكد من البوت الرسمي</a>
         </div>

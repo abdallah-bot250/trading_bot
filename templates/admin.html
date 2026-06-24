@@ -780,7 +780,8 @@ tbody tr:hover {
             <div class="ops-row"><span>Starter</span><strong>{{ basic_users }}</strong></div>
             <div class="ops-row"><span>Pro</span><strong>{{ pro_users }}</strong></div>
             <div class="ops-row"><span>Elite</span><strong>{{ vip_users }}</strong></div>
-            <div class="ops-row"><span>Free / Trial</span><strong>{{ free_users }}</strong></div>
+            <div class="ops-row"><span>Pro 2 Years</span><strong>{{ pro_2y_users|default(0) }}</strong></div>
+                        <div class="ops-row"><span>Free / Trial</span><strong>{{ free_users }}</strong></div>
         </div>
     </section>
 
@@ -852,7 +853,7 @@ tbody tr:hover {
         <div class="section-head">
             <div class="section-title">
                 <h2>إدارة المستخدمين</h2>
-                <p>بحث، فلترة، وتفعيل خطط Starter و Pro و Elite بدون تغيير مسار الدفع.</p>
+                <p>بحث، فلترة، وتفعيل خطط Starter و Pro و Elite و Pro 2 Years بدون تغيير مسار الدفع.</p>
             </div>
             <div class="tools">
                 <input class="search" id="userSearch" type="search" placeholder="ابحث بالإيميل أو Chat ID أو ID">
@@ -861,7 +862,7 @@ tbody tr:hover {
                     <option value="basic">Starter</option>
                     <option value="pro">Pro</option>
                     <option value="vip">Elite</option>
-                    <option value="ultimate">Ultimate</option>
+                    <option value="pro_2y">Pro 2 Years</option>
                     <option value="trial">Trial / Free</option>
                 </select>
                 <select class="filter" id="paidFilter">
@@ -900,9 +901,7 @@ tbody tr:hover {
                         </td>
 
                         <td>
-                            {% if u[2] == 'ultimate' %}
-                                <span class="badge badge-vip">ULTIMATE</span>
-                            {% elif u[2] == 'vip' %}
+                            {% if u[2] == 'vip' %}
                                 <span class="badge badge-vip">ELITE</span>
                             {% elif u[2] == 'pro' %}
                                 <span class="badge badge-pro">PRO</span>
@@ -952,19 +951,10 @@ tbody tr:hover {
                                 <form action="/activate-user" method="POST">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ u[0] }}">
-                                    <input type="hidden" name="plan" value="ultimate">
-                                    <button class="btn vip" type="submit">Ultimate</button>
+                                    <input type="hidden" name="plan" value="pro_2y">
+                                    <button class="btn pro" type="submit">Pro 2Y</button>
                                 </form>
-
-                                <form action="/activate-user" method="POST">
-                                    {{ csrf_field() }}
-                                    <input type="hidden" name="id" value="{{ u[0] }}">
-                                    <input type="hidden" name="plan" value="vip">
-                                    <input type="hidden" name="lifetime" value="1">
-                                    <button class="btn life" type="submit">Lifetime</button>
-                                </form>
-
-                                <form action="/delete-user" method="POST" onsubmit="return confirm('هل أنت متأكد من حذف هذا المستخدم؟');">
+<form action="/delete-user" method="POST" onsubmit="return confirm('هل أنت متأكد من حذف هذا المستخدم؟');">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ u[0] }}">
                                     <button class="btn delete" type="submit">Delete</button>

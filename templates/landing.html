@@ -550,10 +550,6 @@ a {
         min-height: auto;
     }
 }
-
-.grid-4-pricing { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
-@media (max-width: 1100px) { .grid-4-pricing { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .grid-4-pricing { grid-template-columns: 1fr; } }
 </style>
 <link rel="stylesheet" href="/static/premium.css">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
@@ -701,10 +697,10 @@ a {
                 <h2>خطط واضحة بدون تعقيد</h2>
                 <p>ابدأ بالتجربة، ثم اختر الخطة التي تناسب مستوى استخدامك.</p>
             </div>
-            <div class="grid-4-pricing">
+            <div class="grid-3">
                 <div class="price-card">
                     <h3>Starter</h3>
-                    <div class="price">$25 <span>/ شهر</span></div>
+                    <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$49</small> $25 <span>/ month</span></div><span class="badge">Limited Time Offer</span>
                     <ul>
                         <li>5 Signals / Day</li>
                         <li>Starter Dashboard</li>
@@ -717,7 +713,7 @@ a {
                 </div>
                 <div class="price-card featured">
                     <h3>Pro</h3>
-                    <div class="price">$59.99 <span>/ شهر</span></div>
+                    <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$119</small> $59.99 <span>/ month</span></div><span class="badge">Limited Time Offer</span>
                     <ul>
                         <li>كل مميزات Starter</li>
                         <li>AI Analysis</li>
@@ -731,7 +727,7 @@ a {
                 </div>
                 <div class="price-card vip">
                     <h3>Elite</h3>
-                    <div class="price">$99.99 <span>/ شهر</span></div>
+                    <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$199</small> $99.99 <span>/ month</span></div><span class="badge">Limited Time Offer</span>
                     <ul>
                         <li>كل مميزات Pro</li>
                         <li>AI Chat</li>
@@ -745,20 +741,20 @@ a {
                     </ul>
                     <a class="btn primary" href="/register">ابدأ Elite</a>
                 </div>
-                <div class="price-card vip">
-                    <h3>Ultimate</h3>
-                    <div class="price">$199.99 <span>/ شهر</span></div>
+                <div class="price-card featured">
+                    <h3>Pro 2 Years</h3>
+                    <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$1499</small> $999 <span>/ 2 years</span></div>
+                    <span class="badge">Limited Time Offer</span>
                     <ul>
-                        <li>Everything in Elite</li>
-                        <li>Highest signal quota</li>
-                        <li>Priority trade monitoring</li>
-                        <li>VIP Telegram support</li>
-                        <li>Spot + Futures priority balancing</li>
-                        <li>Best for serious operators</li>
+                        <li>Two full years of Pro access</li>
+                        <li>AI Analysis</li>
+                        <li>Risk scoring</li>
+                        <li>Portfolio tracking</li>
+                        <li>Best long-term value</li>
                     </ul>
-                    <a class="btn primary" href="/register">Start Ultimate</a>
+                    <a class="btn primary" href="/register">Start Pro 2 Years</a>
                 </div>
-            </div>
+</div>
             <div class="risk-note">
                 تنبيه مهم: التداول يحتوي على مخاطرة. هذا النظام يساعد على تنظيم القرار وتقليل العشوائية، ولا يقدم ضمانًا للربح.
             </div>

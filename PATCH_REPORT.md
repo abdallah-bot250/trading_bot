@@ -1,67 +1,38 @@
-# Nexora AI Trader - Company Fix Patch
+# Nexora Company v3 Patch Report
 
-This patch fixes the production issues found after Railway deployment.
+## Changes applied
 
-## Fixed
+1. Removed public Lifetime subscription offering
+   - Removed Lifetime card from pricing/dashboard/admin controls.
+   - Removed Lifetime from active plan price dictionaries.
+   - Kept internal `lifetime_owner` database column untouched for backward compatibility only.
 
-1. Database / Admin crash
-- Rebuilt `init_db()` to be Railway-safe.
-- Added missing `created_at`, `updated_at`, and `deleted_at` columns where needed.
-- Prevented failed DDL from leaving PostgreSQL in `current transaction is aborted` state.
-- Added safe per-statement rollback and commit.
-- Updated the plan constraint to support the fourth plan.
+2. Fixed Pro 2 Years plan
+   - Plan ID remains: `pro_2y`.
+   - Duration remains: 730 days / 2 years.
+   - Real price: `$999`.
+   - Display comparison price: `$1499`.
+   - Updated dashboard and landing pricing displays.
 
-2. Fourth plan added
-- Added `Ultimate` plan.
-- Price: `$199.99`.
-- Added to backend pricing, labels, payment validation, dashboard pricing, admin activation, and landing pricing.
+3. Automatic payment behavior
+   - NOWPayments webhook keeps automatic activation for paid invoices.
+   - Manual payments remain admin-activated from `/admin` only.
 
-3. Automatic payments improved
-- `create-payment` no longer fails if the user has not linked Telegram yet.
-- Payments can be created by email and later linked to Telegram.
-- Webhook resolves paid users by invoice, payment ID, chat ID, or email.
-- Paid subscriptions activate even if Telegram linking happens later.
-- Affiliate commission still works for resolved users.
+4. Manual payment
+   - Binance USDT TRC20 wallet, ADCB bank details, and InstaPay handle remain in manual payment page.
+   - Manual payment button remains marked: `Manual Payment - No Fees`.
 
-4. Telegram signal delivery
-- Preserved `/webhook`, Telegram commands, and signal sender.
-- Kept Spot/Futures user preference filtering.
-- Added Ultimate support to the signal plan filters.
-- Enabled auto-trade mode for Elite and Ultimate when API keys and bot_active are enabled.
+5. Telegram signals / exchange fallback
+   - KuCoin fallback remains enabled in `auto_sender.py` when Binance/Binance US fail.
+   - Auto trading plan gate now includes Elite and Pro 2 Years only.
 
-5. Clean production repo
-- Removed `__pycache__`, `*.pyc`, logs, and pid files.
-- Updated `.gitignore` to prevent them from coming back.
+6. Safety
+   - Python cache files removed from output package.
+   - Code compile check passed for core Python files.
 
-6. Arabic / English
-- Mojibake scan passes with COUNT=0.
-- Existing bilingual system remains intact.
+## Notes
 
-## Important Railway notes
+- Smoke route test could not be executed inside this sandbox because Flask is not installed here.
+- Run on your machine or Railway after copy:
+  `python scripts/smoke_routes.py`
 
-- You can remove or ignore `SKIP_INIT_DB=true`; the new init_db is safe and should run.
-- Keep these variables set:
-  - SECRET_KEY
-  - FERNET_KEY
-  - DATABASE_URL
-  - BASE_URL
-  - TELEGRAM_TOKEN
-  - BOT_LINK
-  - ADMIN_EMAIL
-  - NOWPAYMENTS_API_KEY
-  - NOWPAYMENTS_IPN_SECRET
-  - WEB_CONCURRENCY=1
-  - GUNICORN_THREADS=2
-  - GUNICORN_TIMEOUT=120
-
-## After deploying
-
-Test:
-- `/health`
-- `/login`
-- `/dashboard`
-- `/admin`
-- `/create-payment?plan=basic`
-- `/create-payment?plan=ultimate`
-- Telegram `/start`
-- Telegram `/subscription`

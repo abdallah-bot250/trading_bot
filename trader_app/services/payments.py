@@ -15,7 +15,7 @@ COMMISSION_RATES = {
     "basic": 0.08,
     "pro": 0.12,
     "vip": 0.15,
-    "ultimate": 0.20,
+    "pro_2y": 0.12,
 }
 
 
@@ -89,9 +89,6 @@ def apply_coupon_amount(plan, coupon_row):
 
 
 def calculate_subscription_expiry(current_expiry, days=30, now=None):
-    if str(current_expiry or "").strip().lower() == "lifetime":
-        return "lifetime", False
-
     now = now or datetime.now()
     base_date = now
     if current_expiry:

@@ -84,7 +84,7 @@ def upgrade():
     _create_index_if_missing("ix_audit_logs_email_created", "audit_logs", ["email", "created_at"])
     _create_index_if_missing("ix_audit_logs_action_created", "audit_logs", ["action", "created_at"])
 
-    _create_check_constraint_if_missing("ck_users_plan", "users", "plan IN ('trial', 'basic', 'pro', 'vip')")
+    _create_check_constraint_if_missing("ck_users_plan", "users", "plan IN ('trial', 'basic', 'pro', 'vip', 'pro_2y', 'lifetime')")
     _create_check_constraint_if_missing("ck_users_trade_type", "users", "trade_type IN ('spot', 'futures')")
     _create_check_constraint_if_missing("ck_users_flags", "users", "is_paid IN (0, 1) AND bot_active IN (0, 1) AND is_admin IN (0, 1) AND lifetime_owner IN (0, 1)")
     _create_check_constraint_if_missing("ck_affiliate_commissions_amount_nonnegative", "affiliate_commissions", "amount >= 0")

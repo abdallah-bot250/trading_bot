@@ -20,6 +20,7 @@ MAX_DAILY_LOSS_PERCENT = 4
 PAIR_COOLDOWN_MINUTES = 45
 GLOBAL_LOOP_SLEEP = 80
 MIN_CONFIDENCE = 66
+AUTO_TRADE_PLANS = {"vip", "pro_2y"}
 DUPLICATE_WINDOW_SECONDS = 300
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
@@ -154,17 +155,29 @@ def get_live_price(symbol):
     try:
         rest_symbol = normalize_symbol_for_rest(symbol)
 
-        # الأول Binance
-        url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
-        r = requests.get(url, timeout=10).json()
-        if "price" in r:
-            return float(r["price"])
+        # Primary: Binance global
+        for provider, url in [
+            ("BINANCE", f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"),
+            ("BINANCE_US", f"https://api.binance.us/api/v3/ticker/price?symbol={rest_symbol}"),
+        ]:
+            try:
+                r = requests.get(url, timeout=10).json()
+                if "price" in r:
+                    return float(r["price"])
+            except Exception as provider_error:
+                log(f"{provider} price fallback error for {symbol}: {provider_error}")
 
-        # fallback Binance US
-        url_us = f"https://api.binance.us/api/v3/ticker/price?symbol={rest_symbol}"
-        r2 = requests.get(url_us, timeout=10).json()
-        if "price" in r2:
-            return float(r2["price"])
+        # Fallback: KuCoin when Binance is unavailable or blocks the request.
+        try:
+            kucoin_symbol = rest_symbol.replace("USDT", "-USDT")
+            kucoin_url = f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={kucoin_symbol}"
+            k = requests.get(kucoin_url, timeout=10).json()
+            price = ((k.get("data") or {}).get("price"))
+            if price:
+                log(f"KuCoin fallback price used for {symbol}")
+                return float(price)
+        except Exception as kucoin_error:
+            log(f"KuCoin price fallback error for {symbol}: {kucoin_error}")
 
         return None
     except Exception as e:
@@ -392,9 +405,6 @@ def is_paid_plan_active(plan, expiry, is_paid):
     if not expiry:
         return False
 
-    if str(expiry).lower() == "lifetime":
-        return True
-
     try:
         expiry_date = datetime.strptime(str(expiry), "%Y-%m-%d")
         return datetime.now() <= expiry_date
@@ -441,20 +451,12 @@ def signal_allowed_for_plan(plan, signal):
                 and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
             )
 
-        if plan == "vip":
+        if plan in ["vip", "pro_2y"]:
             return (
                 confidence >= 78
                 and engine_confidence >= 75
                 and risk_score <= 58
                 and score >= 6
-            )
-
-        if plan == "ultimate":
-            return (
-                confidence >= 80
-                and engine_confidence >= 78
-                and risk_score <= 54
-                and score >= 7
             )
 
         return False
@@ -1108,9 +1110,9 @@ def run():
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
-                    if plan in ("vip", "ultimate"):
+                    if plan == "vip":
                         if not elite_trade_filter(signal):
-                            log(f"Elite filter rejected for VIP: {signal['pair']}")
+                            log(f"Elite filter rejected: {signal['pair']}")
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
@@ -1132,19 +1134,19 @@ def run():
                         log(f"Signal failed to send to {chat_id}")
 
                     # ===== AUTO TRADE FOR VIP =====
-                    if plan in ("vip", "ultimate") and bot_active == 1 and api_key and api_secret:
+                    if plan in AUTO_TRADE_PLANS and bot_active == 1 and api_key and api_secret:
                         try:
                             can_trade, reason = can_trade_user(chat_id, trade_amount)
                             if not can_trade:
-                                log(f"VIP trade blocked for {chat_id}: {reason}")
+                                log(f"Auto trade blocked for {chat_id}: {reason}")
                                 continue
 
                             if has_open_trade(chat_id, signal["pair"]):
-                                log(f"VIP skipped: already open trade on {signal['pair']} for {chat_id}")
+                                log(f"Auto trade skipped: already open trade on {signal['pair']} for {chat_id}")
                                 continue
 
                             if pair_in_cooldown(chat_id, signal["pair"]):
-                                log(f"VIP skipped: cooldown active on {signal['pair']} for {chat_id}")
+                                log(f"Auto trade skipped: cooldown active on {signal['pair']} for {chat_id}")
                                 continue
 
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
@@ -1160,7 +1162,7 @@ def run():
 
                             if order:
                                 log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
-                                send(chat_id, f"""🤖 تم تنفيذ صفقة VIP تلقائيًا
+                                send(chat_id, f"""🤖 تم تنفيذ صفقة تلقائيًا
 
 🔥 {signal['pair']}
 📈 الاتجاه: {signal['direction']}
