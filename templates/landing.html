@@ -1,5 +1,5 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -558,6 +558,11 @@ a {
 </head>
 
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <header class="navbar">
     <div class="container nav-inner">
         <a class="logo brand-lockup" href="/" aria-label="Nexora AI Trader home">
@@ -881,6 +886,12 @@ a {
         Nexora AI Trader © جميع الحقوق محفوظة. التداول يحتوي على مخاطرة.
     </div>
 </footer>
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
+
 </body>
 </html>
 

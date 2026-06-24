@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ø§Ù„Ø¯ÙØ¹ | Nexora AI Trader</title>
+<title>الدفع | Nexora AI Trader</title>
 
 <style>
 * {
@@ -172,56 +172,67 @@ h2 {
 </head>
 
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
 
 <div class="container">
 
-<div class="logo">ðŸ’³ <span>Nexora AI Trader</span></div>
+<div class="logo">💳 <span>Nexora AI Trader</span></div>
 
-<h2>ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¯ÙØ¹</h2>
+<h2>تأكيد الدفع</h2>
 
 <div class="sub">
-Ø£Ù†Øª Ø¹Ù„Ù‰ Ø¨Ø¹Ø¯ Ø®Ø·ÙˆØ© ÙˆØ§Ø­Ø¯Ø© ÙÙ‚Ø· Ù…Ù† ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø§Ø´ØªØ±Ø§Ùƒ ÙˆÙØªØ­ Ù…Ø²Ø§ÙŠØ§ Ø§Ù„Ø¨ÙˆØª Ø­Ø³Ø¨ Ø®Ø·ØªÙƒ.
+أنت على بعد خطوة واحدة فقط من تفعيل الاشتراك وفتح مزايا البوت حسب خطتك.
 </div>
 
 <div class="plan-box">
-    <div class="plan-title">ðŸ“¦ Ø§Ù„Ø®Ø·Ø© Ø§Ù„Ù…Ø®ØªØ§Ø±Ø©</div>
+    <div class="plan-title">📦 الخطة المختارة</div>
     <div class="plan-name">{{plan}}</div>
     <div class="plan-note">
-        Ø¨Ø¹Ø¯ Ø§Ù„Ø¯ÙØ¹ Ø³ÙŠØªÙ… ØªÙØ¹ÙŠÙ„ Ø­Ø³Ø§Ø¨Ùƒ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ ÙˆØ±Ø¨Ø· Ø§Ù„Ø®Ø·Ø© Ø¨Ø­Ø³Ø§Ø¨Ùƒ Ø®Ù„Ø§Ù„ Ø«ÙˆØ§Ù†Ù.
+        بعد الدفع سيتم تفعيل حسابك تلقائيًا وربط الخطة بحسابك خلال ثوانٍ.
     </div>
 </div>
 
 <div class="features">
-    <h3>ðŸ”¥ Ù…Ø§Ø°Ø§ Ø³ØªØ­ØµÙ„ Ø¨Ø¹Ø¯ Ø§Ù„ØªÙØ¹ÙŠÙ„ØŸ</h3>
+    <h3>🔥 ماذا ستحصل بعد التفعيل؟</h3>
     <ul>
-        <li>âœ” ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø·Ø© Ø§Ù„Ù…Ø®ØªØ§Ø±Ø© Ù…Ø¨Ø§Ø´Ø±Ø©</li>
-        <li>âœ” ÙˆØµÙˆÙ„ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø­Ø³Ø¨ Ø§Ù„Ø¨Ø§Ù‚Ø©</li>
-        <li>âœ” Ø¥Ù…ÙƒØ§Ù†ÙŠØ© Ø±Ø¨Ø· Ø­Ø³Ø§Ø¨Ùƒ Ø¨Ø§Ù„Ø¨ÙˆØª</li>
-        <li>âœ” ØªØ¬Ø±Ø¨Ø© ØªØ¯Ø§ÙˆÙ„ Ø£ÙƒØ«Ø± ØªÙ†Ø¸ÙŠÙ…Ù‹Ø§ ÙˆÙÙ„ØªØ±Ø©</li>
-        <li>âœ” Ù„ÙˆØ­Ø© ØªØ­ÙƒÙ… ÙƒØ§Ù…Ù„Ø© Ù„Ø¥Ø¯Ø§Ø±Ø© Ø­Ø³Ø§Ø¨Ùƒ</li>
+        <li>✔ تفعيل الخطة المختارة مباشرة</li>
+        <li>✔ وصول الإشارات حسب الباقة</li>
+        <li>✔ إمكانية ربط حسابك بالبوت</li>
+        <li>✔ تجربة تداول أكثر تنظيمًا وفلترة</li>
+        <li>✔ لوحة تحكم كاملة لإدارة حسابك</li>
     </ul>
 </div>
 
 <a href="/create-payment?plan={{plan}}" class="pay-btn">
-ðŸš€ Ø§Ø¯ÙØ¹ Ø§Ù„Ø¢Ù† (Crypto)
+🚀 ادفع الآن (Crypto)
 </a>
 
 <div class="secure-note">
-ðŸ” Ø§Ù„Ø¯ÙØ¹ ÙŠØªÙ… Ø¨Ø´ÙƒÙ„ Ø¢Ù…Ù†  
+🔐 الدفع يتم بشكل آمن  
 <br>
-âš¡ Ø§Ù„ØªÙØ¹ÙŠÙ„ ÙŠØªÙ… ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø¨Ø¹Ø¯ Ø¥ØªÙ…Ø§Ù… Ø§Ù„Ø¹Ù…Ù„ÙŠØ©
+⚡ التفعيل يتم تلقائيًا بعد إتمام العملية
 </div>
 
 <div class="warning">
-âš ï¸ Ù…Ù‡Ù…:
-Ø¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ù‚Ø¯ Ø±Ø¨Ø·Øª Ø­Ø³Ø§Ø¨Ùƒ Ø¨Ø§Ù„Ø¨ÙˆØª Ø¨Ø¹Ø¯ØŒ
+⚠️ مهم:
+إذا لم تكن قد ربطت حسابك بالبوت بعد،
         افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.
 </div>
 
-<a href="/dashboard" class="back-link">â¬… Ø§Ù„Ø¹ÙˆØ¯Ø© Ø¥Ù„Ù‰ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…</a>
+<a href="/dashboard" class="back-link">⬅ العودة إلى لوحة التحكم</a>
 
 </div>
+
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
 
 </body>
 </html>

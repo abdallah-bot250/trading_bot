@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨ - Nexora AI Trader</title>
+    <title>تفعيل الحساب - Nexora AI Trader</title>
     <style>
         * {
             box-sizing: border-box;
@@ -135,31 +135,42 @@
 <meta name="theme-color" content="#20D68A">
 </head>
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
 
     <div class="verify-box">
-        <div class="logo">ðŸ”</div>
-        <h1>ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø­Ø³Ø§Ø¨</h1>
+        <div class="logo">🔐</div>
+        <h1>تفعيل الحساب</h1>
         <div class="sub">
-            Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ Ù„Ø¥ÙƒÙ…Ø§Ù„ Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨
-            ÙˆØªÙØ¹ÙŠÙ„ Ø§Ù„ÙˆØµÙˆÙ„ Ø¥Ù„Ù‰ Ø§Ù„Ù†Ø¸Ø§Ù….
+            أدخل كود التفعيل الخاص بك لإكمال ربط الحساب
+            وتفعيل الوصول إلى النظام.
         </div>
 
         <form method="POST">
             {{ csrf_field() }}
-            <label for="code">ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„</label>
-            <input type="text" id="code" name="code" placeholder="Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„ØªÙØ¹ÙŠÙ„ Ù‡Ù†Ø§" required>
-            <button type="submit">ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø¢Ù†</button>
+            <label for="code">كود التفعيل</label>
+            <input type="text" id="code" name="code" placeholder="أدخل كود التفعيل هنا" required>
+            <button type="submit">تفعيل الآن</button>
         </form>
 
         <div class="note">
-            ðŸ“Œ Ø¥Ø°Ø§ Ù„Ù… ÙŠÙƒÙ† Ù„Ø¯ÙŠÙƒ ÙƒÙˆØ¯ ØªÙØ¹ÙŠÙ„ Ø¨Ø¹Ø¯ØŒ ØªØ£ÙƒØ¯ Ù…Ù† Ø¥ØªÙ…Ø§Ù… Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ø¯ÙØ¹ Ø£ÙˆÙ„Ø§Ù‹.
+            📌 إذا لم يكن لديك كود تفعيل بعد، تأكد من إتمام التسجيل أو الدفع أولاً.
         </div>
 
         <div class="footer">
-            Nexora AI Trader Â©
+            Nexora AI Trader ©
         </div>
     </div>
+
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
 
 </body>
 </html>

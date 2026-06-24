@@ -1,4 +1,5 @@
-﻿from flask import Blueprint
+from flask import Blueprint
+from urllib.parse import urlparse
 from trader_app.extensions import limiter
 from trader_app.services.payments import (
     SUCCESS_STATUSES,
@@ -34,6 +35,20 @@ telegram_bp = Blueprint("telegram", __name__)
 @public_bp.route("/")
 def landing():
     return render_template("landing.html")
+
+
+@public_bp.route("/set-language/<lang>")
+def set_language(lang):
+    lang = (lang or "").strip().lower()
+    if lang not in {"en", "ar"}:
+        lang = "en"
+
+    session["lang"] = lang
+    next_url = request.args.get("next") or request.referrer or url_for("public.landing")
+    parsed = urlparse(next_url)
+    if parsed.netloc and parsed.netloc != request.host:
+        next_url = url_for("public.landing")
+    return redirect(next_url)
 
 
 COMPANY_PAGES = {
@@ -349,12 +364,12 @@ def health():
 
 @public_bp.route("/success")
 def success():
-    return "âœ… ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø¯ÙØ¹ Ø¨Ù†Ø¬Ø§Ø­ØŒ Ø§Ù†ØªØ¸Ø± ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø´Ø¨ÙƒØ©"
+    return "✅ تم إنشاء الدفع بنجاح، انتظر تأكيد الشبكة"
 
 
 @public_bp.route("/cancel")
 def cancel():
-    return "âŒ ØªÙ… Ø¥Ù„ØºØ§Ø¡ Ø§Ù„Ø¯ÙØ¹"
+    return "❌ تم إلغاء الدفع"
 
 
 @diagnostics_bp.route("/debug-users")
@@ -392,9 +407,9 @@ def test_db():
         c.execute("SELECT NOW()")
         now = c.fetchone()
         conn.close()
-        return f"âœ… DB OK: {now}"
+        return f"✅ DB OK: {now}"
     except Exception as e:
-        return f"âŒ DB ERROR: {str(e)}"
+        return f"❌ DB ERROR: {str(e)}"
 
 
 @diagnostics_bp.route("/test-telegram")
@@ -406,11 +421,11 @@ def test_telegram():
         chat_id = request.args.get("chat_id", "").strip()
 
         if not chat_id:
-            return "âŒ Ù„Ø§Ø²Ù… ØªØ­Ø· chat_id ÙÙŠ Ø§Ù„Ø±Ø§Ø¨Ø·"
+            return "❌ لازم تحط chat_id في الرابط"
 
-        ok = send(chat_id, f"âœ… TEST FROM WEB APP\nðŸ•’ {datetime.now()}")
+        ok = send(chat_id, f"✅ TEST FROM WEB APP\n🕒 {datetime.now()}")
 
-        return "âœ… ØªÙ… Ø§Ù„Ø¥Ø±Ø³Ø§Ù„" if ok else "âŒ ÙØ´Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„"
+        return "✅ تم الإرسال" if ok else "❌ فشل الإرسال"
 
     except Exception as e:
         return f"ERROR: {str(e)}"
@@ -435,16 +450,16 @@ def register():
             password_raw = (request.form.get("password") or "").strip()
 
             if not email or not password_raw:
-                flash("âŒ Ù„Ø§Ø²Ù… ØªÙƒØªØ¨ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ ÙˆØ§Ù„Ø¨Ø§Ø³ÙˆØ±Ø¯", "error")
+                flash("❌ لازم تكتب الإيميل والباسورد", "error")
                 return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
-                flash("âŒ Ù„Ø§Ø²Ù… ØªØ¯Ø®Ù„ Ø¥ÙŠÙ…ÙŠÙ„ ØµØ­ÙŠØ­", "error")
+                flash("❌ لازم تدخل إيميل صحيح", "error")
                 return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
             if len(password_raw) < 6:
-                flash("âŒ Ø§Ù„Ø¨Ø§Ø³ÙˆØ±Ø¯ Ù„Ø§Ø²Ù… ÙŠÙƒÙˆÙ† 6 Ø£Ø­Ø±Ù Ø£Ùˆ Ø£ÙƒØ«Ø±", "error")
+                flash("❌ الباسورد لازم يكون 6 أحرف أو أكثر", "error")
                 return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
             conn = db()
@@ -462,9 +477,9 @@ def register():
                     tg_ref = c.fetchone()
                     if tg_ref and tg_ref[0]:
                         telegram_ref = str(tg_ref[0]).strip()
-                        log(f"âœ… Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
+                        log(f"✅ Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
                 except Exception as tg_err:
-                    log(f"âŒ Telegram referral fetch error in register: {tg_err}")
+                    log(f"❌ Telegram referral fetch error in register: {tg_err}")
 
             final_ref = ref or telegram_ref
 
@@ -483,7 +498,7 @@ def register():
                 if not check_password_hash(stored_password, password_raw):
                     conn.close()
                     audit_log("register_existing_bad_password", email)
-                    flash("âŒ Ù‡Ø°Ø§ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ù…Ø³Ø¬Ù„ Ø¨Ø§Ù„ÙØ¹Ù„ Ù„ÙƒÙ† ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø± ØºÙŠØ± ØµØ­ÙŠØ­Ø©", "error")
+                    flash("❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة", "error")
                     return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
                 if chat_id:
@@ -526,7 +541,7 @@ def register():
                                 WHERE id = %s
                             """, (final_ref, user_id))
                             conn.commit()
-                            log(f"âœ… Existing user referred_by updated: {email} -> {final_ref}")
+                            log(f"✅ Existing user referred_by updated: {email} -> {final_ref}")
 
                 if is_admin_email(email):
                     c.execute("""
@@ -542,9 +557,9 @@ def register():
                 session["is_admin"] = True if is_admin_email(email) else False
                 audit_log("register_existing_login", email, f"chat_id_linked={bool(chat_id)}")
 
-                log(f"âœ… Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
+                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
 
-                flash("âœ… ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¨Ù†Ø¬Ø§Ø­", "success")
+                flash("✅ تم تسجيل الدخول بنجاح", "success")
                 flash("مهم جدًا: افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.", "success")
 
                 return redirect("/dashboard")
@@ -602,16 +617,16 @@ def register():
             if not sent:
                 flash(f"Verification link: {verification_link}", "success")
 
-            log(f"âœ… New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
+            log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
 
-            flash("âœ… ØªÙ… Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­", "success")
+            flash("✅ تم إنشاء الحساب بنجاح", "success")
             flash("مهم جدًا: افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.", "success")
 
             return redirect("/dashboard")
 
         except Exception as e:
-            log(f"âŒ Register error: {e}")
-            flash("âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ØªØ³Ø¬ÙŠÙ„", "error")
+            log(f"❌ Register error: {e}")
+            flash("❌ حصل خطأ أثناء التسجيل", "error")
             return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
     return render_template("register.html", chat_id=chat_id, ref=ref)
@@ -632,11 +647,11 @@ def login():
             password = (request.form.get("password") or "").strip()
 
             if not email or not password:
-                return "âŒ Ù„Ø§Ø²Ù… ØªÙƒØªØ¨ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ ÙˆØ§Ù„Ø¨Ø§Ø³ÙˆØ±Ø¯"
+                return "❌ لازم تكتب الإيميل والباسورد"
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
-                return "âŒ Ù„Ø§Ø²Ù… ØªØ¯Ø®Ù„ Ø¥ÙŠÙ…ÙŠÙ„ ØµØ­ÙŠØ­"
+                return "❌ لازم تدخل إيميل صحيح"
 
             conn = db()
             c = conn.cursor()
@@ -651,7 +666,7 @@ def login():
             if not user:
               conn.close()
               audit_log("login_unknown_email", email)
-              flash("âŒ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯", "error")
+              flash("❌ الإيميل غير موجود", "error")
               return redirect("/login")
 
             stored_password = str(user[2] or "").strip()
@@ -678,18 +693,18 @@ def login():
                 session["user"] = email
                 session["is_admin"] = True if is_admin_email(email) else False
                 audit_log("login_success", email, f"chat_id_linked={bool(chat_id)}")
-                log(f"âœ… Login success: {email} | chat_id={chat_id}")
+                log(f"✅ Login success: {email} | chat_id={chat_id}")
                 conn.close()
                 return redirect("/dashboard")
 
             conn.close()
             audit_log("login_bad_password", email)
-            flash("âŒ Ø§Ù„Ø¨Ø§Ø³ÙˆØ±Ø¯ ØºÙŠØ± ØµØ­ÙŠØ­", "error")
+            flash("❌ الباسورد غير صحيح", "error")
             return redirect("/login")
 
         except Exception as e:
-         log(f"âŒ Login error: {e}")
-         flash("âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„", "error")
+         log(f"❌ Login error: {e}")
+         flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
          return redirect("/login")
 
     return render_template("login.html")
@@ -846,21 +861,21 @@ def save_api():
 
         if not user or user[0] != "vip":
             conn.close()
-            return "âŒ API Ù…ØªØ§Ø­ ÙÙ‚Ø· Ù„Ø¨Ø§Ù‚Ø© Elite"
+            return "❌ API متاح فقط لباقة Elite"
 
         api_key = request.form.get("api_key", "").strip()
         api_secret = request.form.get("api_secret", "").strip()
 
         if not api_key or not api_secret:
             conn.close()
-            return "âŒ Ù„Ø§Ø²Ù… ØªØ¯Ø®Ù„ API Key Ùˆ Secret"
+            return "❌ لازم تدخل API Key و Secret"
         
         encrypted_api_key = encrypt_text(api_key)
         encrypted_api_secret = encrypt_text(api_secret)
 
         if not encrypted_api_key or not encrypted_api_secret:
             conn.close()
-            return "âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ´ÙÙŠØ± Ø¨ÙŠØ§Ù†Ø§Øª API"
+            return "❌ حصل خطأ أثناء تشفير بيانات API"
 
         c.execute("""
             UPDATE users
@@ -871,11 +886,11 @@ def save_api():
         conn.commit()
         conn.close()
 
-        return "âœ… ØªÙ… Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨ Ø¨Ù†Ø¬Ø§Ø­"
+        return "✅ تم ربط الحساب بنجاح"
 
     except Exception as e:
-        log(f"âŒ save_api error: {e}")
-        return f"âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø­ÙØ¸ API: {str(e)}"
+        log(f"❌ save_api error: {e}")
+        return f"❌ حصل خطأ أثناء حفظ API: {str(e)}"
 
 
 # ================= SAVE SETTINGS =================
@@ -918,11 +933,11 @@ def save_settings():
         conn.commit()
         conn.close()
 
-        return "âœ… ØªÙ… Ø­ÙØ¸ Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ¯Ø§ÙˆÙ„"
+        return "✅ تم حفظ إعدادات التداول"
 
     except Exception as e:
-        log(f"âŒ save_settings error: {e}")
-        return f"âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø­ÙØ¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª: {str(e)}"
+        log(f"❌ save_settings error: {e}")
+        return f"❌ حصل خطأ أثناء حفظ الإعدادات: {str(e)}"
 
 
 # ================= DASHBOARD =================
@@ -1114,8 +1129,8 @@ def dashboard():
         )
 
     except Exception as e:
-        log(f"âŒ dashboard error: {e}")
-        return f"âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯: {str(e)}"
+        log(f"❌ dashboard error: {e}")
+        return f"❌ حصل خطأ أثناء تحميل الداشبورد: {str(e)}"
 
 
 @dashboard_bp.route("/manual")
@@ -1189,22 +1204,22 @@ def toggle_bot():
         )
         user = c.fetchone()
 
-# ØªØ£ÙƒØ¯ Ø¥Ù†Ù‡ Elite
+# تأكد إنه Elite
         if not user or user[0] != "vip":
             conn.close()
-            return "âŒ Ø§Ù„Ù…ÙŠØ²Ø© Ù…ØªØ§Ø­Ø© Ù„Ù€ Elite ÙÙ‚Ø·"
+            return "❌ الميزة متاحة لـ Elite فقط"
 
-# ÙÙƒ Ø§Ù„ØªØ´ÙÙŠØ±
+# فك التشفير
         saved_api_key = decrypt_text(user[2]) if user[2] else None
         saved_api_secret = decrypt_text(user[3]) if user[3] else None
 
-# Ù…Ù†Ø¹ Ø§Ù„ØªØ´ØºÙŠÙ„ Ø¨Ø¯ÙˆÙ† API
+# منع التشغيل بدون API
         if user[1] == 0:
             if not saved_api_key or not saved_api_secret:
                  conn.close()
-                 return "âŒ Ù„Ø§Ø²Ù… ØªØ±Ø¨Ø· API Ø£ÙˆÙ„Ø§Ù‹ Ù‚Ø¨Ù„ ØªØ´ØºÙŠÙ„ Ø§Ù„Ø¨ÙˆØª"
+                 return "❌ لازم تربط API أولاً قبل تشغيل البوت"
 
-# ØªØºÙŠÙŠØ± Ø­Ø§Ù„Ø© Ø§Ù„Ø¨ÙˆØª
+# تغيير حالة البوت
         new_status = 0 if user[1] == 1 else 1
 
         c.execute("""
@@ -1216,11 +1231,11 @@ def toggle_bot():
         conn.commit()
         conn.close()
 
-        return "ðŸŸ¢ ØªÙ… ØªØ´ØºÙŠÙ„ Ø§Ù„Ø¨ÙˆØª" if new_status == 1 else "ðŸ”´ ØªÙ… Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ø¨ÙˆØª"
+        return "🟢 تم تشغيل البوت" if new_status == 1 else "🔴 تم إيقاف البوت"
 
     except Exception as e:
-        log(f"âŒ toggle_bot error: {e}")
-        return f"âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ´ØºÙŠÙ„/Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ø¨ÙˆØª: {str(e)}"
+        log(f"❌ toggle_bot error: {e}")
+        return f"❌ حصل خطأ أثناء تشغيل/إيقاف البوت: {str(e)}"
 
 
 # ================= CREATE PAYMENT =================
@@ -1233,12 +1248,12 @@ def create_payment():
     coupon_code = normalize_coupon_code(request.args.get("coupon", ""))
 
     if plan not in PLAN_PRICES:
-        return "âŒ Ø¨Ø§Ù‚Ø© ØºÙŠØ± ØµØ­ÙŠØ­Ø©"
+        return "❌ باقة غير صحيحة"
 
     try:
         nowpayments_key = os.environ.get("NOWPAYMENTS_API_KEY")
         if not nowpayments_key:
-            return "âŒ NOWPAYMENTS_API_KEY ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Railway Variables"
+            return "❌ NOWPAYMENTS_API_KEY غير موجود في Railway Variables"
 
         conn = db()
         c = conn.cursor()
@@ -1251,7 +1266,7 @@ def create_payment():
 
         if not user or not user[0]:
             conn.close()
-            return "âŒ Ù„Ø§Ø²Ù… ØªØ±Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø§Ù„ØªÙ„ÙŠØ¬Ø±Ø§Ù… Ø§Ù„Ø£ÙˆÙ„"
+            return "❌ لازم تربط حساب التليجرام الأول"
 
         chat_id = str(user[0]).strip()
         email = user[1]
@@ -1365,8 +1380,8 @@ def create_payment():
         </head>
         <body>
         <div class="box">
-            <h2>ðŸ’° Payment Error</h2>
-            <p>Ø­ØµÙ„ Ù…Ø´ÙƒÙ„Ø© ÙÙŠ Ø¥Ù†Ø´Ø§Ø¡ ØµÙØ­Ø© Ø§Ù„Ø¯ÙØ¹</p>
+            <h2>💰 Payment Error</h2>
+            <p>حصل مشكلة في إنشاء صفحة الدفع</p>
             <pre>{data}</pre>
         </div>
         </body>
@@ -1374,7 +1389,7 @@ def create_payment():
         """
 
     except Exception as e:
-        log(f"âŒ create_payment error: {e}")
+        log(f"❌ create_payment error: {e}")
         return f"Error: {str(e)}"
 
 
@@ -1419,7 +1434,7 @@ def owner_free_upgrade():
         return redirect("/login")
 
     if not admin_required():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         conn = db()
@@ -1439,11 +1454,11 @@ def owner_free_upgrade():
         conn.commit()
         conn.close()
 
-        return "âœ… ØªÙ… ØªÙØ¹ÙŠÙ„ Elite Ù…Ø¯Ù‰ Ø§Ù„Ø­ÙŠØ§Ø© Ù„Ø­Ø³Ø§Ø¨Ùƒ"
+        return "✅ تم تفعيل Elite مدى الحياة لحسابك"
 
     except Exception as e:
         log(f"owner_free_upgrade error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 # ================= REQUEST WITHDRAWAL =================
@@ -1462,13 +1477,13 @@ def request_withdrawal():
             amount = 0
 
         if not wallet_address:
-            return "âŒ Ù„Ø§Ø²Ù… ØªØ¯Ø®Ù„ Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©"
+            return "❌ لازم تدخل عنوان المحفظة"
 
         if amount < 25:
-            return "âŒ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰ Ù„Ù„Ø³Ø­Ø¨ 25$"
+            return "❌ الحد الأدنى للسحب 25$"
 
         if amount > 300:
-            return "âŒ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù„Ù„Ø³Ø­Ø¨ 300$"
+            return "❌ الحد الأقصى للسحب 300$"
 
         conn = db()
         c = conn.cursor()
@@ -1482,14 +1497,14 @@ def request_withdrawal():
 
         if not user:
             conn.close()
-            return "âŒ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯"
+            return "❌ المستخدم غير موجود"
 
         chat_id = str(user[0] or "").strip()
         balance = float(user[1] or 0)
 
         if amount > balance:
             conn.close()
-            return "âŒ Ø§Ù„Ø±ØµÙŠØ¯ ØºÙŠØ± ÙƒØ§ÙÙŠ"
+            return "❌ الرصيد غير كافي"
 
         c.execute("""
             INSERT INTO affiliate_withdrawals (chat_id, wallet_address, amount, status)
@@ -1505,11 +1520,11 @@ def request_withdrawal():
         conn.commit()
         conn.close()
 
-        return "âœ… ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨ Ø¨Ù†Ø¬Ø§Ø­"
+        return "✅ تم إرسال طلب السحب بنجاح"
 
     except Exception as e:
         log(f"request_withdrawal error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 # ================= ADMIN =================
@@ -1543,7 +1558,7 @@ def is_current_admin():
         is_admin_flag = int(row[0] or 0)
         lifetime_owner_flag = int(row[1] or 0)
 
-        # Ù„Ø§Ø²Ù… ÙŠÙƒÙˆÙ† Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ Ù…Ù† Ø§Ù„Ø¯Ø§ØªØ§Ø¨ÙŠØ² + ÙŠØ·Ø§Ø¨Ù‚ ADMIN_EMAIL
+        # لازم يكون الأدمن الحقيقي من الداتابيز + يطابق ADMIN_EMAIL
         return (
             is_admin_flag == 1
             and is_admin_email(email)
@@ -1560,7 +1575,7 @@ def admin_dashboard():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         conn = db()
@@ -1782,7 +1797,7 @@ def admin_dashboard():
 
     except Exception as e:
         log(f"admin_dashboard error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 @admin_bp.route("/admin/coupons/create", methods=["POST"])
@@ -1791,7 +1806,7 @@ def create_coupon():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         code = normalize_coupon_code(request.form.get("code", ""))
@@ -1823,7 +1838,7 @@ def create_coupon():
         return redirect("/admin")
     except Exception as e:
         log(f"create_coupon error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 @admin_bp.route("/admin/coupons/toggle", methods=["POST"])
@@ -1832,7 +1847,7 @@ def toggle_coupon():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         coupon_id = request.form.get("id", "").strip()
@@ -1850,7 +1865,7 @@ def toggle_coupon():
         return redirect("/admin")
     except Exception as e:
         log(f"toggle_coupon error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 @admin_bp.route("/activate-user", methods=["POST"])
@@ -1859,7 +1874,7 @@ def activate_user():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         user_id = request.form.get("id", "").strip()
@@ -1883,13 +1898,13 @@ def activate_user():
         conn.commit()
         conn.close()
 
-        log(f"âœ… User {user_id} activated with plan {plan}")
+        log(f"✅ User {user_id} activated with plan {plan}")
         audit_log("admin_activate_user", details=f"user_id={user_id} plan={plan} lifetime={lifetime}")
         return redirect("/admin")
 
     except Exception as e:
         log(f"activate_user error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 @admin_bp.route("/delete-user", methods=["POST"])
@@ -1898,7 +1913,7 @@ def delete_user():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         user_id = request.form.get("id", "").strip()
@@ -1912,19 +1927,19 @@ def delete_user():
 
         if row and row[0].strip().lower() == current_email:
             conn.close()
-            return "âŒ Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø­Ø°Ù Ø­Ø³Ø§Ø¨ Ø§Ù„Ø£Ø¯Ù…Ù† Ø§Ù„Ø­Ø§Ù„ÙŠ"
+            return "❌ لا يمكن حذف حساب الأدمن الحالي"
 
         c.execute("DELETE FROM users WHERE id = %s", (user_id,))
         conn.commit()
         conn.close()
 
-        log(f"ðŸ—‘ï¸ Deleted user {user_id}")
+        log(f"🗑️ Deleted user {user_id}")
         audit_log("admin_delete_user", details=f"user_id={user_id}")
         return redirect("/admin")
 
     except Exception as e:
         log(f"delete_user error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 @admin_bp.route("/mark-withdrawal-paid", methods=["POST"])
@@ -1933,7 +1948,7 @@ def mark_withdrawal_paid():
         return redirect("/login")
 
     if not is_current_admin():
-        return "âŒ ØºÙŠØ± Ù…ØµØ±Ø­"
+        return "❌ غير مصرح"
 
     try:
         withdrawal_id = request.form.get("id", "").strip()
@@ -1948,13 +1963,13 @@ def mark_withdrawal_paid():
         conn.commit()
         conn.close()
 
-        log(f"ðŸ’¸ Withdrawal {withdrawal_id} marked as paid")
+        log(f"💸 Withdrawal {withdrawal_id} marked as paid")
         audit_log("admin_mark_withdrawal_paid", details=f"withdrawal_id={withdrawal_id}")
         return redirect("/admin")
 
     except Exception as e:
         log(f"mark_withdrawal_paid error: {e}")
-        return f"âŒ Error: {str(e)}"
+        return f"❌ Error: {str(e)}"
 
 
 # ================= TELEGRAM WEBHOOK =================
@@ -2115,10 +2130,10 @@ def webhook():
         chat_id = str(chat.get("id") or "").strip()
 
         if not chat_id:
-            log("âš ï¸ Telegram webhook received without chat_id")
+            log("⚠️ Telegram webhook received without chat_id")
             return "ok", 200
 
-        log(f"ðŸ“© Telegram message | chat_id={chat_id} | text={text}")
+        log(f"📩 Telegram message | chat_id={chat_id} | text={text}")
 
         command = text.split(maxsplit=1)[0].lower() if text else ""
 
@@ -2248,10 +2263,10 @@ def webhook():
                     """, (str(chat_id), start_ref))
 
                     conn.commit()
-                    log(f"âœ… Telegram referral saved: {chat_id} -> {start_ref}")
+                    log(f"✅ Telegram referral saved: {chat_id} -> {start_ref}")
 
                 except Exception as e:
-                    log(f"âŒ Telegram referral save error: {e}")
+                    log(f"❌ Telegram referral save error: {e}")
 
             try:
                 c.execute("""
@@ -2302,21 +2317,21 @@ def webhook():
                         }))
 
                         aff_link = telegram_referral_link(referral_code)
-                        send(chat_id, f"""ðŸ’¸ Ø±Ø§Ø¨Ø· Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ:
+                        send(chat_id, f"""💸 رابط الأفلييت الخاص بك:
 
 {aff_link}
 
-ðŸ“Œ ÙƒÙ„ Ø´Ø®Øµ ÙŠØ¯Ø®Ù„ Ù…Ù† Ø®Ù„Ø§Ù„Ùƒ ÙˆÙŠØ¨Ø¯Ø£ Ø§Ù„Ø¨ÙˆØª Ù‡ÙŠØªØ³Ø¬Ù„ ØªØ­ØªÙƒ.
+📌 كل شخص يدخل من خلالك ويبدأ البوت هيتسجل تحتك.
 """)
 
                         return "ok", 200
 
                     if trades < 2:
                         free_signals = get_top_free_signals(limit=2)
-                        log(f"ðŸŽ¯ Free signals returned: {free_signals}")
+                        log(f"🎯 Free signals returned: {free_signals}")
 
                         if not free_signals:
-                            send(chat_id, "âŒ Ù„Ø§ ØªÙˆØ¬Ø¯ ÙØ±ØµØ© Ù‚ÙˆÙŠØ© Ø­Ø§Ù„ÙŠÙ‹Ø§ØŒ Ù…Ù† ÙØ¶Ù„Ùƒ Ø§Ù†ØªØ¸Ø± Ø­ØªÙ‰ ÙŠØ¸Ù‡Ø± Ø¯Ø®ÙˆÙ„ Ù‚ÙˆÙŠ.")
+                            send(chat_id, "❌ لا توجد فرصة قوية حاليًا، من فضلك انتظر حتى يظهر دخول قوي.")
                         else:
                             sent_count = 0
 
@@ -2334,41 +2349,41 @@ def webhook():
                                 """, (sent_count, user_id))
                                 conn.commit()
 
-                                send(chat_id, f"""ðŸŽ ØªÙ… Ø¥Ø±Ø³Ø§Ù„ {sent_count} ØµÙÙ‚Ø© Ù…Ø¬Ø§Ù†ÙŠØ© Ù…Ù† Ø§Ù„Ø¨ÙˆØª.
+                                send(chat_id, f"""🎁 تم إرسال {sent_count} صفقة مجانية من البوت.
 
-ðŸ“Œ Ù…Ù‡Ù…:
-Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠØ© Ù‡Ø¯ÙÙ‡Ø§ Ø¥Ù†Ùƒ ØªØ´ÙˆÙ Ø·Ø±ÙŠÙ‚Ø© Ø´ØºÙ„ Ø§Ù„Ø¨ÙˆØª ÙˆØ¬ÙˆØ¯Ø© Ø§Ù„ÙÙ„ØªØ±Ø©ØŒ
-Ù„ÙƒÙ†Ù‡Ø§ Ù„ÙŠØ³Øª ÙƒÙ„ Ø¥Ù…ÙƒØ§Ù†ÙŠØ§Øª Ø§Ù„Ù†Ø¸Ø§Ù….
+📌 مهم:
+النسخة المجانية هدفها إنك تشوف طريقة شغل البوت وجودة الفلترة،
+لكنها ليست كل إمكانيات النظام.
 
-ðŸš€ ÙÙŠ Ø§Ù„Ù†Ø³Ø®Ø© Ø§Ù„Ù…Ø¯ÙÙˆØ¹Ø© Ù‡ØªØ³ØªÙÙŠØ¯ Ø¨Ù€:
-â€¢ ÙØ±Øµ Ø£Ù‚ÙˆÙ‰
-â€¢ ÙÙ„ØªØ±Ø© Ø£Ø¹Ù„Ù‰
-â€¢ Ø¥Ø´Ø§Ø±Ø§Øª Ù…Ø³ØªÙ…Ø±Ø© Ø­Ø³Ø¨ Ø­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚
-â€¢ ØªÙ‚Ù„ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø¹Ø´ÙˆØ§Ø¦ÙŠ
-â€¢ ÙˆÙÙŠ Elite ØªÙ‚Ø¯Ø± ØªØ±Ø¨Ø· Ø­Ø³Ø§Ø¨Ùƒ Ù„Ù„ØªÙ†ÙÙŠØ° Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ
+🚀 في النسخة المدفوعة هتستفيد بـ:
+• فرص أقوى
+• فلترة أعلى
+• إشارات مستمرة حسب حالة السوق
+• تقليل الدخول العشوائي
+• وفي Elite تقدر تربط حسابك للتنفيذ التلقائي
 
-âš ï¸ Ø§Ù„Ø¨ÙˆØª Ù…Ø´ Ø¨ÙŠØ¨Ø¹Øª ØµÙÙ‚Ø§Øª Ù„Ù…Ø¬Ø±Ø¯ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„ØŒ
-Ù‡Ùˆ Ø¨ÙŠØ³ØªÙ†Ù‰ Ø§Ù„ÙØ±ØµØ© Ø§Ù„ÙˆØ§Ø¶Ø­Ø© ÙÙ‚Ø·.
+⚠️ البوت مش بيبعت صفقات لمجرد الإرسال،
+هو بيستنى الفرصة الواضحة فقط.
 
-ðŸ’° Ù„Ùˆ Ø­Ø§Ø¨Ø¨ ØªÙƒÙ…Ù„:
-Ø§Ø¯Ø®Ù„ Ø¹Ù„Ù‰ Ø§Ù„Ù…ÙˆÙ‚Ø¹ ÙˆÙØ¹Ù‘Ù„ Ø§Ù„Ø¨Ø§Ù‚Ø© Ø§Ù„Ù…Ù†Ø§Ø³Ø¨Ø© Ù„ÙŠÙƒ.
+💰 لو حابب تكمل:
+ادخل على الموقع وفعّل الباقة المناسبة ليك.
 """)
                             else:
-                                send(chat_id, "âŒ Ø­ØµÙ„Øª Ù…Ø´ÙƒÙ„Ø© Ø£Ø«Ù†Ø§Ø¡ Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠØ©. Ø­Ø§ÙˆÙ„ /start Ù…Ø±Ø© ØªØ§Ù†ÙŠØ©.")
+                                send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
 
                     else:
                         aff_link = telegram_referral_link(referral_code)
 
-                        send(chat_id, f"""ðŸ“Œ Ø£Ù†Øª Ø§Ø³ØªÙ„Ù…Øª Ø§Ù„ØµÙÙ‚ØªÙŠÙ† Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠÙŠÙ† Ø¨Ø§Ù„ÙØ¹Ù„.
+                        send(chat_id, f"""📌 أنت استلمت الصفقتين المجانيين بالفعل.
 
-ðŸ”¥ Ù„Ùˆ Ø­Ø§Ø¨Ø¨ ØªÙƒÙ…Ù„ ÙˆØªØ³ØªÙ‚Ø¨Ù„ Ø¥Ø´Ø§Ø±Ø§Øª Ø£Ù‚ÙˆÙ‰ Ø¨Ø´ÙƒÙ„ Ù…Ø³ØªÙ…Ø±ØŒ
-ØªÙ‚Ø¯Ø± ØªÙØ¹Ù‘Ù„ Ø§Ù„Ø¨Ø§Ù‚Ø© Ø§Ù„Ù…Ù†Ø§Ø³Ø¨Ø© Ù…Ù† Ø§Ù„Ù…ÙˆÙ‚Ø¹.
+🔥 لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
+تقدر تفعّل الباقة المناسبة من الموقع.
 
-ðŸ’¡ Ø§Ù„Ø¨ÙˆØª Ø¨ÙŠØ®ØªØ§Ø± Ø§Ù„ÙØ±Øµ Ø¹Ù„Ù‰ Ø­Ø³Ø¨ Ø­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚ØŒ
-ÙˆÙ…Ø´ Ù‡Ø¯ÙÙ‡ ÙƒØ«Ø±Ø© Ø§Ù„ØµÙÙ‚Ø§Øª... Ù‡Ø¯ÙÙ‡ Ø§Ù„Ø¬ÙˆØ¯Ø© Ø£ÙˆÙ„Ù‹Ø§.
+💡 البوت بيختار الفرص على حسب حالة السوق،
+ومش هدفه كثرة الصفقات... هدفه الجودة أولًا.
 
-ðŸ’¸ ÙˆÙ„Ùˆ Ø­Ø§Ø¨Ø¨ ØªÙƒØ³Ø¨ Ù…Ù† Ø§Ù„Ø¨ÙˆØª ÙƒÙ…Ø§Ù†ØŒ
-Ø¯Ù‡ Ø±Ø§Ø¨Ø· Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ:
+💸 ولو حابب تكسب من البوت كمان،
+ده رابط الأفلييت الخاص بك:
 
 {aff_link}
 """)
@@ -2379,8 +2394,8 @@ def webhook():
                     send(chat_id, welcome_message(register_link))
 
             except Exception as db_err:
-                log(f"âŒ /start DB Error: {db_err}")
-                send(chat_id, "âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø­Ø³Ø§Ø¨Ùƒ. Ø­Ø§ÙˆÙ„ ØªØ§Ù†ÙŠ Ø¨Ø¹Ø¯ Ø´ÙˆÙŠØ©.")
+                log(f"❌ /start DB Error: {db_err}")
+                send(chat_id, "❌ حصل خطأ أثناء التحقق من حسابك. حاول تاني بعد شوية.")
             finally:
                 conn.close()
 
@@ -2399,23 +2414,23 @@ def webhook():
 
                 if not user:
                     register_link = f"{BASE_URL}/register?chat_id={chat_id}"
-                    send(chat_id, f"""Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹.
+                    send(chat_id, f"""لم يتم العثور على هذا الإيميل في الموقع.
 
-Ø³Ø¬Ù„ Ø­Ø³Ø§Ø¨Ùƒ Ù…Ù† Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø¢Ù…Ù†:
+سجل حسابك من الرابط الآمن:
 {register_link}
 """)
                     return "ok", 200
 
                 login_link = f"{BASE_URL}/login?chat_id={chat_id}"
-                send(chat_id, f"""Ù„Ø­Ù…Ø§ÙŠØ© Ø­Ø³Ø§Ø¨ÙƒØŒ Ù„Ø§ ÙŠØªÙ… Ø±Ø¨Ø· ØªÙŠÙ„ÙŠØ¬Ø±Ø§Ù… Ø¨Ù…Ø¬Ø±Ø¯ ÙƒØªØ§Ø¨Ø© Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„.
+                send(chat_id, f"""لحماية حسابك، لا يتم ربط تيليجرام بمجرد كتابة الإيميل.
 
-Ø§Ø¯Ø®Ù„ Ù…Ù† Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ø¢Ù…Ù† ÙˆØ³Ø¬Ù„ Ø¯Ø®ÙˆÙ„Ùƒ Ø¨ÙƒÙ„Ù…Ø© Ø§Ù„Ø³Ø± Ù„Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨:
+ادخل من الرابط الآمن وسجل دخولك بكلمة السر لربط الحساب:
 {login_link}
 """)
                 return "ok", 200
 
                 if not user:
-                    send(chat_id, "âŒ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹")
+                    send(chat_id, "❌ الإيميل غير موجود في الموقع")
                 else:
                     c.execute(
                         "UPDATE users SET chat_id = %s WHERE email = %s",
@@ -2423,11 +2438,11 @@ def webhook():
                     )
                     conn.commit()
 
-                    send(chat_id, "âœ… ØªÙ… Ø±Ø¨Ø· Ø­Ø³Ø§Ø¨Ùƒ Ø¨Ù†Ø¬Ø§Ø­!\nÙ‡ØªÙˆØµÙ„Ùƒ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù‡Ù†Ø§ ðŸ‘Œ")
+                    send(chat_id, "✅ تم ربط حسابك بنجاح!\nهتوصلك الإشارات هنا 👌")
 
             except Exception as e:
                 log(f"link account error: {e}")
-                send(chat_id, "âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø­Ø§ÙˆÙ„ ØªØ§Ù†ÙŠ")
+                send(chat_id, "❌ حصل خطأ حاول تاني")
             finally:
                 try:
                     conn.close()
@@ -2454,7 +2469,7 @@ def webhook():
                 user = c.fetchone()
 
                 if not user:
-                    send(chat_id, "âŒ Ù„Ø§Ø²Ù… ØªØ³Ø¬Ù„ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ø§Ù„Ø£ÙˆÙ„.")
+                    send(chat_id, "❌ لازم تسجل في الموقع الأول.")
                     return "ok", 200
 
                 referral_code = user[0]
@@ -2466,35 +2481,35 @@ def webhook():
 
                 aff_link = telegram_referral_link(referral_code)
 
-                send(chat_id, f"""ðŸ’¸ Ù†Ø¸Ø§Ù… Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª
+                send(chat_id, f"""💸 نظام الأفلييت
 
-ðŸ”— Ø±Ø§Ø¨Ø·Ùƒ:
+🔗 رابطك:
 {aff_link}
 
-ðŸ‘¥ Ø¹Ø¯Ø¯ Ø§Ù„Ø¥Ø­Ø§Ù„Ø§Øª: {refs}
-ðŸ’° Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙˆÙ„Ø©: {round(balance, 2)}$
+👥 عدد الإحالات: {refs}
+💰 رصيد العمولة: {round(balance, 2)}$
 
-ðŸ“Œ Ø§Ù„Ø³Ø­Ø¨ Ù…Ù† Ø§Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯
-Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰: 25$
-Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰: 300$
-â³ Ø®Ù„Ø§Ù„ 24 Ø³Ø§Ø¹Ø©
+📌 السحب من الداشبورد
+الحد الأدنى: 25$
+الحد الأقصى: 300$
+⏳ خلال 24 ساعة
 """)
 
             except Exception as e:
                 log(f"/affiliate error: {e}")
-                send(chat_id, "âŒ Ø­ØµÙ„ Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª.")
+                send(chat_id, "❌ حصل خطأ أثناء تحميل بيانات الأفلييت.")
             finally:
                 conn.close()
 
         else:
-            send(chat_id, """ðŸ‘‹ Ø§Ù„Ø£ÙˆØ§Ù…Ø± Ø§Ù„Ù…ØªØ§Ø­Ø©:
+            send(chat_id, """👋 الأوامر المتاحة:
 
-/start - Ø±Ø¨Ø· Ø§Ù„Ø­Ø³Ø§Ø¨ ÙˆØ§Ø³ØªÙ„Ø§Ù… Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª
-/affiliate - Ø¹Ø±Ø¶ Ø±Ø§Ø¨Ø· Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª ÙˆØ§Ù„Ø±ØµÙŠØ¯
+/start - ربط الحساب واستلام الإشارات
+/affiliate - عرض رابط الأفلييت والرصيد
 """)
 
     except Exception as e:
-        log(f"âŒ Telegram Webhook Error: {e}")
+        log(f"❌ Telegram Webhook Error: {e}")
 
     return "ok", 200
 
@@ -2511,7 +2526,7 @@ def payment_webhook():
         valid_signature, generated_sig = validate_nowpayments_signature(data, signature, ipn_secret)
 
         if not valid_signature:
-            log("âŒ Missing NOWPayments signature or IPN secret")
+            log("❌ Missing NOWPayments signature or IPN secret")
             try:
                 conn = db()
                 c = conn.cursor()
@@ -2531,7 +2546,7 @@ def payment_webhook():
                 conn.close()
             except Exception as audit_err:
                 log(f"payment signature audit error: {audit_err}")
-            log(f"âŒ Invalid NOWPayments signature | recv={signature} | gen={generated_sig}")
+            log(f"❌ Invalid NOWPayments signature | recv={signature} | gen={generated_sig}")
             return "invalid signature", 403
 
         payment_status = str(data.get("payment_status") or "").strip().lower()
@@ -2541,7 +2556,7 @@ def payment_webhook():
         plan = (data.get("order_description") or "basic").strip().lower()
 
         if plan not in PLAN_PRICES:
-            log(f"âŒ Invalid payment plan ignored: {plan}")
+            log(f"❌ Invalid payment plan ignored: {plan}")
             return "invalid plan", 400
 
         if not chat_id:
@@ -2595,10 +2610,10 @@ def payment_webhook():
                 """, (payment_id, payment_status or bucket, raw_payload, invoice_row_id))
             conn.commit()
             conn.close()
-            log(f"â„¹ï¸ Payment status tracked: {payment_status} | payment_id={payment_id}")
+            log(f"ℹ️ Payment status tracked: {payment_status} | payment_id={payment_id}")
             return "tracked", 200
 
-        # ================= Ù…Ù†Ø¹ ØªÙƒØ±Ø§Ø± Ù†ÙØ³ Ø§Ù„Ø¯ÙØ¹ =================
+        # ================= منع تكرار نفس الدفع =================
         c.execute("""
             SELECT payment_id
             FROM processed_payments
@@ -2618,10 +2633,10 @@ def payment_webhook():
                 """, (payment_id, invoice_row_id))
                 conn.commit()
             conn.close()
-            log(f"âš ï¸ Duplicate payment ignored: {payment_id}")
+            log(f"⚠️ Duplicate payment ignored: {payment_id}")
             return "already processed", 200
 
-        # Ø®Ø²Ù‘Ù† Ø§Ù„Ø¹Ù…Ù„ÙŠØ© Ø£ÙˆÙ„Ø§Ù‹
+        # خزّن العملية أولاً
         c.execute("""
             INSERT INTO processed_payments (
                 payment_id, order_id, payment_status, plan, amount, currency, invoice_id, invoice_url, raw_payload
@@ -2771,7 +2786,7 @@ def payment_webhook():
                                     SET free_basic_unlocked = 1
                                     WHERE chat_id = %s
                                 """, (referrer_chat_id,))
-                                send(referrer_chat_id, "ðŸŽ Ù…Ø¨Ø±ÙˆÙƒ! ÙØªØ­Øª Basic Ù…Ø¬Ø§Ù†Ù‹Ø§ Ø¨Ø³Ø¨Ø¨ Ù†Ø¸Ø§Ù… Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª.")
+                                send(referrer_chat_id, "🎁 مبروك! فتحت Basic مجانًا بسبب نظام الأفلييت.")
 
                             if total_refs >= 25 and free_pro == 0:
                                 c.execute("""
@@ -2779,7 +2794,7 @@ def payment_webhook():
                                     SET free_pro_unlocked = 1
                                     WHERE chat_id = %s
                                 """, (referrer_chat_id,))
-                                send(referrer_chat_id, "ðŸ”¥ Ù…Ø¨Ø±ÙˆÙƒ! ÙØªØ­Øª Pro Ù…Ø¬Ø§Ù†Ù‹Ø§ Ø¨Ø³Ø¨Ø¨ Ù†Ø¸Ø§Ù… Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª.")
+                                send(referrer_chat_id, "🔥 مبروك! فتحت Pro مجانًا بسبب نظام الأفلييت.")
 
                             if total_refs >= 32 and free_vip == 0:
                                 c.execute("""
@@ -2787,15 +2802,15 @@ def payment_webhook():
                                     SET free_vip_unlocked = 1
                                     WHERE chat_id = %s
                                 """, (referrer_chat_id,))
-                                send(referrer_chat_id, "ðŸ’Ž Ù…Ø¨Ø±ÙˆÙƒ! ÙØªØ­Øª Elite Ù…Ø¬Ø§Ù†Ù‹Ø§ Ø¨Ø³Ø¨Ø¨ Ù†Ø¸Ø§Ù… Ø§Ù„Ø£ÙÙ„ÙŠÙŠØª.")
+                                send(referrer_chat_id, "💎 مبروك! فتحت Elite مجانًا بسبب نظام الأفلييت.")
 
-                        send(referrer_chat_id, f"""ðŸ’¸ ØªÙ… Ø¥Ø¶Ø§ÙØ© Ø¹Ù…ÙˆÙ„Ø© Ø¬Ø¯ÙŠØ¯Ø©
+                        send(referrer_chat_id, f"""💸 تم إضافة عمولة جديدة
 
-ðŸ‘¤ Ù…Ø³ØªØ®Ø¯Ù… Ø¬Ø¯ÙŠØ¯ Ø§Ø´ØªØ±Ùƒ Ù…Ù† Ø®Ù„Ø§Ù„Ùƒ
-ðŸ“¦ Ø§Ù„Ø®Ø·Ø©: {plan.upper()}
-ðŸ’° Ø§Ù„Ø¹Ù…ÙˆÙ„Ø©: {commission_amount}$ ({int(commission_percent * 100)}%)
+👤 مستخدم جديد اشترك من خلالك
+📦 الخطة: {plan.upper()}
+💰 العمولة: {commission_amount}$ ({int(commission_percent * 100)}%)
 
-ðŸ“Œ Ø§Ù„Ø±ØµÙŠØ¯ ÙŠÙ‚Ø¯Ø± ÙŠØªØ³Ø­Ø¨ Ù…Ù† Ø§Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯
+📌 الرصيد يقدر يتسحب من الداشبورد
 """)
 
         conn.commit()
@@ -2809,18 +2824,18 @@ def payment_webhook():
         conn.close()
 
         if user and user[0]:
-            send(user[0], f"""ðŸ”¥ ØªÙ… ØªÙØ¹ÙŠÙ„ Ø§Ø´ØªØ±Ø§ÙƒÙƒ Ø¨Ù†Ø¬Ø§Ø­!
+            send(user[0], f"""🔥 تم تفعيل اشتراكك بنجاح!
 
-ðŸ“¦ Ø§Ù„Ø¨Ø§Ù‚Ø©: {plan.upper()}
-â³ Ø§Ù„Ø§Ù†ØªÙ‡Ø§Ø¡: {new_expiry}
+📦 الباقة: {plan.upper()}
+⏳ الانتهاء: {new_expiry}
 
-ðŸš€ Ù‡ØªÙˆØµÙ„Ùƒ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª ØªÙ„Ù‚Ø§Ø¦ÙŠ Ø§Ù„Ø¢Ù†
+🚀 هتوصلك الإشارات تلقائي الآن
 """)
 
-        log(f"âœ… Payment activated for chat_id={chat_id}, plan={plan}, payment_id={payment_id}, expiry={new_expiry}")
+        log(f"✅ Payment activated for chat_id={chat_id}, plan={plan}, payment_id={payment_id}, expiry={new_expiry}")
 
     except Exception as e:
-        log(f"âŒ Webhook Error: {e}")
+        log(f"❌ Webhook Error: {e}")
 
     return "OK"
 

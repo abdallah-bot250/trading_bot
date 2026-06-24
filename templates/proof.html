@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ØªØ¬Ø§Ø±Ø¨ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† | Nexora AI Trader</title>
+<title>تجارب المستخدمين | Nexora AI Trader</title>
 <style>
 * { box-sizing: border-box; }
 body {
@@ -143,24 +143,29 @@ h1 { font-size: 48px; line-height: 1.25; margin: 0 0 18px; }
 <meta name="theme-color" content="#20D68A">
 </head>
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <div class="navbar">
     <div class="container nav-inner">
         <a class="logo" href="/">Nexora AI Trader</a>
         <div class="nav-actions">
-            <a class="nav-btn secondary" href="/">Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</a>
-            <a class="nav-btn secondary" href="/bot-check">ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª</a>
-            <a class="nav-btn primary" href="/register">Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø¢Ù†</a>
+            <a class="nav-btn secondary" href="/">الرئيسية</a>
+            <a class="nav-btn secondary" href="/bot-check">تأكد من البوت</a>
+            <a class="nav-btn primary" href="/register">ابدأ الآن</a>
         </div>
     </div>
 </div>
 
 <section class="hero">
     <div class="container">
-        <div class="badge">Ø¥Ø«Ø¨Ø§ØªØ§Øª ÙˆÙ†ØªØ§Ø¦Ø¬ Ù…Ù† Ø§Ù„ØªØ¬Ø±Ø¨Ø©</div>
-        <h1>Ø´ÙˆÙ Ù†ØªØ§Ø¦Ø¬ Ø­Ù‚ÙŠÙ‚ÙŠØ© Ù‚Ø¨Ù„ Ù…Ø§ ØªØ´ØªØ±Ùƒ</h1>
+        <div class="badge">إثباتات ونتائج من التجربة</div>
+        <h1>شوف نتائج حقيقية قبل ما تشترك</h1>
         <p>
-            Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© ØªØ¹Ø±Ø¶ Ù„Ù‚Ø·Ø§Øª Ù†ØªØ§Ø¦Ø¬ ÙˆØµÙÙ‚Ø§Øª Ù…Ù† ØªØ¬Ø±Ø¨Ø© Ø§Ù„Ø¨ÙˆØª. Ø§Ù„Ù‡Ø¯Ù Ø¥Ù† Ø§Ù„Ø²Ø§Ø¦Ø± ÙŠØ´ÙˆÙ Ø´ÙƒÙ„ Ø§Ù„Ù†ØªØ§Ø¦Ø¬ Ø¨ÙˆØ¶ÙˆØ­ Ù‚Ø¨Ù„ Ø§Ù„Ø§Ø´ØªØ±Ø§ÙƒØŒ
-            Ù…Ø¹ Ø§Ù„ØªÙ†Ø¨ÙŠÙ‡ Ø£Ù† Ø§Ù„ØªØ¯Ø§ÙˆÙ„ ÙÙŠÙ‡ Ù…Ø®Ø§Ø·Ø±Ø© ÙˆÙ„Ø§ ØªÙˆØ¬Ø¯ Ø£Ø±Ø¨Ø§Ø­ Ù…Ø¶Ù…ÙˆÙ†Ø©.
+            هذه الصفحة تعرض لقطات نتائج وصفقات من تجربة البوت. الهدف إن الزائر يشوف شكل النتائج بوضوح قبل الاشتراك،
+            مع التنبيه أن التداول فيه مخاطرة ولا توجد أرباح مضمونة.
         </p>
     </div>
 </section>
@@ -175,7 +180,7 @@ h1 { font-size: 48px; line-height: 1.25; margin: 0 0 18px; }
                     <div>
                         <strong>{{ item.title }}</strong>
                         <br>
-                        Ø§Ø±ÙØ¹ Ø§Ù„ØµÙˆØ±Ø© Ù‡Ù†Ø§:
+                        ارفع الصورة هنا:
                         <br>
                         {{ item.image }}
                     </div>
@@ -190,14 +195,20 @@ h1 { font-size: 48px; line-height: 1.25; margin: 0 0 18px; }
     </div>
 
     <div class="trust-note">
-        Ù…Ù„Ø§Ø­Ø¸Ø© Ù…Ù‡Ù…Ø©: Ù„Ø§ ØªØ¹Ø±Ø¶ Ø£ÙŠ Ø§Ø³ÙƒØ±ÙŠÙ† ÙÙŠÙ‡ Ø¨ÙŠØ§Ù†Ø§Øª Ø®Ø§ØµØ©ØŒ Ù…ÙØ§ØªÙŠØ­ APIØŒ Ø£Ø±Ù‚Ø§Ù… Ù…Ø­Ø§ÙØ¸ØŒ Ø£Ùˆ Ø£Ø³Ù…Ø§Ø¡ Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† Ø¨Ø¯ÙˆÙ† Ø¥Ø°Ù†.
-        Ø§Ù„Ù†ØªØ§Ø¦Ø¬ Ø§Ù„Ø³Ø§Ø¨Ù‚Ø© Ù„Ø§ ØªØ¶Ù…Ù† Ø£Ø±Ø¨Ø§Ø­Ù‹Ø§ Ù…Ø³ØªÙ‚Ø¨Ù„ÙŠØ©ØŒ Ù„ÙƒÙ†Ù‡Ø§ ØªØ³Ø§Ø¹Ø¯ Ø§Ù„Ø²Ø§Ø¦Ø± ÙŠÙÙ‡Ù… Ø´ÙƒÙ„ Ø§Ù„Ø®Ø¯Ù…Ø© ÙˆØªØ¬Ø±Ø¨Ø© Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù….
+        ملاحظة مهمة: لا تعرض أي اسكرين فيه بيانات خاصة، مفاتيح API، أرقام محافظ، أو أسماء مستخدمين بدون إذن.
+        النتائج السابقة لا تضمن أرباحًا مستقبلية، لكنها تساعد الزائر يفهم شكل الخدمة وتجربة الاستخدام.
     </div>
 </main>
 
 <section class="cta">
-    <a class="btn btn-primary" href="/register">Ø§Ø¨Ø¯Ø£ Ø§Ù„ØªØ¬Ø±Ø¨Ø© Ø§Ù„Ø¢Ù†</a>
-    <a class="btn btn-secondary" href="/bot-check">ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ</a>
+    <a class="btn btn-primary" href="/register">ابدأ التجربة الآن</a>
+    <a class="btn btn-secondary" href="/bot-check">تأكد من البوت الرسمي</a>
 </section>
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
+
 </body>
 </html>

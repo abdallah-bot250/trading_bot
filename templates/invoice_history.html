@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -117,6 +117,11 @@
     </style>
 </head>
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
     <main class="wrap">
         <div class="topbar">
             <div class="brand">
@@ -169,5 +174,11 @@
             {% endif %}
         </section>
     </main>
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
+
 </body>
 </html>

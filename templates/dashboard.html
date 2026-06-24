@@ -1,5 +1,5 @@
-﻿<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -610,6 +610,11 @@ input, select {
 </head>
 
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 
 <div class="page-wrap">
 
@@ -619,59 +624,59 @@ input, select {
 {% if not is_linked %}
 <div class="notice-box notice-warning">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        âš ï¸ Ø­Ø³Ø§Ø¨Ùƒ ØºÙŠØ± Ù…Ø±Ø¨ÙˆØ· Ø¨Ø§Ù„Ø¨ÙˆØª
+        ⚠️ حسابك غير مربوط بالبوت
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #fef3c7;">
-        Ø¹Ù„Ø´Ø§Ù† ØªØ³ØªÙ„Ù… Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠØ© Ø£Ùˆ Ø§Ù„Ù…Ø¯ÙÙˆØ¹Ø© Ù„Ø§Ø²Ù… ØªÙƒÙ…Ù„ Ø®Ø·ÙˆØ© ÙˆØ§Ø­Ø¯Ø© ÙÙ‚Ø·:
+        علشان تستلم الإشارات المجانية أو المدفوعة لازم تكمل خطوة واحدة فقط:
         <br><br>
-        1ï¸âƒ£ Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª
+        1️⃣ افتح البوت
         <br>
         افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.
         <br><br>
-        â— Ø¨Ø¯ÙˆÙ† Ø§Ù„Ø®Ø·ÙˆØ© Ø¯ÙŠ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù…Ø´ Ù‡ØªÙˆØµÙ„Ùƒ
+        ❗ بدون الخطوة دي الإشارات مش هتوصلك
     </div>
 
     <a href="{{ bot_link }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       ðŸ¤– Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø¢Ù†
+       🤖 افتح البوت الآن
     </a>
 </div>
 {% else %}
 <div class="notice-box notice-success">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        âœ… Ø­Ø³Ø§Ø¨Ùƒ Ù…Ø±Ø¨ÙˆØ· Ø¨Ø§Ù„Ø¨ÙˆØª
+        ✅ حسابك مربوط بالبوت
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #dcfce7;">
-        Ù…Ù…ØªØ§Ø² â€” Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù‡ØªÙˆØµÙ„Ùƒ Ø¹Ù„Ù‰ ØªÙŠÙ„ÙŠØ¬Ø±Ø§Ù… Ø­Ø³Ø¨ Ø§Ù„Ø¨Ø§Ù‚Ø© Ø§Ù„Ø®Ø§ØµØ© Ø¨Ùƒ ÙˆØ­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚.
+        ممتاز — الإشارات هتوصلك على تيليجرام حسب الباقة الخاصة بك وحالة السوق.
         <br>
-        Ù„Ùˆ Ø§Ù„Ø¨ÙˆØª Ø´ØºØ§Ù„ ÙˆØ§Ù„ÙØ±ØµØ© Ù‚ÙˆÙŠØ©ØŒ Ù‡ØªÙˆØµÙ„Ùƒ Ù…Ø¨Ø§Ø´Ø±Ø©.
+        لو البوت شغال والفرصة قوية، هتوصلك مباشرة.
     </div>
 
     <a href="{{ bot_link }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       ðŸ’¬ Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª
+       💬 افتح البوت
     </a>
 </div>
 {% endif %}
 
-    <h1>ðŸš€ Nexora AI Trader</h1>
-    <p>Smart Trading â€¢ AI Powered â€¢ Passive Income</p>
+    <h1>🚀 Nexora AI Trader</h1>
+    <p>Smart Trading • AI Powered • Passive Income</p>
 
     <div class="status-strip">
         <div class="status-pill">
-            ðŸ“¦ Plan:
+            📦 Plan:
             <span class="status-plan">{{plan}}</span>
         </div>
 
         <div class="status-pill">
-            â³ Expiry:
+            ⏳ Expiry:
             <span class="status-expiry">{{expiry}}</span>
         </div>
 
         <div class="status-pill">
-            ðŸ¤– Bot Status:
+            🤖 Bot Status:
             {% if bot_active == 1 %}
                 <span class="status-on">Running</span>
             {% else %}
@@ -681,19 +686,19 @@ input, select {
     </div>
 
     <div class="helper-text">
-        âš ï¸ Ø§Ù„Ø¨ÙˆØª Ù„Ø§ ÙŠØ±Ø³Ù„ ØµÙÙ‚Ø§Øª Ø¹Ø´ÙˆØ§Ø¦ÙŠØ© â€” ÙŠØªÙ… Ø§Ù„Ø¥Ø±Ø³Ø§Ù„ ÙÙ‚Ø· Ø¹Ù†Ø¯ ÙˆØ¬ÙˆØ¯ ÙØ±ØµØ© ÙˆØ§Ø¶Ø­Ø© ÙˆÙ‚ÙˆÙŠØ©
+        ⚠️ البوت لا يرسل صفقات عشوائية — يتم الإرسال فقط عند وجود فرصة واضحة وقوية
     </div>
 
     <div class="quick-actions">
         <a href="/manual" style="text-decoration:none;">
             <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
-                ðŸ“˜ Ø¯Ù„ÙŠÙ„ Ø§Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…
+                📘 دليل الاستخدام
             </button>
         </a>
 
         <a href="/logout">
             <button type="button" style="background:#ef4444; color:white;">
-                ðŸšª ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø®Ø±ÙˆØ¬
+                🚪 تسجيل الخروج
             </button>
         </a>
     </div>
@@ -820,39 +825,39 @@ input, select {
 
     <!-- AFFILIATE PROGRAM -->
     <div class="glass-box" style="margin-top:30px; padding:24px; max-width:1000px; margin-left:auto; margin-right:auto;">
-        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">ðŸ’¸ Affiliate Program</h2>
-        <p style="color:#cbd5e1; margin-top:0;">Ø§ÙƒØ³Ø¨ Ù…Ù† Ù…Ø´Ø§Ø±ÙƒØ© Ø§Ù„Ø¨ÙˆØª Ù…Ø¹ ØºÙŠØ±Ùƒ â€” ÙˆÙƒÙ„ Ø§Ø´ØªØ±Ø§Ùƒ Ø¬Ø¯ÙŠØ¯ Ù…Ù† Ø±Ø§Ø¨Ø·Ùƒ ÙŠØªØ­Ø³Ø¨ Ù„Ùƒ.</p>
+        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">💸 Affiliate Program</h2>
+        <p style="color:#cbd5e1; margin-top:0;">اكسب من مشاركة البوت مع غيرك — وكل اشتراك جديد من رابطك يتحسب لك.</p>
 
-        <p>ðŸ”— <b>Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø© Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ:</b></p>
+        <p>🔗 <b>رابط الإحالة الخاص بك:</b></p>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:15px;">
             <input id="refLink" type="text" value="{{referral_link}}" readonly
                    style="width:70%; min-width:260px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
             <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">
-                ðŸ“‹ Copy
+                📋 Copy
             </button>
         </div>
 
         <div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap; margin-top:15px;">
             <div class="card mini-stat">
-                <h3>ðŸ‘¥ Referrals</h3>
+                <h3>👥 Referrals</h3>
                 <p>{{total_referrals}}</p>
             </div>
 
             <div class="card mini-stat">
-                <h3>ðŸ’° Balance</h3>
+                <h3>💰 Balance</h3>
                 <p>${{affiliate_balance}}</p>
             </div>
 
             <div class="card mini-stat">
-                <h3>ðŸ¦ Withdrawn</h3>
+                <h3>🏦 Withdrawn</h3>
                 <p>${{total_withdrawn}}</p>
             </div>
         </div>
 
         <div style="margin-top:28px;">
-            <h3 style="color:#22c55e;">ðŸ§ Ø·Ù„Ø¨ Ø³Ø­Ø¨ Ø§Ù„Ø¹Ù…ÙˆÙ„Ø©</h3>
-            <p style="color:#cbd5e1;">Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰: $25 | Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰: $300 | Ø®Ù„Ø§Ù„ 24 Ø³Ø§Ø¹Ø©</p>
+            <h3 style="color:#22c55e;">🏧 طلب سحب العمولة</h3>
+            <p style="color:#cbd5e1;">الحد الأدنى: $25 | الحد الأقصى: $300 | خلال 24 ساعة</p>
 
             <form action="/request-withdrawal" method="POST" style="max-width:500px; margin:auto;">
                 {{ csrf_field() }}
@@ -862,7 +867,7 @@ input, select {
                 <input name="amount" type="number" step="0.01" min="25" max="300" placeholder="Amount in USD"
                        style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;" required>
 
-                <button type="submit" style="background:#22c55e; color:white;">ðŸ’¸ Request Withdrawal</button>
+                <button type="submit" style="background:#22c55e; color:white;">💸 Request Withdrawal</button>
             </form>
         </div>
     </div>
@@ -871,7 +876,7 @@ input, select {
     <div style="margin-top:22px; text-align:center;">
         <a href="/admin">
             <button style="background:#f59e0b; color:white; width:auto; padding:12px 25px;">
-                ðŸ‘‘ Admin Dashboard
+                👑 Admin Dashboard
             </button>
         </a>
 
@@ -887,29 +892,29 @@ input, select {
 
 <!-- BOT TOGGLE -->
 <div class="box" style="max-width:850px; margin-top:25px;">
-    <h2 style="margin-top:0;">ðŸ¤– Bot Control</h2>
+    <h2 style="margin-top:0;">🤖 Bot Control</h2>
     <p style="color:#cbd5e1; line-height:1.8;">
-        ØªØ­ÙƒÙ… ÙÙŠ Ø§Ø³ØªÙ‚Ø¨Ø§Ù„ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø£Ùˆ ØªÙ†ÙÙŠØ° Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ Ø­Ø³Ø¨ Ø¨Ø§Ù‚ØªÙƒ ÙˆØ¥Ø¹Ø¯Ø§Ø¯Ø§ØªÙƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ©.
+        تحكم في استقبال الإشارات أو تنفيذ التداول التلقائي حسب باقتك وإعداداتك الحالية.
     </p>
 
     <form action="/toggle-bot" method="POST" style="text-align:center; margin-top:15px;">
         {{ csrf_field() }}
         {% if bot_active == 1 %}
             <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
-                ðŸ”´ Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„Ø¨ÙˆØª
+                🔴 إيقاف البوت
             </button>
         {% else %}
             <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
-                ðŸŸ¢ ØªØ´ØºÙŠÙ„ Ø§Ù„Ø¨ÙˆØª
+                🟢 تشغيل البوت
             </button>
         {% endif %}
     </form>
 
     <div class="helper-text">
         {% if bot_active == 1 %}
-            ðŸŸ¢ Ø§Ù„Ø¨ÙˆØª ÙŠØ¹Ù…Ù„ Ø§Ù„Ø¢Ù† ÙˆØ³ÙŠØ±Ø³Ù„ Ø§Ù„ØµÙÙ‚Ø§Øª ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ø­Ø³Ø¨ Ø­Ø§Ù„Ø© Ø§Ù„Ø³ÙˆÙ‚ ÙˆØ§Ù„Ø®Ø·Ø© Ø§Ù„Ø®Ø§ØµØ© Ø¨Ùƒ
+            🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
         {% else %}
-            ðŸ”´ Ø§Ù„Ø¨ÙˆØª Ù…ØªÙˆÙ‚Ù Ø­Ø§Ù„ÙŠÙ‹Ø§ â€” Ù‚Ù… Ø¨ØªØ´ØºÙŠÙ„Ù‡ Ù„ØªÙ„Ù‚ÙŠ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ø£Ùˆ ØªÙ†ÙÙŠØ° Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠ
+            🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
         {% endif %}
     </div>
 </div>
@@ -958,22 +963,22 @@ input, select {
 <div id="vip-settings" class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
     <h2 style="color:#facc15; margin-top:0;">Elite Auto Trading Settings</h2>
     <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
-        Ø§Ø±Ø¨Ø· Ø§Ù„Ù€ API Ø§Ù„Ø®Ø§Øµ Ø¨Ùƒ ÙˆØ§Ø¶Ø¨Ø· Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ¯Ø§ÙˆÙ„ â€” Ø§Ù„Ø¨ÙˆØª Ù„Ø§ ÙŠØ³ØªØ·ÙŠØ¹ Ø§Ù„Ø³Ø­Ø¨ Ø£Ùˆ Ø§Ù„Ø¥ÙŠØ¯Ø§Ø¹ØŒ ÙÙ‚Ø· ØªÙ†ÙÙŠØ° Ø§Ù„ØµÙÙ‚Ø§Øª.
+        اربط الـ API الخاص بك واضبط إعدادات التداول — البوت لا يستطيع السحب أو الإيداع، فقط تنفيذ الصفقات.
     </p>
 
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
         {{ csrf_field() }}
-        <h3>ðŸ” Ø±Ø¨Ø· API</h3>
+        <h3>🔐 ربط API</h3>
         <input name="api_key" type="text" placeholder="Binance API Key"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
         <input name="api_secret" type="text" placeholder="Binance API Secret"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
-        <button type="submit" style="background:#38bdf8; color:white;">ðŸ’¾ Save API</button>
+        <button type="submit" style="background:#38bdf8; color:white;">💾 Save API</button>
     </form>
 
     <form action="/save-settings" method="POST">
         {{ csrf_field() }}
-        <h3>ðŸ“Š Ø¥Ø¹Ø¯Ø§Ø¯Ø§Øª Ø§Ù„ØªØ¯Ø§ÙˆÙ„</h3>
+        <h3>📊 إعدادات التداول</h3>
 
         <input name="trade_amount" type="number" step="0.01" min="1" value="{{trade_amount}}"
                placeholder="Trade Amount"
@@ -1002,7 +1007,7 @@ input, select {
             </label>
         </div>
 
-        <button type="submit" style="background:#22c55e; color:white;">âœ… Save Trading Settings</button>
+        <button type="submit" style="background:#22c55e; color:white;">✅ Save Trading Settings</button>
     </form>
 </div>
 {% endif %}
@@ -1034,10 +1039,10 @@ input, select {
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="basic">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
-            <button class="pay">ðŸ’³ Subscribe</button>
+            <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/basic"><button class="manual">ðŸ’¸ Manual</button></a>
+        <a href="/manual-payment/basic"><button class="manual">💸 Manual</button></a>
     </div>
 
     <div class="card {% if plan == 'pro' %}current-plan{% endif %}">
@@ -1060,10 +1065,10 @@ input, select {
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="pro">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
-            <button class="pay">ðŸ’³ Subscribe</button>
+            <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/pro"><button class="manual">ðŸ’¸ Manual</button></a>
+        <a href="/manual-payment/pro"><button class="manual">💸 Manual</button></a>
     </div>
 
     <div class="card vip {% if plan == 'vip' %}current-plan{% endif %}">
@@ -1088,21 +1093,21 @@ input, select {
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="vip">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
-            <button class="pay">ðŸ’³ Subscribe</button>
+            <button class="pay">💳 Subscribe</button>
         </form>
 
-        <a href="/manual-payment/vip"><button class="manual">ðŸ’¸ Manual</button></a>
+        <a href="/manual-payment/vip"><button class="manual">💸 Manual</button></a>
     </div>
 
 </div>
 
 <!-- PROFIT -->
 <div class="box">
-    <h2>ðŸ’° Profit</h2>
-    <p style="color:#38bdf8; margin-top:0;">ðŸ“Š Ø§Ù„Ù†ØªØ§Ø¦Ø¬ Ø§Ù„Ù…Ø¹Ø±ÙˆØ¶Ø© Ù‡Ù†Ø§ Ù…Ø±ØªØ¨Ø·Ø© Ø¨Ø­Ø³Ø§Ø¨Ùƒ ÙˆØ¨ÙŠØ§Ù†Ø§Øª ØªØ¯Ø§ÙˆÙ„Ùƒ Ø§Ù„Ø­Ø§Ù„ÙŠØ©</p>
+    <h2>💰 Profit</h2>
+    <p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
 
     <p id="profit">{{profit}} USDT</p>
-    <p>ðŸ“Š Trades: {{trades}}</p>
+    <p>📊 Trades: {{trades}}</p>
 
     <div class="progress">
         <div class="progress-bar" id="bar"></div>
@@ -1111,8 +1116,8 @@ input, select {
 
 <!-- CHART -->
 <div class="box">
-    <h2>ðŸ“Š Performance</h2>
-    <p style="color:#cbd5e1;">Ø£Ø¯Ø§Ø¡ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­ ÙŠØªÙ… ØªØ­Ø¯ÙŠØ«Ù‡ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§</p>
+    <h2>📊 Performance</h2>
+    <p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
     <canvas id="chart"></canvas>
 </div>
 
@@ -1125,7 +1130,7 @@ function copyRef() {
     copyText.select();
     copyText.setSelectionRange(0, 99999);
     navigator.clipboard.writeText(copyText.value);
-    alert("âœ… ØªÙ… Ù†Ø³Ø® Ø±Ø§Ø¨Ø· Ø§Ù„Ø¥Ø­Ø§Ù„Ø©");
+    alert("✅ تم نسخ رابط الإحالة");
 }
 
 let chart = new Chart(document.getElementById("chart"), {
@@ -1235,6 +1240,12 @@ setInterval(async ()=>{
  }
 }, 3000);
 </script>
+
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
 
 </body>
 </html>

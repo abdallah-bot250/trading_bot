@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ | Nexora AI Trader</title>
+<title>تسجيل الدخول | Nexora AI Trader</title>
 
 <style>
 * {
@@ -56,7 +56,7 @@ body {
     line-height: 1.9;
 }
 
-/* ðŸ”¥ FLASH */
+/* 🔥 FLASH */
 .flash {
     padding: 12px 14px;
     border-radius: 14px;
@@ -78,7 +78,7 @@ body {
     border: 1px solid rgba(34, 197, 94, 0.25);
 }
 
-/* ðŸ¤– TELEGRAM NOTE */
+/* 🤖 TELEGRAM NOTE */
 .telegram-note {
     background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(34,197,94,0.08));
     border: 1px solid rgba(56,189,248,0.20);
@@ -185,14 +185,19 @@ input:focus {
 </head>
 
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
 
 <div class="login-box">
 
-<div class="logo">ðŸ” <span>Nexora AI Trader</span></div>
+<div class="logo">🔐 <span>Nexora AI Trader</span></div>
 
 <div class="subtitle">
-Ø³Ø¬Ù‘Ù„ Ø¯Ø®ÙˆÙ„Ùƒ Ù„Ù„ØªØ­ÙƒÙ… ÙÙŠ Ø­Ø³Ø§Ø¨ÙƒØŒ ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø§Ø´ØªØ±Ø§ÙƒØŒ ÙˆØ±Ø¨Ø· Ø§Ù„Ø¨ÙˆØª Ø¨Ø³Ù‡ÙˆÙ„Ø©.
+سجّل دخولك للتحكم في حسابك، تفعيل الاشتراك، وربط البوت بسهولة.
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -206,18 +211,18 @@ input:focus {
 {% endwith %}
 
 <div class="telegram-note">
-âš ï¸ Ù„Ùˆ Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª Ù…Ø´ Ø¨ØªÙˆØµÙ„Ùƒ:
+⚠️ لو الإشارات مش بتوصلك:
 <br>
-Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ ÙˆØ§ØªØ¨Ø¹ Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø¨Ø· Ø§Ù„Ø¢Ù…Ù†ØŒ Ø«Ù… Ø³Ø¬Ù„ Ø¯Ø®ÙˆÙ„Ùƒ Ù…Ù† Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ù„ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨.
+افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد الحساب.
 
 <br>
 
 <a href="{{ bot_link }}" target="_blank">
-ÙØªØ­ Ø§Ù„Ø¨ÙˆØª
+فتح البوت
 </a>
 <br>
 <a href="/bot-check">
-ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ
+تأكد من البوت الرسمي
 </a>
 </div>
 
@@ -225,16 +230,16 @@ input:focus {
 {{ csrf_field() }}
 
 <div class="form-group">
-<label for="email">Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ</label>
+<label for="email">البريد الإلكتروني</label>
 <input type="email" id="email" name="email" placeholder="example@email.com" required>
 </div>
 
 <div class="form-group">
-<label for="password">ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±</label>
-<input type="password" id="password" name="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required>
+<label for="password">كلمة المرور</label>
+<input type="password" id="password" name="password" placeholder="••••••••" required>
 </div>
 
-<button type="submit" class="btn">ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„</button>
+<button type="submit" class="btn">تسجيل الدخول</button>
 
 </form>
 
@@ -243,16 +248,22 @@ input:focus {
 </div>
 
 <div class="links">
-Ù„ÙŠØ³ Ù„Ø¯ÙŠÙƒ Ø­Ø³Ø§Ø¨ØŸ <a href="/register">Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨</a>
+ليس لديك حساب؟ <a href="/register">إنشاء حساب</a>
 </div>
 
 <div class="note">
-Ø¨Ø¹Ø¯ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„:
+بعد تسجيل الدخول:
 <br>
-ÙŠÙ…ÙƒÙ†Ùƒ ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø·Ø© ÙˆØ±Ø¨Ø· Ø­Ø³Ø§Ø¨ Ø§Ù„ØªØ¯Ø§ÙˆÙ„ ÙˆØ§Ù„ØªØ­ÙƒÙ… Ø§Ù„ÙƒØ§Ù…Ù„ ÙÙŠ Ø§Ù„Ø¨ÙˆØª.
+يمكنك تفعيل الخطة وربط حساب التداول والتحكم الكامل في البوت.
 </div>
 
 </div>
+
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
 
 </body>
 </html>

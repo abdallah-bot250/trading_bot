@@ -1,4 +1,4 @@
-﻿from flask import request, render_template, redirect, session, url_for, jsonify, flash
+from flask import request, render_template, redirect, session, url_for, jsonify, flash
 from markupsafe import Markup
 import psycopg2
 import psycopg2.extras
@@ -328,7 +328,7 @@ def telegram_referral_link(referral_code):
 
 def send(chat_id, text):
     if not TOKEN or not chat_id:
-        log(f"Ã¢Å¡Â Ã¯Â¸Â TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
+        log(f"⚠️ TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
         return False
     
 
@@ -344,7 +344,7 @@ def send(chat_id, text):
                     "inline_keyboard": [
                         [
                             {
-                                "text": "Ã°Å¸Å’Â Ã˜Â§Ã™â€žÃ˜Â¯Ã˜Â®Ã™Ë†Ã™â€ž Ã˜Â¥Ã™â€žÃ™â€° Ã˜Â­Ã˜Â³Ã˜Â§Ã˜Â¨Ã™Æ’",
+                                "text": "🌐 الدخول إلى حسابك",
                                 "url": user_link
                             }
                         ]
@@ -355,18 +355,18 @@ def send(chat_id, text):
         )
 
         if r.status_code != 200:
-            log(f"Ã¢ÂÅ’ Telegram send failed: {r.text}")
+            log(f"❌ Telegram send failed: {r.text}")
             return False
 
         data = r.json()
         if not data.get("ok"):
-            log(f"Ã¢ÂÅ’ Telegram API error: {data}")
+            log(f"❌ Telegram API error: {data}")
             return False
 
         return True
 
     except Exception as e:
-        log(f"Ã¢ÂÅ’ Telegram Error: {e}")
+        log(f"❌ Telegram Error: {e}")
         return False
 
     
@@ -433,11 +433,11 @@ def can_receive_signals(user):
         if user[22] == 1 or user[23] == 1:
             return True
 
-        # trial: Ã˜Â£Ã™Ë†Ã™â€ž Ã˜Â¥Ã˜Â´Ã˜Â§Ã˜Â±Ã˜ÂªÃ™Å Ã™â€  Ã™ÂÃ™â€šÃ˜Â·
+        # trial: أول إشارتين فقط
         if plan == "trial":
             return trades < 2
 
-        # Ã˜Â¨Ã˜Â§Ã™â€šÃ˜Â§Ã˜Âª Ã™â€¦Ã˜Â¯Ã™ÂÃ™Ë†Ã˜Â¹Ã˜Â©
+        # باقات مدفوعة
         if user[4] != 1:
             return False
 
@@ -615,7 +615,7 @@ def init_db():
         )
         """)
 
-        # Ã˜Â¥Ã˜Â¶Ã˜Â§Ã™ÂÃ˜Â§Ã˜Âª Ã˜Â£Ã™â€¦Ã˜Â§Ã™â€  Ã™â€žÃ™Ë† Ã˜Â§Ã™â€žÃ˜Â¬Ã˜Â¯Ã™Ë†Ã™â€ž Ã™â€šÃ˜Â¯Ã™Å Ã™â€¦
+        # إضافات أمان لو الجدول قديم
 
         try:
             c.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
@@ -679,14 +679,14 @@ def init_db():
         c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS raw_payload TEXT")
         c.execute("ALTER TABLE affiliate_commissions ADD COLUMN IF NOT EXISTS payment_id TEXT")
 
-        # Ã˜ÂªÃ™â€ Ã˜Â¸Ã™Å Ã™Â chat_id
+        # تنظيف chat_id
         c.execute("""
             UPDATE users
             SET chat_id = TRIM(chat_id)
             WHERE chat_id IS NOT NULL
         """)
 
-        # Ã™â€¦Ã™â€ Ã˜Â¹ Ã˜ÂªÃ™Æ’Ã˜Â±Ã˜Â§Ã˜Â± chat_id
+        # منع تكرار chat_id
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
@@ -760,9 +760,9 @@ def init_db():
 
 
         except Exception as idx_err:
-            log(f"Ã¢Å¡Â Ã¯Â¸Â chat_id unique index warning: {idx_err}")
+            log(f"⚠️ chat_id unique index warning: {idx_err}")
 
-        # Ã™ÂÃ˜Â¹Ã™â€˜Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â£Ã˜Â¯Ã™â€¦Ã™â€  Ã˜ÂªÃ™â€žÃ™â€šÃ˜Â§Ã˜Â¦Ã™Å Ã™â€¹Ã˜Â§ Ã™â€žÃ™Ë† Ã˜Â§Ã™â€žÃ˜Â¥Ã™Å Ã™â€¦Ã™Å Ã™â€ž Ã™â€¦Ã™Ë†Ã˜Â¬Ã™Ë†Ã˜Â¯
+        # فعّل الأدمن تلقائيًا لو الإيميل موجود
         if ADMIN_EMAIL:
             c.execute("""
                 UPDATE users
@@ -772,9 +772,9 @@ def init_db():
 
         conn.commit()
         conn.close()
-        log("Ã¢Å“â€¦ DB initialized successfully")
+        log("✅ DB initialized successfully")
 
     except Exception as e:
-        log(f"Ã¢ÂÅ’ init_db error: {e}")
+        log(f"❌ init_db error: {e}")
 
 

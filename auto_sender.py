@@ -1,4 +1,4 @@
-﻿import time
+import time
 import requests
 from datetime import datetime, timedelta
 from market_analyzer import get_top_free_signals, generate_signal, SYMBOLS
@@ -21,10 +21,10 @@ PAIR_COOLDOWN_MINUTES = 45
 GLOBAL_LOOP_SLEEP = 80
 MIN_CONFIDENCE = 66
 DUPLICATE_WINDOW_SECONDS = 300
-NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 Ø³Ø§Ø¹Ø§Øª
+NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
-MAX_ENTRY_DEVIATION_PERCENT = 0.75    # ÙƒØ§Ù† 0.35 ÙˆØ®Ø§Ù†Ù‚ Ø§Ù„Ø¯Ù†ÙŠØ§
+MAX_ENTRY_DEVIATION_PERCENT = 0.75    # كان 0.35 وخانق الدنيا
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -117,11 +117,11 @@ def send_channel(text):
             log(f"Channel API Error: {data}")
             return False
 
-        log("ðŸ“¢ Signal sent to channel successfully")
+        log("📢 Signal sent to channel successfully")
         return True
 
     except Exception as e:
-        log(f"âŒ Channel send error: {e}")
+        log(f"❌ Channel send error: {e}")
         return False    
 
 # ================= SYMBOL HELPERS =================
@@ -154,7 +154,7 @@ def get_live_price(symbol):
     try:
         rest_symbol = normalize_symbol_for_rest(symbol)
 
-        # Ø§Ù„Ø£ÙˆÙ„ Binance
+        # الأول Binance
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"
         r = requests.get(url, timeout=10).json()
         if "price" in r:
@@ -584,19 +584,19 @@ def pair_in_cooldown(chat_id, pair):
 
 def can_trade_user(chat_id, trade_amount):
     if get_daily_trade_count(chat_id) >= MAX_DAILY_TRADES:
-        return False, "ðŸš« ØªÙ… Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù„Ù„ØµÙÙ‚Ø§Øª Ø§Ù„ÙŠÙˆÙ…"
+        return False, "🚫 تم الوصول للحد الأقصى للصفقات اليوم"
 
     if get_open_trade_count(chat_id) >= MAX_OPEN_TRADES_PER_USER:
-        return False, "ðŸš« Ù„Ø¯ÙŠÙƒ Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ù‚ØµÙ‰ Ù…Ù† Ø§Ù„ØµÙÙ‚Ø§Øª Ø§Ù„Ù…ÙØªÙˆØ­Ø©"
+        return False, "🚫 لديك الحد الأقصى من الصفقات المفتوحة"
 
     if get_consecutive_losses(chat_id) >= MAX_CONSECUTIVE_LOSSES:
-        return False, "ðŸš« ØªÙ… Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø¨Ø³Ø¨Ø¨ Ø®Ø³Ø§Ø¦Ø± Ù…ØªØªØ§Ù„ÙŠØ©"
+        return False, "🚫 تم إيقاف التداول بسبب خسائر متتالية"
 
     daily_loss = get_daily_loss(chat_id)
     max_loss_allowed = (trade_amount or 10) * (MAX_DAILY_LOSS_PERCENT / 100)
 
     if daily_loss <= -abs(max_loss_allowed):
-        return False, "ðŸš« ØªÙ… Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªØ¯Ø§ÙˆÙ„ Ø¨Ø³Ø¨Ø¨ Ø§Ù„ÙˆØµÙˆÙ„ Ù„Ø­Ø¯ Ø§Ù„Ø®Ø³Ø§Ø±Ø© Ø§Ù„ÙŠÙˆÙ…ÙŠØ©"
+        return False, "🚫 تم إيقاف التداول بسبب الوصول لحد الخسارة اليومية"
 
     return True, "OK"
 
@@ -664,25 +664,25 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         usdt_balance = float(usdt_balance or 0)
 
         if usdt_balance < 10:
-            return None, "Ø±ØµÙŠØ¯ USDT Ø£Ù‚Ù„ Ù…Ù† Ø§Ù„Ø­Ø¯ Ø§Ù„Ø£Ø¯Ù†Ù‰"
+            return None, "رصيد USDT أقل من الحد الأدنى"
 
         side = "buy" if signal["direction"] == "LONG" else "sell"
         entry = float(signal["entry"])
         tp = float(signal["tp"])
         sl = float(signal["sl"])
 
-        # ØªØ£ÙƒÙŠØ¯ Ø­ÙŠ Ù‚Ø¨Ù„ Ø§Ù„ØªÙ†ÙÙŠØ°
+        # تأكيد حي قبل التنفيذ
         live_price = get_live_price(raw_symbol)
         if live_price is None:
-            return None, "ÙØ´Ù„ Ø³Ø­Ø¨ Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ"
+            return None, "فشل سحب السعر الحالي"
 
         deviation = abs(live_price - entry) / entry * 100
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
-            return None, f"ØªÙ… Ø±ÙØ¶ Ø§Ù„ØµÙÙ‚Ø©: Ø§Ù„Ø³Ø¹Ø± ØªØ­Ø±Ùƒ ({round(deviation,4)}%)"
+            return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
 
         amount = calculate_amount(usdt_balance, risk_percent, entry)
         if amount <= 0:
-            return None, "ÙƒÙ…ÙŠØ© Ø§Ù„ØµÙÙ‚Ø© ØºÙŠØ± ØµØ§Ù„Ø­Ø©"
+            return None, "كمية الصفقة غير صالحة"
 
         valid_amount, reason = validate_symbol_amount(exchange, symbol, amount)
         if not valid_amount:
@@ -691,7 +691,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         order = exchange.create_market_order(symbol, side, amount)
 
         if not order or not order.get("id"):
-            return None, "ÙØ´Ù„ ØªÙ†ÙÙŠØ° Ø£Ù…Ø± Ø§Ù„Ø³ÙˆÙ‚"
+            return None, "فشل تنفيذ أمر السوق"
 
         protection_ok, protection_msg = place_protection_orders(
             exchange, symbol, side, amount, tp, sl, trade_type
@@ -784,11 +784,11 @@ def update_closed_trades():
                     conn.commit()
                     write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)}")
 
-                    send(chat_id, f"""ðŸ“Œ ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„ØµÙÙ‚Ø©
+                    send(chat_id, f"""📌 تم إغلاق الصفقة
 
-ðŸ”¥ {pair}
-ðŸ“Š Direction: {direction}
-ðŸ’° PNL: {round(pnl, 4)} USDT
+🔥 {pair}
+📊 Direction: {direction}
+💰 PNL: {round(pnl, 4)} USDT
 """)
 
             except Exception as e:
@@ -857,12 +857,12 @@ def is_recent_memory_duplicate(signal):
         key = f"{pair}_{direction}"
         now = datetime.now()
 
-        # Ù…Ø¯Ø© Ù…Ù†Ø¹ Ø§Ù„ØªÙƒØ±Ø§Ø± Ø­Ø³Ø¨ Ø§Ù„ÙØ±ÙŠÙ…
-        cooldown_seconds = 3600  # Ø³Ø§Ø¹Ø© ÙƒØ§Ù…Ù„Ø© Ø§ÙØªØ±Ø§Ø¶ÙŠ
+        # مدة منع التكرار حسب الفريم
+        cooldown_seconds = 3600  # ساعة كاملة افتراضي
         if timeframe == "15m":
-            cooldown_seconds = 7200   # Ø³Ø§Ø¹ØªÙŠÙ†
+            cooldown_seconds = 7200   # ساعتين
         elif timeframe == "1h":
-            cooldown_seconds = 14400  # 4 Ø³Ø§Ø¹Ø§Øª
+            cooldown_seconds = 14400  # 4 ساعات
 
         if key in RECENT_SIGNAL_MEMORY:
             old_entry, old_time = RECENT_SIGNAL_MEMORY[key]
@@ -871,7 +871,7 @@ def is_recent_memory_duplicate(signal):
             if age < cooldown_seconds:
                 diff = abs(entry - old_entry) / old_entry * 100
 
-                # Ù„Ùˆ Ù†ÙØ³ Ø§Ù„Ø¹Ù…Ù„Ø© ÙˆÙ†ÙØ³ Ø§Ù„Ø§ØªØ¬Ø§Ù‡ ÙˆØ§Ù„Ø³Ø¹Ø± Ù‚Ø±ÙŠØ¨ = ØªØ¬Ø§Ù‡Ù„
+                # لو نفس العملة ونفس الاتجاه والسعر قريب = تجاهل
                 if diff < 0.8:
                     return True
 
@@ -883,13 +883,13 @@ def is_recent_memory_duplicate(signal):
 # ================= SIGNAL FETCHER =================
 def get_monster_signals():
     """
-    Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠ: Ø£ÙØ¶Ù„ ØµÙÙ‚ØªÙŠÙ†
-    Ø§Ù„Ù…Ø¯ÙÙˆØ¹: Ù†Ø¶ÙŠÙ paid 15m Ø§Ù„Ù‚ÙˆÙŠØ©
+    المجاني: أفضل صفقتين
+    المدفوع: نضيف paid 15m القوية
     """
     try:
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
 
-        # Ù„Ùˆ Ø§Ù„Ø³ÙˆÙ‚ Ø¶Ø¹ÙŠÙ Ø¬Ø¯Ù‹Ø§ØŒ Ù†Ø­Ø§ÙˆÙ„ Ù†Ø¬ÙŠØ¨ ØµÙÙ‚Ø© paid ÙˆØ§Ø­Ø¯Ø© Ù‚ÙˆÙŠØ© ÙÙ‚Ø·
+        # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
         if not signals:
             fallback_candidates = []
 
@@ -945,7 +945,7 @@ def get_monster_signals():
                 log(f"Recent memory duplicate skipped: {s.get('pair')}")
                 continue
 
-            # ðŸ”¥ Ultra mode
+            # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
                     if float(s.get("confidence", 0)) < 75:
@@ -957,7 +957,7 @@ def get_monster_signals():
             final_signals.append(s)
             record_trade_type(s.get("type"))
 
-        # ØªØ±ØªÙŠØ¨ Ø§Ù„Ø£Ù‚ÙˆÙ‰ Ø£ÙˆÙ„Ù‹Ø§
+        # ترتيب الأقوى أولًا
         final_signals = sorted(
             final_signals,
             key=lambda x: (
@@ -1018,15 +1018,15 @@ def notify_users_no_signal(users):
                 if not should_notify_no_signal(chat_id):
                     continue
 
-                msg = """âš ï¸ ØªÙ†Ø¨ÙŠÙ‡ Ù…Ù‡Ù… Ù…Ù† Ø§Ù„Ø¨ÙˆØª
+                msg = """⚠️ تنبيه مهم من البوت
 
-Ù†Ø¸Ø±Ù‹Ø§ Ù„Ø³ÙˆØ¡ ØªÙ‚Ù„Ø¨Ø§Øª Ø§Ù„Ø£Ø³ÙˆØ§Ù‚ Ø§Ù„Ø­Ø§Ù„ÙŠØ© ÙˆØ¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ ÙØ±ØµØ© ÙˆØ§Ø¶Ø­Ø© ÙˆÙ‚ÙˆÙŠØ© Ø¨Ù…Ø§ ÙŠÙƒÙÙŠ Ø§Ù„Ø¢Ù†ØŒ
-Ù„Ù† ÙŠØªÙ… Ø¥Ø±Ø³Ø§Ù„ ØµÙÙ‚Ø§Øª ÙÙŠ Ø§Ù„ÙˆÙ‚Øª Ø§Ù„Ø­Ø§Ù„ÙŠ.
+نظرًا لسوء تقلبات الأسواق الحالية وعدم وجود فرصة واضحة وقوية بما يكفي الآن،
+لن يتم إرسال صفقات في الوقت الحالي.
 
-ðŸ“Œ Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø± Ø­ØªÙ‰ ØªØ¸Ù‡Ø± ÙØ±ØµØ© Ù…Ù†Ø§Ø³Ø¨Ø©
-ÙˆØ°Ù„Ùƒ Ø­ÙØ§Ø¸Ù‹Ø§ Ø¹Ù„Ù‰ Ø³Ù„Ø§Ù…Ø© Ø£Ù…ÙˆØ§Ù„ÙƒÙ… ÙˆØªÙ‚Ù„ÙŠÙ„ Ø§Ø­ØªÙ…Ø§Ù„ÙŠØ© Ø§Ù„Ø®Ø³Ø§Ø±Ø©.
+📌 الرجاء الانتظار حتى تظهر فرصة مناسبة
+وذلك حفاظًا على سلامة أموالكم وتقليل احتمالية الخسارة.
 
-ðŸ¤– Ø§Ù„Ø¨ÙˆØª Ù„Ù† ÙŠØ±Ø³Ù„ ØµÙÙ‚Ø© Ø¥Ù„Ø§ Ø¥Ø°Ø§ ÙƒØ§Ù†Øª Ù…Ø·Ø§Ø¨Ù‚Ø© Ù„Ù„Ø´Ø±ÙˆØ· Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ø¨Ø£ÙØ¶Ù„ Ø´ÙƒÙ„ Ù…Ù…ÙƒÙ†."""
+🤖 البوت لن يرسل صفقة إلا إذا كانت مطابقة للشروط المطلوبة بأفضل شكل ممكن."""
 
                 sent_ok = send(chat_id, msg)
 
@@ -1046,7 +1046,7 @@ def notify_users_no_signal(users):
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
-    log("ðŸš€ BOT STARTED - MONSTER MODE")
+    log("🚀 BOT STARTED - MONSTER MODE")
     log("Entering main bot loop...")
 
     while True:
@@ -1106,9 +1106,9 @@ def run():
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
-                    # Ø¨Ø¯Ù„ Ù…Ø§ Ù†Ø±ÙØ¶Ù‡Ø§ Ù†Ù‡Ø§Ø¦ÙŠÙ‹Ø§ØŒ Ù†Ø¯ÙŠÙ‡Ø§ ÙØ±ØµØ© Ø·Ø§Ù„Ù…Ø§ Ù„Ø³Ù‡ ÙƒÙˆÙŠØ³Ø©
+                    # بدل ما نرفضها نهائيًا، نديها فرصة طالما لسه كويسة
                     if not signal_is_fresh(signal):
-                        log(f"âš ï¸ price moved slightly but sending anyway: {signal['pair']}")
+                        log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
 
                     # ===== SEND SIGNAL =====
                     msg = format_signal(signal)
@@ -1152,14 +1152,14 @@ def run():
 
                             if order:
                                 log(f"Auto trade executed for {chat_id} -> {signal['pair']}")
-                                send(chat_id, f"""ðŸ¤– ØªÙ… ØªÙ†ÙÙŠØ° ØµÙÙ‚Ø© VIP ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§
+                                send(chat_id, f"""🤖 تم تنفيذ صفقة VIP تلقائيًا
 
-ðŸ”¥ {signal['pair']}
-ðŸ“ˆ Ø§Ù„Ø§ØªØ¬Ø§Ù‡: {signal['direction']}
-ðŸ’° Ø§Ù„Ø¯Ø®ÙˆÙ„: {signal['entry']}
-ðŸŽ¯ Ø§Ù„Ù‡Ø¯Ù: {signal['tp']}
-ðŸ›‘ Ø§Ù„ÙˆÙ‚Ù: {signal['sl']}
-ðŸ“¦ Ø§Ù„Ù†ÙˆØ¹: {signal.get('type', 'FUTURES')}
+🔥 {signal['pair']}
+📈 الاتجاه: {signal['direction']}
+💰 الدخول: {signal['entry']}
+🎯 الهدف: {signal['tp']}
+🛑 الوقف: {signal['sl']}
+📦 النوع: {signal.get('type', 'FUTURES')}
 """)
                             else:
                                 log(f"Auto trade rejected for {chat_id}: {result_msg}")

@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ | Nexora AI Trader</title>
+<title>الدفع اليدوي | Nexora AI Trader</title>
 <style>
 * { box-sizing: border-box; }
 body {
@@ -110,13 +110,18 @@ h1 { margin: 0 0 12px; font-size: 36px; }
 <meta name="theme-color" content="#20D68A">
 </head>
 <body>
+<div class="language-switcher" aria-label="Language switcher">
+    <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
+</div>
+
 <nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
 <main class="wrap">
     <section class="card">
         <div class="badge">Manual Payment</div>
-        <h1>Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ù„Ø®Ø·Ø© {{ plan_label }}</h1>
+        <h1>الدفع اليدوي لخطة {{ plan_label }}</h1>
         <p class="sub">
-            Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© Ù…Ø®ØµØµØ© Ù„Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ. Ø¨Ø¹Ø¯ Ø§Ù„ØªØ­ÙˆÙŠÙ„ØŒ Ø£Ø±Ø³Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹ Ù„Ù„Ø£Ø¯Ù…Ù† ÙˆØ³ÙŠØªÙ… ØªÙØ¹ÙŠÙ„ Ø®Ø·ØªÙƒ ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ….
+            هذه الصفحة مخصصة للدفع اليدوي. بعد التحويل، أرسل إثبات الدفع للأدمن وسيتم تفعيل خطتك يدويًا من لوحة التحكم.
         </p>
 
         <div class="plan-box">
@@ -125,32 +130,38 @@ h1 { margin: 0 0 12px; font-size: 36px; }
         </div>
 
         <div class="wallet-box">
-            <div class="wallet-label">Ø§Ù„Ø´Ø¨ÙƒØ©</div>
+            <div class="wallet-label">الشبكة</div>
             <div class="wallet-value">{{ manual_network }}</div>
             <br>
-            <div class="wallet-label">Ø¹Ù†ÙˆØ§Ù† Ø§Ù„Ù…Ø­ÙØ¸Ø©</div>
+            <div class="wallet-label">عنوان المحفظة</div>
             <div class="wallet-value">{{ manual_wallet }}</div>
         </div>
 
         <div class="steps">
             <ol>
-                <li>Ø­ÙˆÙ‘Ù„ Ù…Ø¨Ù„Øº Ø§Ù„Ø®Ø·Ø© Ø¨Ø§Ù„Ø¶Ø¨Ø· Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø¨ÙƒØ© Ø§Ù„Ù…ÙˆØ¶Ø­Ø©.</li>
-                <li>Ø§Ø­ØªÙØ¸ Ø¨ØµÙˆØ±Ø© Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ù…Ø¹Ø§Ù…Ù„Ø©.</li>
-                <li>Ø£Ø±Ø³Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹ Ù„Ù„Ø¯Ø¹Ù… Ù…Ø¹ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ø§Ù„Ù…Ø³Ø¬Ù„ ÙÙŠ Ø§Ù„Ù…ÙˆÙ‚Ø¹.</li>
-                <li>Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©ØŒ ÙŠØªÙ… ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø·Ø© ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø£Ø¯Ù…Ù†.</li>
+                <li>حوّل مبلغ الخطة بالضبط على الشبكة الموضحة.</li>
+                <li>احتفظ بصورة التحويل أو رقم المعاملة.</li>
+                <li>أرسل إثبات الدفع للدعم مع الإيميل المسجل في الموقع.</li>
+                <li>بعد المراجعة، يتم تفعيل الخطة يدويًا من لوحة الأدمن.</li>
             </ol>
         </div>
 
         <div class="warning">
-            Ù„Ø§ ØªØ±Ø³Ù„ Ø£ÙŠ Ù…ÙØ§ØªÙŠØ­ API Ø£Ùˆ ÙƒÙ„Ù…Ø§Øª Ù…Ø±ÙˆØ± ÙÙŠ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹. Ø§Ù„ØªÙØ¹ÙŠÙ„ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ù„Ø§ ÙŠØªÙ… ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ØŒ ÙˆÙŠØ­ØªØ§Ø¬ Ù…Ø±Ø§Ø¬Ø¹Ø© Ù…Ù† Ø§Ù„Ø£Ø¯Ù…Ù†.
+            لا ترسل أي مفاتيح API أو كلمات مرور في إثبات الدفع. التفعيل اليدوي لا يتم تلقائيًا، ويحتاج مراجعة من الأدمن.
         </div>
 
         <div class="actions">
-            <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹</a>
-            <a class="btn btn-secondary" href="/dashboard">Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯</a>
-            <a class="btn btn-secondary" href="/bot-check">ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ</a>
+            <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">إرسال إثبات الدفع</a>
+            <a class="btn btn-secondary" href="/dashboard">العودة للداشبورد</a>
+            <a class="btn btn-secondary" href="/bot-check">تأكد من البوت الرسمي</a>
         </div>
     </section>
 </main>
+
+<script>
+window.NEXORA_LANG = "{{ current_lang }}";
+</script>
+<script src="/static/i18n.js"></script>
+
 </body>
 </html>
