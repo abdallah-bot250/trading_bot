@@ -1181,6 +1181,8 @@ def manual_payment(plan):
         plan=plan,
         plan_label=PLAN_LABELS[plan],
         price=PLAN_PRICES[plan],
+        original_price=PLAN_ORIGINAL_PRICES.get(plan, PLAN_PRICES[plan]),
+        discount_percent=int(round((1 - (PLAN_PRICES[plan] / max(PLAN_ORIGINAL_PRICES.get(plan, PLAN_PRICES[plan]), 1))) * 100)),
         support_link=os.environ.get("SUPPORT_LINK", BOT_LINK),
         manual_wallet=os.environ.get("MANUAL_PAYMENT_WALLET", "TSiwGKuanfvay6RMem1zJ8QqcDFQKTXVF1"),
         manual_network=os.environ.get("MANUAL_PAYMENT_NETWORK", "USDT TRC20 / Binance"),
