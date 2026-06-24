@@ -1465,6 +1465,14 @@ def invoice_history():
 # ================= OWNER FREE UPGRADE =================
 @dashboard_bp.route("/owner-free-upgrade", methods=["POST"])
 def owner_free_upgrade():
+    """Legacy owner-only shortcut kept disabled by default.
+
+    The commercial product no longer sells or exposes lifetime subscriptions.
+    Enable only for internal maintenance by setting ENABLE_OWNER_FREE_UPGRADE=true.
+    """
+    if os.environ.get("ENABLE_OWNER_FREE_UPGRADE", "false").lower() not in ["1", "true", "yes", "on"]:
+        return "Owner upgrade is disabled", 403
+
     if not session.get("user"):
         return redirect("/login")
 
@@ -1474,23 +1482,19 @@ def owner_free_upgrade():
     try:
         conn = db()
         c = conn.cursor()
-
         c.execute("""
             UPDATE users
             SET is_paid = 1,
                 plan = 'vip',
-                expiry = 'lifetime',
+                expiry = %s,
                 is_admin = 1,
-                lifetime_owner = 1,
+                lifetime_owner = 0,
                 bot_active = 1
             WHERE LOWER(email) = %s
-        """, (session["user"].lower(),))
-
+        """, ((datetime.utcnow() + timedelta(days=365)).strftime("%Y-%m-%d"), session["user"].lower()))
         conn.commit()
         conn.close()
-
-        return "✅ تم تفعيل Elite مدى الحياة لحسابك"
-
+        return "✅ تم تفعيل Elite سنة واحدة للحساب الإداري"
     except Exception as e:
         log(f"owner_free_upgrade error: {e}")
         return f"❌ Error: {str(e)}"
@@ -1591,13 +1595,8 @@ def is_current_admin():
             return False
 
         is_admin_flag = int(row[0] or 0)
-        lifetime_owner_flag = int(row[1] or 0)
-
         # لازم يكون الأدمن الحقيقي من الداتابيز + يطابق ADMIN_EMAIL
-        return (
-            is_admin_flag == 1
-            and is_admin_email(email)
-        ) or lifetime_owner_flag == 1
+        return is_admin_flag == 1 and is_admin_email(email)
 
     except Exception as e:
         log(f"is_current_admin error: {e}")
@@ -2318,9 +2317,8 @@ def webhook():
                     ORDER BY 
                         CASE 
                             WHEN is_admin = 1 THEN 1
-                            WHEN lifetime_owner = 1 THEN 2
-                            WHEN is_paid = 1 THEN 3
-                            ELSE 4
+                            WHEN is_paid = 1 THEN 2
+                            ELSE 3
                         END,
                         id DESC
                     LIMIT 1

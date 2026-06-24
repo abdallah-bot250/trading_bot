@@ -81,7 +81,7 @@ def subscription_message(user):
     spot_enabled = int(user.get("spot_enabled", 1) if user.get("spot_enabled") is not None else 1)
     futures_enabled = int(user.get("futures_enabled", 1) if user.get("futures_enabled") is not None else 1)
 
-    status = "Active" if is_paid == 1 or str(expiry).lower() == "lifetime" else "Trial / inactive"
+    status = "Active" if is_paid == 1 else "Trial / inactive"
     bot_status = "Running" if bot_active == 1 else "Stopped"
 
     return f"""Subscription Status

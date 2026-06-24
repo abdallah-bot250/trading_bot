@@ -17,7 +17,7 @@ try:
     c.execute("""
         ALTER TABLE users
         ADD CONSTRAINT ck_users_plan
-        CHECK (plan IN ('trial', 'basic', 'pro', 'vip', 'pro_2y', 'lifetime'))
+        CHECK (plan IN ('trial', 'basic', 'pro', 'vip', 'pro_2y'))
         NOT VALID
     """)
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_auto_trade_enabled INTEGER DEFAULT 0")

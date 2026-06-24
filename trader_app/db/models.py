@@ -31,7 +31,7 @@ class TimestampMixin:
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("plan IN ('trial', 'basic', 'pro', 'vip')", name="ck_users_plan"),
+        CheckConstraint("plan IN ('trial', 'basic', 'pro', 'vip', 'pro_2y')", name="ck_users_plan"),
         CheckConstraint("trade_type IN ('spot', 'futures')", name="ck_users_trade_type"),
         CheckConstraint("spot_enabled IN (0, 1) AND futures_enabled IN (0, 1)", name="ck_users_type_flags"),
         Index("ix_users_email", "email"),

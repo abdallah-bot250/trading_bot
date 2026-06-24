@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "binance").strip().lower()
+ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
+SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -299,6 +302,30 @@ def init_trade_tables():
     )
     """)
 
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS signal_log (
+        id SERIAL PRIMARY KEY,
+        chat_id TEXT,
+        plan TEXT,
+        pair TEXT,
+        direction TEXT,
+        signal_type TEXT,
+        entry REAL,
+        tp REAL,
+        sl REAL,
+        confidence REAL,
+        status TEXT DEFAULT 'SENT',
+        outcome TEXT,
+        current_price REAL,
+        pnl_percent REAL DEFAULT 0,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        closed_at TIMESTAMP
+    )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_chat_sent ON signal_log (chat_id, sent_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_status_sent ON signal_log (status, sent_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_pair_status ON signal_log (pair, status)")
+
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_enabled INTEGER DEFAULT 1")
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS futures_enabled INTEGER DEFAULT 1")
 
@@ -318,6 +345,39 @@ def write_log(chat_id, level, message):
         conn.close()
     except Exception as e:
         log(f"DB log insert failed: {e}")
+
+
+def record_sent_signal(chat_id, plan, signal):
+    if not ENABLE_SIGNAL_TRACKING:
+        return None
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+        INSERT INTO signal_log (
+            chat_id, plan, pair, direction, signal_type, entry, tp, sl, confidence, status
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SENT')
+        RETURNING id
+        """, (
+            str(chat_id),
+            str(plan or "trial"),
+            signal.get("pair"),
+            signal.get("direction"),
+            signal.get("type", "FUTURES"),
+            float(signal.get("entry", 0)),
+            float(signal.get("tp", 0)),
+            float(signal.get("sl", 0)),
+            float(signal.get("confidence", 0)),
+        ))
+        row = c.fetchone()
+        conn.commit()
+        conn.close()
+        signal_id = row[0] if row else None
+        log(f"Signal tracked id={signal_id} chat_id={chat_id} pair={signal.get('pair')}")
+        return signal_id
+    except Exception as e:
+        log(f"record_sent_signal error: {e}")
+        return None
 
 # ================= USERS =================
 def get_users():
@@ -464,16 +524,43 @@ def signal_allowed_for_plan(plan, signal):
         return False
 # ================= EXCHANGE =================
 def get_exchange(api_key, api_secret, trade_type):
+    """Return the configured exchange for real auto-trading.
+
+    Market-data fallback is handled in market_analyzer.py. Real order execution
+    uses user API keys, so the exchange must match the user account. By default
+    we keep Binance for backwards compatibility. Set AUTO_TRADE_EXCHANGE to
+    binanceus or kucoin when selling/deploying for users whose keys are there.
+    Futures execution is only enabled on exchanges where the current code has
+    explicit support.
+    """
+    exchange_name = AUTO_TRADE_EXCHANGE or "binance"
+    trade_type = str(trade_type or "spot").lower()
     default_type = "future" if trade_type == "futures" else "spot"
 
-    exchange = ccxt.binance({
+    if exchange_name == "kucoin":
+        if trade_type == "futures":
+            raise Exception("KuCoin auto futures execution is not enabled in this build. Use spot or set AUTO_TRADE_EXCHANGE=binance.")
+        return ccxt.kucoin({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+        })
+
+    if exchange_name in ["binanceus", "binance_us"]:
+        if trade_type == "futures":
+            raise Exception("Binance US does not support futures execution in this build. Use spot or set AUTO_TRADE_EXCHANGE=binance.")
+        return ccxt.binanceus({
+            "apiKey": api_key,
+            "secret": api_secret,
+            "enableRateLimit": True,
+        })
+
+    return ccxt.binance({
         "apiKey": api_key,
         "secret": api_secret,
         "enableRateLimit": True,
         "options": {"defaultType": default_type}
     })
-
-    return exchange
 
 # ================= SAFETY HELPERS =================
 def today_bounds():
@@ -735,6 +822,72 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
 
     except Exception as e:
         return None, f"Trade Error: {e}"
+
+# ================= SIGNAL TRACKING MONITOR =================
+def update_signal_outcomes():
+    if not ENABLE_SIGNAL_TRACKING:
+        return
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+        SELECT id, chat_id, pair, direction, entry, tp, sl
+        FROM signal_log
+        WHERE status = 'SENT'
+        ORDER BY sent_at ASC
+        LIMIT 200
+        """)
+        open_signals = c.fetchall()
+
+        for row in open_signals:
+            signal_id, chat_id, pair, direction, entry, tp, sl = row
+            try:
+                current_price = get_live_price(pair)
+                if current_price is None:
+                    continue
+
+                outcome = None
+                pnl_percent = 0
+                if direction == "LONG":
+                    if current_price >= tp:
+                        outcome = "TP_HIT"
+                        pnl_percent = ((tp - entry) / entry) * 100
+                    elif current_price <= sl:
+                        outcome = "SL_HIT"
+                        pnl_percent = ((sl - entry) / entry) * 100
+                elif direction == "SHORT":
+                    if current_price <= tp:
+                        outcome = "TP_HIT"
+                        pnl_percent = ((entry - tp) / entry) * 100
+                    elif current_price >= sl:
+                        outcome = "SL_HIT"
+                        pnl_percent = ((entry - sl) / entry) * 100
+
+                if outcome:
+                    c.execute("""
+                    UPDATE signal_log
+                    SET status = 'CLOSED', outcome = %s, current_price = %s, pnl_percent = %s, closed_at = NOW()
+                    WHERE id = %s
+                    """, (outcome, float(current_price), round(float(pnl_percent), 4), signal_id))
+                    conn.commit()
+
+                    if SIGNAL_TRACKING_NOTIFY:
+                        icon = "✅" if outcome == "TP_HIT" else "🛑"
+                        send(chat_id, f"""{icon} Signal Update
+
+🔥 {pair}
+📊 Direction: {direction}
+📌 Result: {outcome.replace('_', ' ')}
+💰 Current Price: {round(float(current_price), 6)}
+📈 PnL: {round(float(pnl_percent), 2)}%
+""")
+                    write_log(chat_id, "INFO", f"Signal outcome {pair} {outcome} pnl={round(float(pnl_percent), 4)}%")
+            except Exception as inner_e:
+                log(f"Signal tracking row error id={signal_id}: {inner_e}")
+
+        conn.close()
+    except Exception as e:
+        log(f"update_signal_outcomes error: {e}")
 
 # ================= TRADE MONITOR =================
 def update_closed_trades():
@@ -1064,7 +1217,8 @@ def run():
             log("Loop tick...")
 
             update_closed_trades()
-            log("Closed trades updated")
+            update_signal_outcomes()
+            log("Closed trades and signal outcomes updated")
 
             signals = get_monster_signals()
             log(f"Signals fetched: {signals}")
@@ -1127,6 +1281,7 @@ def run():
                     if sent_ok:
                         log(f"Signal sent to {chat_id} -> {signal['pair']}")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
+                        record_sent_signal(chat_id, plan, signal)
 
                         if plan == "trial":
                             increment_trade(chat_id)

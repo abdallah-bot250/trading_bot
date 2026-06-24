@@ -108,6 +108,32 @@ def protect_post_requests():
 
     return None
 
+
+def redirect_legacy_domains():
+    """Redirect public Railway URLs to the configured custom domain.
+
+    This keeps Telegram, browser bookmarks, and old Railway links on the
+    official brand domain without changing internal Railway health checks.
+    """
+    try:
+        canonical = os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or BASE_URL
+        canonical = str(canonical).strip().rstrip("/")
+        if not canonical or canonical in ["https://yourdomain.com", "http://localhost"]:
+            return None
+
+        host = (request.host or "").lower()
+        canonical_host = canonical.replace("https://", "").replace("http://", "").split("/")[0].lower()
+        legacy_hosts = [h.strip().lower() for h in os.environ.get("LEGACY_DOMAINS", "web-production-c6a34.up.railway.app").split(",") if h.strip()]
+
+        if host in legacy_hosts and host != canonical_host:
+            target = canonical + request.full_path
+            if target.endswith("?"):
+                target = target[:-1]
+            return redirect(target, code=301)
+    except Exception as exc:
+        log(f"legacy redirect skipped: {exc}")
+    return None
+
 # ================= HELPERS =================
 logger = logging.getLogger("ai_crypto_trader")
 
@@ -316,9 +342,8 @@ def ensure_user_has_referral_code(chat_id, conn):
         ORDER BY 
             CASE 
                 WHEN is_admin = 1 THEN 1
-                WHEN lifetime_owner = 1 THEN 2
-                WHEN is_paid = 1 THEN 3
-                ELSE 4
+                WHEN is_paid = 1 THEN 2
+                ELSE 3
             END,
             id DESC
         LIMIT 1
@@ -448,7 +473,7 @@ def can_receive_signals(user):
         trades = user[7]
         expiry = user[8]
 
-        if user[22] == 1 or user[23] == 1:
+        if user[22] == 1:
             return True
 
         # trial: أول إشارتين فقط
@@ -461,9 +486,6 @@ def can_receive_signals(user):
 
         if not expiry:
             return False
-
-        if str(expiry).lower() == "lifetime":
-            return True
 
         expiry_date = datetime.strptime(str(expiry), "%Y-%m-%d")
         return datetime.now() <= expiry_date

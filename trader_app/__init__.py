@@ -6,7 +6,7 @@ from .extensions import limiter
 from .i18n import register_i18n
 from .logging_config import configure_logging
 from .services.performance import apply_performance_headers, init_compression
-from .services.runtime import enforce_session_timeout, inject_csrf_helpers, init_db, protect_post_requests
+from .services.runtime import enforce_session_timeout, inject_csrf_helpers, init_db, protect_post_requests, redirect_legacy_domains
 from .blueprints import (
     admin_bp,
     auth_bp,
@@ -42,6 +42,7 @@ def create_app(config_class=Config):
 
     app.context_processor(inject_csrf_helpers)
     register_i18n(app)
+    app.before_request(redirect_legacy_domains)
     app.before_request(enforce_session_timeout)
     app.before_request(protect_post_requests)
     app.after_request(apply_performance_headers)
