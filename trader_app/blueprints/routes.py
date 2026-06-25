@@ -1616,6 +1616,23 @@ def is_current_admin():
     if not email:
         return False
 
+    if is_admin_email(email):
+        try:
+            conn = db()
+            c = conn.cursor()
+            c.execute("""
+                UPDATE users
+                SET is_admin = 1,
+                    lifetime_owner = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE LOWER(email) = %s
+            """, (email,))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            log(f"admin self-heal skipped: {e}")
+        return True
+
     try:
         conn = db()
         c = conn.cursor()
@@ -2098,6 +2115,27 @@ def mark_withdrawal_paid():
 
 # ================= TELEGRAM WEBHOOK =================
 def get_telegram_user(c, chat_id):
+    admin_telegram_id = os.environ.get("ADMIN_TELEGRAM_ID", "").strip()
+    if admin_telegram_id and str(chat_id).strip() == admin_telegram_id and ADMIN_EMAIL:
+        return {
+            "id": None,
+            "email": ADMIN_EMAIL,
+            "trades": 0,
+            "is_paid": 1,
+            "referral_code": None,
+            "plan": "vip",
+            "expiry": None,
+            "is_admin": 1,
+            "lifetime_owner": 0,
+            "bot_active": 1,
+            "profit": 0,
+            "affiliate_balance": 0,
+            "total_referrals": 0,
+            "spot_enabled": 1,
+            "futures_enabled": 1,
+            "chat_id": str(chat_id).strip(),
+        }
+
     c.execute("""
         SELECT id, email, trades, is_paid, referral_code, plan, expiry,
                is_admin, lifetime_owner, bot_active, profit,
@@ -2136,12 +2174,16 @@ def get_telegram_user(c, chat_id):
         "total_referrals": row[12],
         "spot_enabled": row[13],
         "futures_enabled": row[14],
+        "chat_id": str(chat_id).strip(),
     }
 
 
 def is_telegram_admin_user(user):
     if not user:
         return False
+    admin_telegram_id = os.environ.get("ADMIN_TELEGRAM_ID", "").strip()
+    if admin_telegram_id and str(user.get("chat_id") or "").strip() == admin_telegram_id:
+        return True
     return (
         int(user.get("is_admin") or 0) == 1
         and is_admin_email(user.get("email"))
