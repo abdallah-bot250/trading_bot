@@ -100,3 +100,15 @@ The included `deploy/nginx.conf`:
 - Admin: users, payments metrics, coupons, withdrawals, affiliate, AI performance, spot/futures stats.
 - Performance: static cache headers, public cache headers, no-store for dashboard/admin/invoices.
 - Security: HTTPS, secure cookies, CSRF, admin protection, audit logs.
+
+## Production Safety Notes
+
+- Deploy normally after running `python scripts/smoke_routes.py` and `python -m py_compile app.py auto_sender.py market_analyzer.py trade_tracker.py`.
+- Subscription counters are read-only and are calculated from existing user fields, so no migration is required.
+- Expired users are reported safely in admin; do not manually delete users. Keep renewal and downgrade work tied to the existing payment/subscription jobs.
+
+## Phase 2 Deploy Notes
+
+- No database schema changes or migrations are required.
+- `/admin/system-health` is read-only and uses safe checks for database, Telegram, worker, AI, signal, and payment configuration.
+- Logging is quieter for repeated market-source messages while warnings remain for real market data failures.

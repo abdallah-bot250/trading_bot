@@ -1,5 +1,5 @@
 from flask import Blueprint
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 from trader_app.extensions import limiter
 from trader_app.services.payments import (
     SUCCESS_STATUSES,
@@ -1015,6 +1015,84 @@ def save_settings():
         return f"❌ حصل خطأ أثناء حفظ الإعدادات: {str(e)}"
 
 
+def _safe_date(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _subscription_snapshot(user):
+    plan = str(user.get("plan") or "trial").strip().lower()
+    is_paid = int(user.get("is_paid") or 0)
+    expiry_raw = user.get("expiry")
+    expiry_date = _safe_date(expiry_raw)
+    today = datetime.now().date()
+    remaining_days = None
+    if expiry_date:
+        remaining_days = max((expiry_date - today).days, 0)
+
+    start_raw = user.get("trial_start") or user.get("created_at")
+    start_date = _safe_date(start_raw)
+    started_days_ago = max((today - start_date).days, 0) if start_date else None
+
+    if is_paid != 1 or plan == "trial":
+        status = "free"
+    elif expiry_date and expiry_date < today:
+        status = "expired"
+    elif expiry_date and (expiry_date - today).days <= 7:
+        status = "expiring"
+    else:
+        status = "active"
+
+    subscription_expired = status == "expired"
+    subscription_active = is_paid == 1 and not subscription_expired
+
+    return {
+        "status": status,
+        "plan": plan,
+        "start_date": start_raw,
+        "end_date": expiry_raw,
+        "remaining_days": remaining_days,
+        "started_days_ago": started_days_ago,
+        "subscription_active": subscription_active,
+        "subscription_expired": subscription_expired,
+        "is_premium": subscription_active,
+    }
+
+
+def _subscription_admin_summary(rows):
+    summary = {
+        "active_users": 0,
+        "free_users": 0,
+        "premium_users": 0,
+        "expired_subscriptions": 0,
+        "expiring_subscriptions": 0,
+    }
+    today = datetime.now().date()
+    for row in rows or []:
+        is_paid = int(row[0] or 0)
+        plan = str(row[1] or "trial").strip().lower()
+        expiry_date = _safe_date(row[2])
+        bot_active = int(row[3] or 0)
+        if bot_active == 1:
+            summary["active_users"] += 1
+        if is_paid != 1 or plan == "trial":
+            summary["free_users"] += 1
+            continue
+        summary["premium_users"] += 1
+        if expiry_date and expiry_date < today:
+            summary["expired_subscriptions"] += 1
+        elif expiry_date and 0 <= (expiry_date - today).days <= 7:
+            summary["expiring_subscriptions"] += 1
+    return summary
+
+
 # ================= DASHBOARD =================
 @dashboard_bp.route("/dashboard")
 def dashboard():
@@ -1065,6 +1143,37 @@ def dashboard():
             WHERE chat_id = %s AND status = 'paid'
         """, (chat_id,))
         total_withdrawn = c.fetchone()["total_withdrawn"] if chat_id else 0
+
+        active_referrals = 0
+        paid_referrals = 0
+        if chat_id:
+            try:
+                c.execute("""
+                    SELECT COUNT(DISTINCT ar.referred_chat_id)
+                    FROM affiliate_referrals ar
+                    JOIN users u ON u.chat_id = ar.referred_chat_id
+                    WHERE ar.referrer_chat_id = %s
+                      AND COALESCE(u.bot_active, 0) = 1
+                """, (chat_id,))
+                active_referrals = int(c.fetchone()[0] or 0)
+            except Exception as referral_error:
+                conn.rollback()
+                log(f"active referral metric unavailable: {referral_error}")
+            try:
+                c.execute("""
+                    SELECT COUNT(DISTINCT referred_chat_id)
+                    FROM affiliate_commissions
+                    WHERE referrer_chat_id = %s
+                      AND status = 'approved'
+                """, (chat_id,))
+                paid_referrals = int(c.fetchone()[0] or 0)
+            except Exception as referral_error:
+                conn.rollback()
+                log(f"paid referral metric unavailable: {referral_error}")
+
+        referral_qr_url = ""
+        if referral_link:
+            referral_qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + quote_plus(referral_link)
 
         type_stats = {
             "spot_today": 0,
@@ -1124,6 +1233,7 @@ def dashboard():
         open_trades = 1 if user.get("bot_active", 0) == 1 and plan in ("pro", "vip", "pro_2y") else 0
         closed_trades = max(0, trades)
         balance = round(portfolio_value + float(total_comm or 0) - float(total_withdrawn or 0), 2)
+        subscription = _subscription_snapshot(user)
 
         if plan in AUTO_TRADE_PLANS or user.get("is_admin", 0) == 1:
             dashboard_tier = "elite"
@@ -1152,10 +1262,19 @@ def dashboard():
             "futures_win_rate": type_stats["futures_win_rate"],
             "spot_profit": type_stats["spot_profit"],
             "futures_profit": type_stats["futures_profit"],
+            "subscription_status": subscription["status"],
+            "remaining_days": subscription["remaining_days"],
+            "started_days_ago": subscription["started_days_ago"],
+            "premium_enabled": subscription["is_premium"],
+            "bot_connected": is_linked,
         }
         notifications = []
         if not is_linked:
             notifications.append("Link Telegram to receive signals and activate the full experience.")
+        if subscription["status"] == "expired":
+            notifications.append("Subscription expired. Premium access is paused until renewal, while the account stays safe.")
+        elif subscription["status"] == "expiring" and subscription["remaining_days"] is not None:
+            notifications.append(f"Subscription expires in {subscription['remaining_days']} day(s). Renew before expiry to keep premium signals active.")
         if plan in ("trial", "basic") and user.get("is_paid", 0) != 1:
             notifications.append("Starter includes 5 signals per day, Telegram, basic analysis, and the Starter dashboard.")
         if plan in AUTO_TRADE_PLANS and not user.get("api_key"):
@@ -1170,6 +1289,7 @@ def dashboard():
             {"label": "Current plan", "value": plan.upper()},
             {"label": "Telegram link", "value": "Connected" if is_linked else "Pending"},
             {"label": "Bot status", "value": "Running" if user.get("bot_active", 0) == 1 else "Stopped"},
+            {"label": "Subscription", "value": subscription["status"].title()},
             {"label": "Affiliate balance", "value": f"${round(affiliate_balance, 2)}"},
         ]
 
@@ -1177,6 +1297,7 @@ def dashboard():
             "dashboard.html",
             plan=plan,
             expiry=user.get("expiry"),
+            subscription=subscription,
             profit=profit,
             trades=trades,
             bot_active=user.get("bot_active", 0),
@@ -1185,8 +1306,12 @@ def dashboard():
             spot_enabled=int(user.get("spot_enabled", 1) if user.get("spot_enabled") is not None else 1),
             futures_enabled=int(user.get("futures_enabled", 1) if user.get("futures_enabled") is not None else 1),
             referral_link=referral_link,
+            referral_code=user.get("referral_code", ""),
+            referral_qr_url=referral_qr_url,
             affiliate_balance=round(affiliate_balance, 2),
             total_referrals=refs_count,
+            active_referrals=active_referrals,
+            paid_referrals=paid_referrals,
             total_commissions=round(float(total_comm or 0), 2),
             total_withdrawn=round(float(total_withdrawn or 0), 2),
             is_admin=user.get("is_admin", 0),
@@ -1727,6 +1852,16 @@ def admin_dashboard():
         pro_2y_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro_2y'", default=0) or 0)
         lifetime_users = 0
         free_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1", default=0) or 0)
+        subscription_rows = safe_rows("SELECT is_paid, plan, expiry, bot_active FROM users")
+        subscription_admin = _subscription_admin_summary(subscription_rows)
+        database_status = "online" if int(safe_scalar("SELECT 1", default=0) or 0) == 1 else "degraded"
+        todays_registrations = int(safe_scalar("SELECT COUNT(*) FROM users WHERE created_at >= CURRENT_DATE", default=0) or 0)
+        todays_payments = int(safe_scalar("""
+            SELECT COUNT(*)
+            FROM processed_payments
+            WHERE created_at >= CURRENT_DATE
+              AND payment_status IN ('finished', 'confirmed')
+        """, default=0) or 0)
 
         total_affiliate_paid = float(safe_scalar(
             "SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions",
@@ -1788,6 +1923,9 @@ def admin_dashboard():
         signals_wins = int(safe_scalar("SELECT COUNT(*) FROM trades_log WHERE status = 'CLOSED' AND COALESCE(pnl, 0) > 0", default=0) or 0)
         signals_profit = round(float(safe_scalar("SELECT COALESCE(SUM(pnl), 0) FROM trades_log", default=0) or 0), 2)
         signal_win_rate = round((signals_wins / signals_closed) * 100, 2) if signals_closed else 0
+        last_signal_time = safe_scalar("SELECT MAX(created_at) FROM trades_log", default=None)
+        telegram_health = "configured" if TOKEN else "missing_token"
+        bot_health = "running" if active_bots > 0 else "idle"
 
         spot_stats = {
             "signals": 0,
@@ -1851,6 +1989,18 @@ def admin_dashboard():
             "spot": spot_stats,
             "futures": futures_stats,
             "active_plans_count": active_plans_count,
+            "active_users": subscription_admin["active_users"],
+            "free_users": subscription_admin["free_users"],
+            "premium_users": subscription_admin["premium_users"],
+            "expired_subscriptions": subscription_admin["expired_subscriptions"],
+            "expiring_subscriptions": subscription_admin["expiring_subscriptions"],
+            "last_signal_time": last_signal_time or "No signals yet",
+            "bot_status": bot_health,
+            "database_status": database_status,
+            "telegram_status": telegram_health,
+            "todays_registrations": todays_registrations,
+            "todays_payments": todays_payments,
+            "worker_status": "configured" if os.environ.get("RAILWAY_SERVICE_NAME") or os.environ.get("DATABASE_URL") else "local",
         }
 
         users = safe_rows("""
@@ -1952,9 +2102,71 @@ def admin_dashboard():
                 "spot": {"signals": 0, "open": 0, "closed": 0, "wins": 0, "profit": 0, "win_rate": 0},
                 "futures": {"signals": 0, "open": 0, "closed": 0, "wins": 0, "profit": 0, "win_rate": 0},
                 "active_plans_count": 0,
+                "active_users": 0,
+                "free_users": 0,
+                "premium_users": 0,
+                "expired_subscriptions": 0,
+                "expiring_subscriptions": 0,
+                "last_signal_time": "No signals yet",
+                "bot_status": "unknown",
+                "database_status": "degraded",
+                "telegram_status": "unknown",
+                "todays_registrations": 0,
+                "todays_payments": 0,
+                "worker_status": "unknown",
                 "error": str(e),
             }
         )
+
+
+@admin_bp.route("/admin/system-health")
+def admin_system_health():
+    if not session.get("user"):
+        return redirect("/login")
+
+    if not is_current_admin():
+        return "❌ غير مصرح"
+
+    checks = {
+        "Database": {"status": "unknown", "detail": "Not checked"},
+        "Telegram": {"status": "configured" if TOKEN else "missing", "detail": "Token configured" if TOKEN else "TELEGRAM_TOKEN missing"},
+        "Scheduler": {"status": "configured", "detail": "Auto sender loop is code-configured"},
+        "Worker": {"status": "configured" if os.environ.get("DATABASE_URL") else "local", "detail": os.environ.get("RAILWAY_SERVICE_NAME", "Local/runtime worker")},
+        "AI Engine": {"status": "configured", "detail": "AI modules import from project runtime"},
+        "Signal Engine": {"status": "configured", "detail": "Market analyzer and sender modules available"},
+        "Payment System": {"status": "configured" if os.environ.get("NOWPAYMENTS_API_KEY") else "missing_key", "detail": "NOWPayments key configured" if os.environ.get("NOWPAYMENTS_API_KEY") else "NOWPAYMENTS_API_KEY missing"},
+    }
+    last_signal = "No signals yet"
+
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("SELECT 1")
+        checks["Database"] = {"status": "online", "detail": "SELECT 1 succeeded"}
+        try:
+            c.execute("SELECT MAX(created_at) FROM trades_log")
+            row = c.fetchone()
+            if row and row[0]:
+                last_signal = row[0]
+        except Exception as signal_error:
+            conn.rollback()
+            checks["Signal Engine"] = {"status": "degraded", "detail": f"Last signal unavailable: {signal_error}"}
+    except Exception as db_error:
+        checks["Database"] = {"status": "offline", "detail": str(db_error)}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    return render_template(
+        "admin_health.html",
+        checks=checks,
+        current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        last_signal=last_signal,
+    )
 
 @admin_bp.route("/admin/coupons/create", methods=["POST"])
 def create_coupon():

@@ -23,3 +23,14 @@ Python, Flask, Gunicorn, PostgreSQL, SQLAlchemy, Alembic, Telegram Bot API, NOWP
 
 ## Known Limitations
 This is not a profit guarantee. Auto trading requires user API keys and careful testing. Manual payments require admin approval.
+
+## Buyer-Facing Operational Features
+
+- Subscription visibility: plan status, expiry, and remaining days are shown to users.
+- Admin intelligence: active users, free/premium split, expiring/expired subscriptions, revenue, signals, and service status.
+- Referral visibility: referral link, referral code, copy action, total referrals, commission total, balance, and withdrawals.
+
+## Phase 2 Buyer Notes
+
+- Includes subscription lifecycle visibility, referral QR/code dashboard, richer admin health cards, and read-only system diagnostics.
+- These additions are backward compatible and do not alter authentication, Telegram linking, payments, trading, or AI logic.

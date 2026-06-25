@@ -1,3 +1,4 @@
+import time
 import requests
 import pandas as pd
 import numpy as np
@@ -23,6 +24,17 @@ TIMEFRAMES = ["5m", "15m", "1h"]
 REQUEST_TIMEOUT = 12
 MIN_SCORE_TO_TRADE = 5
 MIN_CONFIDENCE = 70
+MARKET_SOURCE_LOG_CACHE = {}
+MARKET_SOURCE_LOG_TTL_SECONDS = 900
+
+
+def log_market_source_once(source, symbol, timeframe):
+    now = time.time()
+    key = (source, symbol, timeframe)
+    last_seen = MARKET_SOURCE_LOG_CACHE.get(key, 0)
+    if now - last_seen >= MARKET_SOURCE_LOG_TTL_SECONDS:
+        MARKET_SOURCE_LOG_CACHE[key] = now
+        print(f"MARKET_DATA_SOURCE {source} symbol={symbol} timeframe={timeframe}")
 
 # منع تكرار نفس الأزواج دايمًا
 LAST_USED_PAIRS = []
@@ -173,7 +185,7 @@ def get_market_data(symbol, interval="5m", limit=250):
             df = parse_binance_klines_to_df(data)
             if df is not None and not df.empty:
                 if source_name == "BINANCE_US" and binance_global_451:
-                    print(f"MARKET_DATA_SOURCE BINANCE_US symbol={symbol} timeframe={interval}")
+                    log_market_source_once("BINANCE_US", symbol, interval)
                 return df
 
             failures.append(f"{source_name}=empty")

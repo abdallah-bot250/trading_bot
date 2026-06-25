@@ -479,3 +479,20 @@ web: gunicorn -c gunicorn.conf.py app:app
 worker: python auto_sender.py
 
 For full deployment details, read DEPLOYMENT.md.
+
+## Production Value Improvements
+
+- Dashboard now shows subscription status and remaining paid days using the existing `plan`, `is_paid`, and `expiry` fields.
+- Admin overview includes active, free, premium, expiring, and expired subscription counters without requiring schema changes.
+- Admin system status now exposes bot, database, Telegram configuration, total signals, and last signal time using safe optional queries.
+- Referral dashboard keeps the existing referral flow and adds clearer referral code and commission visibility.
+
+No database schema, migrations, payment flow, Telegram token, route names, or authentication flow are changed by these improvements.
+
+## Production Phase 2 Additions
+
+- Subscription lifecycle helpers now expose `subscription_active`, `subscription_expired`, `remaining_days`, and `started_days_ago` using existing user fields only.
+- Dashboard shows plan, start date, expiry, remaining days, status, premium state, and Telegram bot connection state.
+- Referral dashboard shows link, code, QR code, total referrals, active referrals, paid referrals, commissions, balance, and withdrawals.
+- Admin includes today registrations/payments, expired/expiring subscriptions, service status, worker status, and a read-only `/admin/system-health` page.
+- Market source logs are throttled to reduce repeated Railway/Binance noise without changing signal calculations.

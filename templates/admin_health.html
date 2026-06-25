@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Health - Nexora Admin</title>
+    <style>
+        body { margin:0; font-family:Arial, sans-serif; background:#07111f; color:#e5eefb; }
+        .wrap { max-width:1100px; margin:0 auto; padding:32px 18px; }
+        a { color:#38bdf8; text-decoration:none; }
+        .top { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:22px; }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:14px; }
+        .card { background:#0f1b2d; border:1px solid rgba(148,163,184,.22); border-radius:10px; padding:18px; }
+        .card span { display:block; color:#94a3b8; font-size:13px; margin-bottom:7px; }
+        .card strong { display:block; font-size:24px; margin-bottom:8px; word-break:break-word; }
+        .online, .configured { color:#22c55e; }
+        .missing, .missing_key, .offline, .degraded { color:#f59e0b; }
+        .meta { color:#94a3b8; line-height:1.7; word-break:break-word; }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <div class="top">
+            <div>
+                <h1>System Health</h1>
+                <p class="meta">Read-only admin diagnostics. No production data is modified.</p>
+            </div>
+            <a href="/admin">Back to Admin</a>
+        </div>
+        <section class="grid">
+            {% for name, check in checks.items() %}
+            <div class="card">
+                <span>{{ name }}</span>
+                <strong class="{{ check.status }}">{{ check.status }}</strong>
+                <div class="meta">{{ check.detail }}</div>
+            </div>
+            {% endfor %}
+            <div class="card">
+                <span>Current Time</span>
+                <strong>{{ current_time }}</strong>
+                <div class="meta">Server local time</div>
+            </div>
+            <div class="card">
+                <span>Last Signal</span>
+                <strong>{{ last_signal }}</strong>
+                <div class="meta">Latest trades_log.created_at value</div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

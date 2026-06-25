@@ -672,7 +672,17 @@ input, select {
 
         <div class="status-pill">
             ⏳ Expiry:
-            <span class="status-expiry">{{expiry}}</span>
+            <span class="status-expiry">{{expiry or "Free"}}</span>
+        </div>
+
+        <div class="status-pill">
+            Subscription:
+            <span class="status-plan">{{subscription.status|default("free")}}</span>
+        </div>
+
+        <div class="status-pill">
+            Premium:
+            <span class="status-plan">{% if subscription.is_premium %}Enabled{% else %}Disabled{% endif %}</span>
         </div>
 
         <div class="status-pill">
@@ -770,6 +780,21 @@ input, select {
                 <small>Total tracked signal usage</small>
             </div>
             <div class="widget">
+                <span>Subscription</span>
+                <strong>{{dashboard_widgets.subscription_status|default("free")|title}}</strong>
+                <small>{% if dashboard_widgets.remaining_days is not none %}{{dashboard_widgets.remaining_days}} day(s) remaining{% else %}No paid expiry set{% endif %}</small>
+            </div>
+            <div class="widget">
+                <span>Started</span>
+                <strong>{% if subscription.start_date %}{{subscription.start_date}}{% else %}Unknown{% endif %}</strong>
+                <small>{% if dashboard_widgets.started_days_ago is not none %}{{dashboard_widgets.started_days_ago}} day(s) ago{% else %}Start date unavailable{% endif %}</small>
+            </div>
+            <div class="widget">
+                <span>Bot Connected</span>
+                <strong>{% if dashboard_widgets.bot_connected %}Yes{% else %}No{% endif %}</strong>
+                <small>{% if dashboard_widgets.premium_enabled %}Premium enabled{% else %}Free or expired access{% endif %}</small>
+            </div>
+            <div class="widget">
                 <span>Notifications</span>
                 <strong>{{notifications|length}}</strong>
                 <small>Important account and bot messages</small>
@@ -833,10 +858,17 @@ input, select {
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:15px;">
             <input id="refLink" type="text" value="{{referral_link}}" readonly
                    style="width:70%; min-width:260px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
+            <input id="refCode" type="text" value="{{referral_code}}" readonly
+                   style="width:180px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
             <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">
                 📋 Copy
             </button>
         </div>
+        {% if referral_qr_url %}
+        <div style="text-align:center; margin-bottom:15px;">
+            <img src="{{referral_qr_url}}" alt="Referral QR Code" style="width:150px; height:150px; border-radius:12px; background:white; padding:8px;">
+        </div>
+        {% endif %}
 
         <div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap; margin-top:15px;">
             <div class="card mini-stat">
@@ -847,6 +879,21 @@ input, select {
             <div class="card mini-stat">
                 <h3>💰 Balance</h3>
                 <p>${{affiliate_balance}}</p>
+            </div>
+
+            <div class="card mini-stat">
+                <h3>Active Referrals</h3>
+                <p>{{active_referrals}}</p>
+            </div>
+
+            <div class="card mini-stat">
+                <h3>Paid Referrals</h3>
+                <p>{{paid_referrals}}</p>
+            </div>
+
+            <div class="card mini-stat">
+                <h3>Commission total</h3>
+                <p>${{total_commissions}}</p>
             </div>
 
             <div class="card mini-stat">

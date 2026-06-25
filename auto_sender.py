@@ -50,8 +50,20 @@ RECENT_SIGNAL_MEMORY = {}
 LAST_NO_SIGNAL_NOTIFY = {}
 
 # ================= LOG =================
+LAST_LOG_CACHE = {}
+LOG_THROTTLE_SECONDS = int(os.environ.get("LOG_THROTTLE_SECONDS", "900"))
+
+
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+
+def log_once(key, msg, ttl=LOG_THROTTLE_SECONDS):
+    now = time.time()
+    last_seen = LAST_LOG_CACHE.get(key, 0)
+    if now - last_seen >= ttl:
+        LAST_LOG_CACHE[key] = now
+        log(msg)
 
 # ================= DB =================
 def db():
@@ -1265,14 +1277,14 @@ def run():
 
     while True:
         try:
-            log("Loop tick...")
+            log_once("loop-tick", "Loop tick...")
 
             update_closed_trades()
             update_signal_outcomes()
             log("Closed trades and signal outcomes updated")
 
             signals = get_monster_signals()
-            log(f"Signals fetched: {signals}")
+            log(f"Signals fetched: {len(signals) if signals else 0}")
 
             users = get_users()
             log(f"Users loaded: {len(users)}")

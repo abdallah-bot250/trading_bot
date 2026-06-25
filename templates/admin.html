@@ -716,7 +716,7 @@ tbody tr:hover {
         <div class="overview-card">
             <div class="label">Users</div>
             <div class="value">{{ admin_overview.users }}</div>
-            <div class="sub">New this week: {{ admin_overview.users_7d }} · Paid users: {{ admin_overview.paid_users }}</div>
+            <div class="sub">Active: {{ admin_overview.active_users }} Â· Free: {{ admin_overview.free_users }} Â· Premium: {{ admin_overview.premium_users }}</div>
             <div class="bar"><span style="width: {{ [admin_overview.paid_conversion, 100]|min }}%;"></span></div>
         </div>
         <div class="overview-card">
@@ -730,6 +730,12 @@ tbody tr:hover {
             <div class="value">{{ admin_overview.signals_total }}</div>
             <div class="sub">Open: {{ admin_overview.signals_open }} · Closed: {{ admin_overview.signals_closed }} · Win rate: {{ admin_overview.signal_win_rate }}%</div>
             <div class="bar"><span style="width: {{ [admin_overview.signal_win_rate, 100]|min }}%;"></span></div>
+        </div>
+        <div class="overview-card">
+            <div class="label">Today</div>
+            <div class="value">{{ admin_overview.todays_registrations }}</div>
+            <div class="sub">Payments today: {{ admin_overview.todays_payments }} · Worker: {{ admin_overview.worker_status }}</div>
+            <div class="bar"><span style="width: {{ [admin_overview.todays_registrations * 10, 100]|min }}%;"></span></div>
         </div>
     </section>
 
@@ -753,7 +759,18 @@ tbody tr:hover {
             <div class="ops-row"><span>Weekly users</span><strong>{{ admin_overview.growth_users_7d }}</strong></div>
             <div class="ops-row"><span>Weekly revenue</span><strong>${{ admin_overview.growth_revenue_7d }}</strong></div>
             <div class="ops-row"><span>Active plans</span><strong>{{ admin_overview.active_plans_count }}</strong></div>
+            <div class="ops-row"><span>Expiring soon</span><strong>{{ admin_overview.expiring_subscriptions }}</strong></div>
+            <div class="ops-row"><span>Expired</span><strong>{{ admin_overview.expired_subscriptions }}</strong></div>
             <div class="ops-row"><span>Linked Telegram</span><strong>{{ linked_users }}</strong></div>
+        </div>
+        <div class="ops-panel">
+            <h3>System Status</h3>
+            <div class="ops-row"><span>Bot</span><strong>{{ admin_overview.bot_status }}</strong></div>
+            <div class="ops-row"><span>Database</span><strong>{{ admin_overview.database_status }}</strong></div>
+            <div class="ops-row"><span>Telegram</span><strong>{{ admin_overview.telegram_status }}</strong></div>
+            <div class="ops-row"><span>Last signal</span><strong>{{ admin_overview.last_signal_time }}</strong></div>
+            <div class="ops-row"><span>Worker</span><strong>{{ admin_overview.worker_status }}</strong></div>
+            <div class="ops-row"><span>Health page</span><strong><a href="/admin/system-health">Open</a></strong></div>
         </div>
     </section>
 

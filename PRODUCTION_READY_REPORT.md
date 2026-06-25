@@ -22,3 +22,9 @@ Supported plans: `basic`, `pro`, `vip`, `pro_2y`.
 - Telegram webhook must point to `https://nexoratrader.net/webhook`.
 - NOWPayments IPN must point to `https://nexoratrader.net/payment-webhook`.
 - Real payment and signal flows should be smoke-tested on production with controlled accounts.
+
+## Added Operational Coverage
+
+- Subscription status and remaining-days calculations are visible without schema changes.
+- Admin now has safe counters for active/free/premium users, expiring/expired subscriptions, system status, and last signal time.
+- Optional admin metrics continue to fail closed with empty dashboard values instead of breaking the page.
