@@ -22,8 +22,7 @@ from cryptography.fernet import Fernet
 # ================= RUNTIME SETTINGS =================
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-DEFAULT_BASE_URL = "https://nexoratrader.net"
-BASE_URL = os.environ.get("BASE_URL", DEFAULT_BASE_URL)
+BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
 BOT_LINK = os.environ.get("BOT_LINK", "https://t.me/your_bot_username")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
@@ -118,7 +117,7 @@ def redirect_legacy_domains():
     """
     try:
         canonical = current_base_url()
-        if not canonical or canonical == "http://localhost":
+        if not canonical or canonical in ["https://yourdomain.com", "http://localhost"]:
             return None
 
         host = (request.host or "").lower()
@@ -143,7 +142,7 @@ def log(msg):
 
 
 def current_base_url():
-    return str(os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or BASE_URL or DEFAULT_BASE_URL).strip().rstrip("/")
+    return str(os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or BASE_URL).strip().rstrip("/")
 
 
 def current_bot_link():
@@ -827,5 +826,3 @@ def init_db():
 
     except Exception as e:
         log(f"❌ init_db error: {e}")
-
-

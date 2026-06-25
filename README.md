@@ -212,8 +212,7 @@ Project → Variables
 SECRET_KEY=your_secret_key
 TELEGRAM_TOKEN=your_bot_token
 BOT_LINK=https://t.me/your_bot
-BASE_URL=https://nexoratrader.net
-CANONICAL_DOMAIN=https://nexoratrader.net
+BASE_URL=https://your-project.up.railway.app
 ADMIN_EMAIL=your@email.com
 FERNET_KEY=your_fernet_key
 DATABASE_URL=your_database_url
@@ -224,10 +223,9 @@ Railway will automatically build and deploy the project.
 
 Once deployment is complete, Railway will give you a public URL مثل:
 
-https://nexoratrader.net
-Put this inside your Railway Variables:
-BASE_URL=https://nexoratrader.net
-CANONICAL_DOMAIN=https://nexoratrader.net
+https://your-project.up.railway.app
+Put this inside your Railway Variables a
+BASE_URL=https://your-project.up.railway.app
 🔗 4) Activate Telegram Webhook
 
 Webhook is required so Telegram can send user messages to your bot.
@@ -237,20 +235,20 @@ Webhook is required so Telegram can send user messages to your bot.
 Step 1 — Get your public deployed URL
 
 Example:
-https://nexoratrader.net
+https://your-project.up.railway.app
 
 Step 2 — Use this command
 
 Replace:
 	•	YOUR_TOKEN
-	•	nexoratrader.net
+	•	your-project.up.railway.app
 
 Then run:
 
-python scripts/telegram_webhook.py set
+curl https://api.telegram.org/botYOUR_TOKEN/setWebhook?url=https://your-project.up.railway.app/webhook
 
 
-Expected webhook URL: https://nexoratrader.net/webhook
+curl https://api.telegram.org/bot123456789:ABCDEFxxxxxxxxxxxxxxxx/setWebhook?url=https://your-project.up.railway.app/webhook
 
 
 Step 3 — If successful, Telegram will return:

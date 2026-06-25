@@ -1,4 +1,4 @@
-"""Inspect or update the Telegram webhook for Nexora.
+"""Inspect or update the Telegram webhook for this deployment.
 
 Usage:
   python scripts/telegram_webhook.py status
@@ -15,21 +15,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_BASE_URL = "https://nexoratrader.net"
-
 
 def required_env(name):
     value = os.environ.get(name, "").strip()
     if not value:
         raise SystemExit(f"{name} is missing")
-    return value
-
-
-def public_base_url():
-    value = os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or DEFAULT_BASE_URL
-    value = str(value).strip().rstrip("/")
-    if not value.startswith("https://"):
-        raise SystemExit("Telegram webhooks require a public https:// domain")
     return value
 
 
@@ -51,10 +41,20 @@ def telegram(method, **params):
     return payload
 
 
+def base_url():
+    value = os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL")
+    value = str(value or "").strip().rstrip("/")
+    if not value or value in {"https://yourdomain.com", "http://localhost"}:
+        raise SystemExit("BASE_URL or CANONICAL_DOMAIN must be your final public HTTPS domain")
+    if not value.startswith("https://"):
+        raise SystemExit("Telegram webhooks require a public https:// domain")
+    return value
+
+
 def status():
     payload = telegram("getWebhookInfo")
     result = payload.get("result") or {}
-    expected = f"{public_base_url()}/webhook"
+    expected = f"{base_url()}/webhook"
     print(f"Current webhook: {result.get('url') or '(not set)'}")
     print(f"Expected webhook: {expected}")
     print(f"Matches expected: {(result.get('url') or '').rstrip('/') == expected.rstrip('/')}")
@@ -64,7 +64,7 @@ def status():
 
 
 def set_webhook():
-    url = f"{public_base_url()}/webhook"
+    url = f"{base_url()}/webhook"
     telegram("setWebhook", url=url, drop_pending_updates=False)
     print(f"Webhook set to {url}")
 

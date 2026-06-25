@@ -951,11 +951,6 @@ tbody tr:hover {
                                     <input type="hidden" name="plan" value="pro_2y">
                                     <button class="btn pro" type="submit">Pro 2Y</button>
                                 </form>
-                                <form action="/deactivate-user" method="POST" onsubmit="return confirm('Deactivate this subscription?');">
-                                    {{ csrf_field() }}
-                                    <input type="hidden" name="id" value="{{ u[0] }}">
-                                    <button class="btn secondary" type="submit">Deactivate</button>
-                                </form>
 <form action="/delete-user" method="POST" onsubmit="return confirm('هل أنت متأكد من حذف هذا المستخدم؟');">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ u[0] }}">

@@ -442,10 +442,9 @@ def telegram_status():
         "base_url": current_base_url(),
         "bot_link": current_bot_link(),
         "expected_webhook": expected_webhook,
+        "webhook_matches_expected": None,
         "telegram_ok": False,
         "telegram_webhook_url": None,
-        "webhook_matches_expected": None,
-        "pending_update_count": None,
         "telegram_last_error": None,
     }
 
@@ -461,9 +460,9 @@ def telegram_status():
         status.update({
             "telegram_ok": bool(payload.get("ok")),
             "telegram_webhook_url": webhook_url,
-            "webhook_matches_expected": webhook_url.rstrip("/") == expected_webhook.rstrip("/"),
-            "pending_update_count": result.get("pending_update_count", 0),
             "telegram_last_error": result.get("last_error_message"),
+            "pending_update_count": result.get("pending_update_count", 0),
+            "webhook_matches_expected": webhook_url.rstrip("/") == expected_webhook.rstrip("/"),
         })
         return jsonify(status), 200 if status["telegram_ok"] else 502
     except Exception as e:
@@ -1651,16 +1650,30 @@ def admin_dashboard():
     if not is_current_admin():
         return "❌ غير مصرح"
 
+    conn = None
     try:
         conn = db()
         c = conn.cursor()
 
+        def db_rollback():
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         def safe_scalar(query, params=(), default=0):
+            """Run an admin metric query without breaking the whole page.
+
+            PostgreSQL aborts the current transaction after any failed query.
+            Admin pages use many optional tables/columns, so every failed metric
+            must rollback before the next query.
+            """
             try:
                 c.execute(query, params)
                 row = c.fetchone()
                 return row[0] if row and row[0] is not None else default
             except Exception as metric_error:
+                db_rollback()
                 log(f"admin metric unavailable: {metric_error}")
                 return default
 
@@ -1669,43 +1682,28 @@ def admin_dashboard():
                 c.execute(query, params)
                 return c.fetchall()
             except Exception as metric_error:
+                db_rollback()
                 log(f"admin rows unavailable: {metric_error}")
                 return []
 
-        c.execute("SELECT COUNT(*) FROM users")
-        total_users = c.fetchone()[0]
+        total_users = int(safe_scalar("SELECT COUNT(*) FROM users", default=0) or 0)
+        paid_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE is_paid = 1", default=0) or 0)
+        linked_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(chat_id, '') != ''", default=0) or 0)
+        active_bots = int(safe_scalar("SELECT COUNT(*) FROM users WHERE bot_active = 1", default=0) or 0)
 
-        c.execute("SELECT COUNT(*) FROM users WHERE is_paid = 1")
-        paid_users = c.fetchone()[0]
+        basic_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'basic'", default=0) or 0)
+        pro_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro'", default=0) or 0)
+        vip_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'vip'", default=0) or 0)
+        pro_2y_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro_2y'", default=0) or 0)
+        lifetime_users = 0
+        free_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1", default=0) or 0)
 
-        c.execute("SELECT COUNT(*) FROM users WHERE COALESCE(chat_id, '') != ''")
-        linked_users = c.fetchone()[0]
+        total_affiliate_paid = float(safe_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions",
+            default=0
+        ) or 0)
 
-        c.execute("SELECT COUNT(*) FROM users WHERE bot_active = 1")
-        active_bots = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'basic'")
-        basic_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'pro'")
-        pro_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'vip'")
-        vip_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE plan = 'pro_2y'")
-        pro_2y_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE 1 = 0")
-        lifetime_users = c.fetchone()[0]
-
-        c.execute("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1")
-        free_users = c.fetchone()[0]
-
-        c.execute("SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions")
-        total_affiliate_paid = float(c.fetchone()[0] or 0)
-
-        c.execute("""
+        revenue = round(float(safe_scalar("""
             SELECT COALESCE(SUM(
                 CASE
                     WHEN plan = 'basic' THEN %s
@@ -1717,17 +1715,11 @@ def admin_dashboard():
             ), 0)
             FROM users
             WHERE is_paid = 1
-        """, (PLAN_PRICES["basic"], PLAN_PRICES["pro"], PLAN_PRICES["vip"], PLAN_PRICES["pro_2y"]))
-        revenue = round(float(c.fetchone()[0] or 0), 2)
+        """, (PLAN_PRICES["basic"], PLAN_PRICES["pro"], PLAN_PRICES["vip"], PLAN_PRICES["pro_2y"]), default=0) or 0), 2)
 
-        c.execute("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status != 'paid'")
-        pending_withdrawals = c.fetchone()[0]
-
-        c.execute("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status != 'paid'")
-        pending_withdrawal_amount = round(float(c.fetchone()[0] or 0), 2)
-
-        c.execute("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'paid'")
-        paid_withdrawals = c.fetchone()[0]
+        pending_withdrawals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status != 'paid'", default=0) or 0)
+        pending_withdrawal_amount = round(float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status != 'paid'", default=0) or 0), 2)
+        paid_withdrawals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_withdrawals WHERE status = 'paid'", default=0) or 0)
 
         payment_revenue = round(float(safe_scalar("""
             SELECT COALESCE(SUM(amount), 0)
@@ -1798,7 +1790,7 @@ def admin_dashboard():
         affiliate_referrals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_referrals", default=0) or 0)
         affiliate_balance_total = round(float(safe_scalar("SELECT COALESCE(SUM(affiliate_balance), 0) FROM users", default=0) or 0), 2)
         affiliate_withdrawn = round(float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status = 'paid'", default=0) or 0), 2)
-        active_plans_count = int(basic_users or 0) + int(pro_users or 0) + int(vip_users or 0)
+        active_plans_count = basic_users + pro_users + vip_users + pro_2y_users
         ai_score = min(99, max(50, round(62 + (signal_win_rate * 0.25) + min(signals_total, 100) * 0.08 + (8 if signals_profit > 0 else 0), 2)))
         avg_signal_pnl = round(signals_profit / signals_closed, 2) if signals_closed else 0
 
@@ -1831,27 +1823,24 @@ def admin_dashboard():
             "active_plans_count": active_plans_count,
         }
 
-        c.execute("""
+        users = safe_rows("""
             SELECT id, email, plan, is_paid, expiry, chat_id, affiliate_balance, total_referrals
             FROM users
             ORDER BY id DESC
         """)
-        users = c.fetchall()
 
-        c.execute("""
+        withdrawals = safe_rows("""
             SELECT id, chat_id, wallet_address, amount, status, created_at
             FROM affiliate_withdrawals
             ORDER BY id DESC
         """)
-        withdrawals = c.fetchall()
 
-        c.execute("""
+        coupons = safe_rows("""
             SELECT id, code, discount_percent, active, expires_at, max_redemptions, redemption_count, created_at
             FROM coupons
             ORDER BY id DESC
             LIMIT 60
         """)
-        coupons = c.fetchall()
 
         conn.close()
 
@@ -1879,9 +1868,63 @@ def admin_dashboard():
         )
 
     except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+                conn.close()
+        except Exception:
+            pass
         log(f"admin_dashboard error: {e}")
-        return f"❌ Error: {str(e)}"
-
+        return render_template(
+            "admin.html",
+            total_users=0,
+            paid_users=0,
+            revenue=0,
+            total_affiliate_paid=0,
+            linked_users=0,
+            active_bots=0,
+            basic_users=0,
+            pro_users=0,
+            vip_users=0,
+            pro_2y_users=0,
+            lifetime_users=0,
+            free_users=0,
+            pending_withdrawals=0,
+            pending_withdrawal_amount=0,
+            paid_withdrawals=0,
+            users=[],
+            withdrawals=[],
+            coupons=[],
+            admin_overview={
+                "revenue": 0,
+                "revenue_7d": 0,
+                "users": 0,
+                "users_7d": 0,
+                "paid_users": 0,
+                "paid_conversion": 0,
+                "payments_total": 0,
+                "payments_paid": 0,
+                "payments_pending": 0,
+                "payments_failed": 0,
+                "renewals_count": 0,
+                "signals_total": 0,
+                "signals_open": 0,
+                "signals_closed": 0,
+                "signal_win_rate": 0,
+                "signals_profit": 0,
+                "affiliate_referrals": 0,
+                "affiliate_balance_total": 0,
+                "affiliate_withdrawn": 0,
+                "growth_users_7d": 0,
+                "growth_revenue_7d": 0,
+                "ai_score": 0,
+                "avg_signal_pnl": 0,
+                "spot": {"signals": 0, "open": 0, "closed": 0, "wins": 0, "profit": 0, "win_rate": 0},
+                "futures": {"signals": 0, "open": 0, "closed": 0, "wins": 0, "profit": 0, "win_rate": 0},
+                "active_plans_count": 0,
+                "error": str(e),
+            }
+        )
 
 @admin_bp.route("/admin/coupons/create", methods=["POST"])
 def create_coupon():
@@ -1986,40 +2029,6 @@ def activate_user():
     except Exception as e:
         log(f"activate_user error: {e}")
         return f"❌ Error: {str(e)}"
-
-
-@admin_bp.route("/deactivate-user", methods=["POST"])
-def deactivate_user():
-    if not session.get("user"):
-        return redirect("/login")
-
-    if not is_current_admin():
-        return "Unauthorized", 403
-
-    conn = None
-    try:
-        user_id = request.form.get("id", "").strip()
-        conn = db()
-        c = conn.cursor()
-        c.execute("""
-            UPDATE users
-            SET is_paid = 0,
-                bot_active = 0,
-                expiry = NULL,
-                lifetime_owner = 0
-            WHERE id = %s
-        """, (user_id,))
-        conn.commit()
-        audit_log("admin_deactivate_user", details=f"user_id={user_id}")
-        return redirect("/admin")
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        log(f"deactivate_user error: {e}")
-        return f"Error: {str(e)}", 500
-    finally:
-        if conn:
-            conn.close()
 
 
 @admin_bp.route("/delete-user", methods=["POST"])
@@ -2952,4 +2961,3 @@ def payment_webhook():
         log(f"❌ Webhook Error: {e}")
 
     return "OK"
-
