@@ -795,7 +795,11 @@ tbody tr:hover {
             <div class="ops-row"><span>Pro</span><strong>{{ pro_users }}</strong></div>
             <div class="ops-row"><span>Elite</span><strong>{{ vip_users }}</strong></div>
             <div class="ops-row"><span>Pro 2 Years</span><strong>{{ pro_2y_users|default(0) }}</strong></div>
-                        <div class="ops-row"><span>Free / Trial</span><strong>{{ free_users }}</strong></div>
+            <div class="ops-row"><span>Free / Trial</span><strong>{{ free_users }}</strong></div>
+            <form action="/admin/repair-plan-constraint" method="POST" style="margin-top:12px;">
+                {{ csrf_field() }}
+                <button class="btn warn" type="submit">Repair Pro 2Y Plan Constraint</button>
+            </form>
         </div>
     </section>
 

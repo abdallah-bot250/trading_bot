@@ -500,6 +500,11 @@ def format_signal(signal):
 🎯 TP: {signal['tp']}
 🛑 SL: {signal['sl']}
 
+Support: {signal.get('nearest_support', signal.get('support', 'N/A'))}
+Resistance: {signal.get('nearest_resistance', signal.get('resistance', 'N/A'))}
+Risk/Reward: {signal.get('risk_reward', 'N/A')}
+Target Basis: {signal.get('target_basis', 'Support/Resistance')}
+
 🎯 Signal Strength: {signal['confidence']}%
 🧠 AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%
 🛡 Risk Score: {signal.get('risk_score', 'N/A')} / 100 ({signal.get('risk_level', 'N/A')})

@@ -712,6 +712,156 @@ def smart_target_multiplier(interval, trend_power, volume, structure, direction)
     return max(tp_mult, 1.0), max(sl_mult, 0.9)
 
 
+# ================= SUPPORT / RESISTANCE TARGETS =================
+def _cluster_price_levels(raw_levels, tolerance_pct=0.0025, limit=8):
+    if not raw_levels:
+        return []
+
+    raw_levels = sorted(raw_levels, key=lambda item: item[0])
+    clusters = []
+    for price, index in raw_levels:
+        if price <= 0:
+            continue
+        if not clusters:
+            clusters.append({"prices": [price], "strength": 1, "last_index": index})
+            continue
+
+        current = clusters[-1]
+        avg_price = sum(current["prices"]) / len(current["prices"])
+        tolerance = max(avg_price * tolerance_pct, 1e-12)
+        if abs(price - avg_price) <= tolerance:
+            current["prices"].append(price)
+            current["strength"] += 1
+            current["last_index"] = max(current["last_index"], index)
+        else:
+            clusters.append({"prices": [price], "strength": 1, "last_index": index})
+
+    scored = []
+    for cluster in clusters:
+        avg_price = sum(cluster["prices"]) / len(cluster["prices"])
+        scored.append({
+            "price": avg_price,
+            "strength": cluster["strength"],
+            "last_index": cluster["last_index"],
+        })
+
+    scored.sort(key=lambda item: (item["strength"], item["last_index"]), reverse=True)
+    return [item["price"] for item in scored[:limit]]
+
+
+def calculate_support_resistance(candles):
+    try:
+        df = candles.tail(140).reset_index(drop=True)
+        if len(df) < 20:
+            return {"support": [], "resistance": []}
+
+        supports = []
+        resistances = []
+        lows = df["low"].astype(float).tolist()
+        highs = df["high"].astype(float).tolist()
+
+        for i in range(2, len(df) - 2):
+            low_window = lows[i - 2:i + 3]
+            high_window = highs[i - 2:i + 3]
+            if lows[i] == min(low_window) and low_window.count(lows[i]) <= 2:
+                supports.append((lows[i], i))
+            if highs[i] == max(high_window) and high_window.count(highs[i]) <= 2:
+                resistances.append((highs[i], i))
+
+        return {
+            "support": _cluster_price_levels(supports),
+            "resistance": _cluster_price_levels(resistances),
+        }
+    except Exception as e:
+        print(f"calculate_support_resistance error: {e}")
+        return {"support": [], "resistance": []}
+
+
+def nearest_support(price, levels):
+    try:
+        price = float(price)
+        below = [float(level) for level in levels if float(level) < price]
+        return max(below) if below else None
+    except Exception:
+        return None
+
+
+def nearest_resistance(price, levels):
+    try:
+        price = float(price)
+        above = [float(level) for level in levels if float(level) > price]
+        return min(above) if above else None
+    except Exception:
+        return None
+
+
+def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.5):
+    try:
+        entry = float(entry)
+        atr_value = float(atr_value or 0)
+    except Exception:
+        return None
+
+    levels = calculate_support_resistance(candles)
+    supports = sorted([float(level) for level in levels.get("support", []) if float(level) > 0])
+    resistances = sorted([float(level) for level in levels.get("resistance", []) if float(level) > 0])
+    support = nearest_support(entry, supports)
+    resistance = nearest_resistance(entry, resistances)
+
+    if support is None or resistance is None:
+        return None
+
+    buffer = max(entry * 0.0015, atr_value * 0.20 if atr_value > 0 else 0)
+
+    if direction == "LONG":
+        sl = support - buffer
+        if sl <= 0 or sl >= entry:
+            return None
+        risk = entry - sl
+        candidates = [level for level in resistances if level > entry]
+        tp = None
+        rr = None
+        for level in candidates:
+            reward = level - entry
+            current_rr = reward / risk if risk > 0 else 0
+            if current_rr >= min_rr:
+                tp = level
+                rr = current_rr
+                break
+        if tp is None:
+            return None
+    elif direction == "SHORT":
+        sl = resistance + buffer
+        if sl <= entry:
+            return None
+        risk = sl - entry
+        candidates = [level for level in reversed(supports) if level < entry]
+        tp = None
+        rr = None
+        for level in candidates:
+            reward = entry - level
+            current_rr = reward / risk if risk > 0 else 0
+            if current_rr >= min_rr:
+                tp = level
+                rr = current_rr
+                break
+        if tp is None:
+            return None
+    else:
+        return None
+
+    return {
+        "tp": tp,
+        "sl": sl,
+        "support": support,
+        "resistance": resistance,
+        "nearest_support": support,
+        "nearest_resistance": resistance,
+        "risk_reward": round(rr, 2),
+        "target_basis": "Support/Resistance",
+    }
+
+
 # ================= TP / SL =================
 def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WEAK", timeframe="5m", structure="MID_RANGE"):
     try:
@@ -1089,10 +1239,11 @@ def generate_signal(symbol, interval="5m"):
         return None
 
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
-
-    if tp is None or sl is None:
+    sr_targets = sr_based_targets(df, entry, direction, atr_val)
+    if not sr_targets:
         return None
+    tp = sr_targets["tp"]
+    sl = sr_targets["sl"]
 
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
@@ -1132,7 +1283,13 @@ def generate_signal(symbol, interval="5m"):
         "smc": smc,
         "trend_power": trend_power,
         "structure": structure,
-        "score": score
+        "score": score,
+        "support": format_price(sr_targets["support"]),
+        "resistance": format_price(sr_targets["resistance"]),
+        "nearest_support": format_price(sr_targets["nearest_support"]),
+        "nearest_resistance": format_price(sr_targets["nearest_resistance"]),
+        "risk_reward": sr_targets["risk_reward"],
+        "target_basis": sr_targets["target_basis"]
     }
 
     ai_engine_report = build_ai_engine_report(
@@ -1277,10 +1434,11 @@ def generate_free_signal(symbol, interval="5m"):
         return None
 
     entry = df["close"].iloc[-1]
-    tp, sl = dynamic_targets(entry, direction, atr_val, trend_power, volume, interval, structure)
-
-    if tp is None or sl is None:
+    sr_targets = sr_based_targets(df, entry, direction, atr_val)
+    if not sr_targets:
         return None
+    tp = sr_targets["tp"]
+    sl = sr_targets["sl"]
 
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
@@ -1318,7 +1476,13 @@ def generate_free_signal(symbol, interval="5m"):
         "smc": smc,
         "trend_power": trend_power,
         "structure": structure,
-        "score": score
+        "score": score,
+        "support": format_price(sr_targets["support"]),
+        "resistance": format_price(sr_targets["resistance"]),
+        "nearest_support": format_price(sr_targets["nearest_support"]),
+        "nearest_resistance": format_price(sr_targets["nearest_resistance"]),
+        "risk_reward": sr_targets["risk_reward"],
+        "target_basis": sr_targets["target_basis"]
     }
 
     ai_engine_report = build_ai_engine_report(

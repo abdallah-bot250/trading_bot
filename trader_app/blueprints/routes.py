@@ -2186,6 +2186,40 @@ def admin_system_health():
         last_signal=last_signal,
     )
 
+
+@admin_bp.route("/admin/repair-plan-constraint", methods=["POST"])
+def repair_plan_constraint():
+    if not session.get("user"):
+        return redirect("/login")
+
+    if not is_current_admin():
+        return "❌ غير مصرح"
+
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("ALTER TABLE users DROP CONSTRAINT IF EXISTS ck_users_plan")
+        c.execute("ALTER TABLE users ADD CONSTRAINT ck_users_plan CHECK (plan IN ('trial','basic','pro','vip','pro_2y'))")
+        conn.commit()
+        flash("Plan constraint repaired. pro_2y is now supported.", "success")
+    except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        log(f"repair_plan_constraint error: {e}")
+        flash(f"Plan constraint repair failed: {e}", "error")
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+    return redirect("/admin")
+
 @admin_bp.route("/admin/coupons/create", methods=["POST"])
 def create_coupon():
     if not session.get("user"):
