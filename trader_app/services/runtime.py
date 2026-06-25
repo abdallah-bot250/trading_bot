@@ -22,7 +22,8 @@ from cryptography.fernet import Fernet
 # ================= RUNTIME SETTINGS =================
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
+DEFAULT_BASE_URL = "https://nexoratrader.net"
+BASE_URL = os.environ.get("BASE_URL", DEFAULT_BASE_URL)
 BOT_LINK = os.environ.get("BOT_LINK", "https://t.me/your_bot_username")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 
@@ -87,7 +88,7 @@ def inject_csrf_helpers():
     return {
         "csrf_token": get_csrf_token,
         "csrf_field": csrf_field,
-        "bot_link": BOT_LINK,
+        "bot_link": current_bot_link(),
     }
 
 
@@ -116,9 +117,8 @@ def redirect_legacy_domains():
     official brand domain without changing internal Railway health checks.
     """
     try:
-        canonical = os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or BASE_URL
-        canonical = str(canonical).strip().rstrip("/")
-        if not canonical or canonical in ["https://yourdomain.com", "http://localhost"]:
+        canonical = current_base_url()
+        if not canonical or canonical == "http://localhost":
             return None
 
         host = (request.host or "").lower()
@@ -140,6 +140,14 @@ logger = logging.getLogger("ai_crypto_trader")
 
 def log(msg):
     logger.info(str(msg))
+
+
+def current_base_url():
+    return str(os.environ.get("CANONICAL_DOMAIN") or os.environ.get("BASE_URL") or BASE_URL or DEFAULT_BASE_URL).strip().rstrip("/")
+
+
+def current_bot_link():
+    return str(os.environ.get("BOT_LINK") or BOT_LINK).strip().rstrip("/")
 
 
 def audit_log(action, email=None, details=None, ip=None):
@@ -217,8 +225,7 @@ def send_security_email(to_email, subject, body):
 
 
 def build_absolute_url(path):
-    base_url = os.environ.get("BASE_URL", BASE_URL).rstrip("/")
-    return f"{base_url}{path}"
+    return f"{current_base_url()}{path}"
 
 
 def create_email_verification_token(email, conn=None):
@@ -366,7 +373,7 @@ def ensure_user_has_referral_code(chat_id, conn):
 
 
 def telegram_referral_link(referral_code):
-    return f"{BOT_LINK.rstrip('/')}?start=ref_{referral_code}"
+    return f"{current_bot_link()}?start=ref_{referral_code}"
 
 
 def send(chat_id, text):
@@ -376,7 +383,7 @@ def send(chat_id, text):
     
 
     try:
-        user_link = f"{BASE_URL}/login?chat_id={chat_id}"
+        user_link = f"{current_base_url()}/login?chat_id={chat_id}"
 
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",

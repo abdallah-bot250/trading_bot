@@ -171,6 +171,7 @@ def get_market_data(symbol, interval="5m", limit=250):
 
             df = parse_binance_klines_to_df(data)
             if df is not None and not df.empty:
+                df.attrs["source_exchange"] = source_name
                 return df
 
             print(f"❌ {source_name} no kline data for {symbol} {interval}")
@@ -222,6 +223,7 @@ def get_market_data(symbol, interval="5m", limit=250):
         df.dropna(inplace=True)
 
         if df is not None and not df.empty:
+            df.attrs["source_exchange"] = "KUCOIN"
             return df
 
         print(f"❌ KUCOIN parsed empty df for {symbol} {interval}")
@@ -995,6 +997,7 @@ def generate_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 100:
         return None
+    source_exchange = df.attrs.get("source_exchange", "UNKNOWN")
 
     if is_choppy(df):
         return None
@@ -1116,7 +1119,8 @@ def generate_signal(symbol, interval="5m"):
         "smc": smc,
         "trend_power": trend_power,
         "structure": structure,
-        "score": score
+        "score": score,
+        "source_exchange": source_exchange,
     }
 
     ai_engine_report = build_ai_engine_report(
@@ -1187,6 +1191,7 @@ def generate_free_signal(symbol, interval="5m"):
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 60:
         return None
+    source_exchange = df.attrs.get("source_exchange", "UNKNOWN")
 
     if is_choppy(df):
         return None
@@ -1302,7 +1307,8 @@ def generate_free_signal(symbol, interval="5m"):
         "smc": smc,
         "trend_power": trend_power,
         "structure": structure,
-        "score": score
+        "score": score,
+        "source_exchange": source_exchange,
     }
 
     ai_engine_report = build_ai_engine_report(

@@ -15,6 +15,8 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "binance").strip().lower()
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
+MAX_AUTO_TRADE_SIZE = float(os.environ.get("MAX_AUTO_TRADE_SIZE", "250"))
+NO_SIGNAL_NOTIFY_AFTER_EMPTY_CYCLES = int(os.environ.get("NO_SIGNAL_NOTIFY_AFTER_EMPTY_CYCLES", "2"))
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -48,6 +50,7 @@ LAST_SIGNAL_CACHE = {
 # ================= SIGNAL MEMORY =================
 RECENT_SIGNAL_MEMORY = {}
 LAST_NO_SIGNAL_NOTIFY = {}
+EMPTY_SIGNAL_CYCLES = 0
 
 # ================= LOG =================
 def log(msg):
@@ -73,7 +76,7 @@ CHANNEL_ID = -1003722350505
 def send(chat_id, text):
     try:
         if not TOKEN or not chat_id:
-            log(f"Telegram skipped: TOKEN or chat_id missing | chat_id={chat_id}")
+            log(f"TELEGRAM_SEND_FAILED reason=missing_token_or_chat_id chat_id={chat_id}")
             return False
 
         r = requests.post(
@@ -83,12 +86,12 @@ def send(chat_id, text):
         )
 
         if r.status_code != 200:
-            log(f"Telegram HTTP Error {r.status_code}: {r.text}")
+            log(f"TELEGRAM_SEND_FAILED chat_id={chat_id} status={r.status_code} response={r.text[:500]}")
             return False
 
         data = r.json()
         if not data.get("ok"):
-            log(f"Telegram API Error: {data}")
+            log(f"TELEGRAM_SEND_FAILED chat_id={chat_id} api_response={data}")
             return False
 
         return True
@@ -325,9 +328,13 @@ def init_trade_tables():
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_chat_sent ON signal_log (chat_id, sent_at)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_status_sent ON signal_log (status, sent_at)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_pair_status ON signal_log (pair, status)")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS source_exchange TEXT")
+    c.execute("ALTER TABLE trades_log ADD COLUMN IF NOT EXISTS source_exchange TEXT")
 
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_enabled INTEGER DEFAULT 1")
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS futures_enabled INTEGER DEFAULT 1")
+    c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS max_trade_size REAL DEFAULT 10")
+    c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stop_loss_required INTEGER DEFAULT 1")
 
     conn.commit()
     conn.close()
@@ -355,8 +362,8 @@ def record_sent_signal(chat_id, plan, signal):
         c = conn.cursor()
         c.execute("""
         INSERT INTO signal_log (
-            chat_id, plan, pair, direction, signal_type, entry, tp, sl, confidence, status
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SENT')
+            chat_id, plan, pair, direction, signal_type, entry, tp, sl, confidence, source_exchange, status
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'SENT')
         RETURNING id
         """, (
             str(chat_id),
@@ -368,12 +375,13 @@ def record_sent_signal(chat_id, plan, signal):
             float(signal.get("tp", 0)),
             float(signal.get("sl", 0)),
             float(signal.get("confidence", 0)),
+            str(signal.get("source_exchange") or "UNKNOWN"),
         ))
         row = c.fetchone()
         conn.commit()
         conn.close()
         signal_id = row[0] if row else None
-        log(f"Signal tracked id={signal_id} chat_id={chat_id} pair={signal.get('pair')}")
+        log(f"SIGNAL_SENT tracked_id={signal_id} chat_id={chat_id} pair={signal.get('pair')} source={signal.get('source_exchange', 'UNKNOWN')}")
         return signal_id
     except Exception as e:
         log(f"record_sent_signal error: {e}")
@@ -386,11 +394,12 @@ def get_users():
 
     c.execute("""
     SELECT chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid,
-           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1)
+           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1),
+           COALESCE(max_trade_size, %s), COALESCE(stop_loss_required, 1)
     FROM users
     WHERE chat_id IS NOT NULL
       AND chat_id <> ''
-    """)
+    """, (MAX_AUTO_TRADE_SIZE,))
 
     users = c.fetchall()
     conn.close()
@@ -798,10 +807,10 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         c = conn.cursor()
         c.execute("""
         INSERT INTO trades_log (
-            chat_id, pair, direction, trade_type, entry, tp, sl, amount,
+            chat_id, pair, direction, trade_type, entry, tp, sl, source_exchange, amount,
             exchange_order_id, status, pnl
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             chat_id,
             raw_symbol,
@@ -810,6 +819,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             entry,
             tp,
             sl,
+            str(signal.get("source_exchange") or "UNKNOWN"),
             amount,
             str(order.get("id")),
             "OPEN",
@@ -1086,10 +1096,11 @@ def get_monster_signals():
             s = attach_signal_timestamp(s)
 
             if not valid_signal(s):
+                log(f"SIGNAL_SKIPPED reason=invalid_signal pair={s.get('pair') if s else 'UNKNOWN'}")
                 continue
 
             if not logical_signal(s):
-                log(f"Logical invalid signal skipped: {s}")
+                log(f"SIGNAL_SKIPPED reason=logical_invalid pair={s.get('pair')} source={s.get('source_exchange', 'UNKNOWN')}")
                 continue
 
             if not signal_not_expired(s):
@@ -1101,7 +1112,7 @@ def get_monster_signals():
                 continue
 
             if is_duplicate_signal(s):
-                log(f"Duplicate signal skipped: {s.get('pair')}")
+                log(f"SIGNAL_SKIPPED reason=duplicate pair={s.get('pair')} source={s.get('source_exchange', 'UNKNOWN')}")
                 continue
 
             if is_recent_memory_duplicate(s):
@@ -1118,6 +1129,7 @@ def get_monster_signals():
                     continue
 
             final_signals.append(s)
+            log(f"SIGNAL_GENERATED pair={s.get('pair')} type={s.get('type')} confidence={s.get('confidence')} source={s.get('source_exchange', 'UNKNOWN')}")
             record_trade_type(s.get("type"))
 
         # ترتيب الأقوى أولًا
@@ -1207,6 +1219,7 @@ def notify_users_no_signal(users):
 
 # ================= MAIN =================
 def run():
+    global EMPTY_SIGNAL_CYCLES
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
     log("🚀 BOT STARTED - MONSTER MODE")
@@ -1227,13 +1240,16 @@ def run():
             log(f"Users loaded: {len(users)}")
 
             if not signals:
-                log("No signals found")
+                EMPTY_SIGNAL_CYCLES += 1
+                log(f"SIGNAL_SKIPPED reason=no_signal_after_filters empty_cycles={EMPTY_SIGNAL_CYCLES}")
 
     # ===== Notify users market is not safe now =====
-                notify_users_no_signal(users)
+                if EMPTY_SIGNAL_CYCLES >= NO_SIGNAL_NOTIFY_AFTER_EMPTY_CYCLES:
+                    notify_users_no_signal(users)
 
                 time.sleep(30)
                 continue
+            EMPTY_SIGNAL_CYCLES = 0
 
             for signal in signals:
                 log(f"Processing signal: {signal}")
@@ -1242,6 +1258,8 @@ def run():
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
                     spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
                     futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
+                    max_trade_size = float(type_flags[2]) if len(type_flags) > 2 and type_flags[2] is not None else MAX_AUTO_TRADE_SIZE
+                    stop_loss_required = int(type_flags[3]) if len(type_flags) > 3 and type_flags[3] is not None else 1
 
                     if not chat_id:
                         continue
@@ -1279,14 +1297,14 @@ def run():
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:
-                        log(f"Signal sent to {chat_id} -> {signal['pair']}")
+                        log(f"SIGNAL_SENT chat_id={chat_id} pair={signal['pair']} source={signal.get('source_exchange', 'UNKNOWN')}")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
                         record_sent_signal(chat_id, plan, signal)
 
                         if plan == "trial":
                             increment_trade(chat_id)
                     else:
-                        log(f"Signal failed to send to {chat_id}")
+                        log(f"TELEGRAM_SEND_FAILED chat_id={chat_id} pair={signal['pair']}")
 
                     # ===== AUTO TRADE FOR VIP =====
                     if plan in AUTO_TRADE_PLANS and bot_active == 1 and api_key and api_secret:
@@ -1294,6 +1312,14 @@ def run():
                             can_trade, reason = can_trade_user(chat_id, trade_amount)
                             if not can_trade:
                                 log(f"Auto trade blocked for {chat_id}: {reason}")
+                                continue
+                            if stop_loss_required != 1 or not signal.get("sl"):
+                                log(f"Auto trade blocked for {chat_id}: stop_loss_required")
+                                write_log(chat_id, "WARN", "Auto trade blocked: stop loss is required")
+                                continue
+                            if float(trade_amount or 0) > min(float(max_trade_size), MAX_AUTO_TRADE_SIZE):
+                                log(f"Auto trade blocked for {chat_id}: max_trade_size trade_amount={trade_amount} max={max_trade_size}")
+                                write_log(chat_id, "WARN", "Auto trade blocked: max trade size exceeded")
                                 continue
 
                             if has_open_trade(chat_id, signal["pair"]):

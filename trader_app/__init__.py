@@ -11,6 +11,7 @@ from .blueprints import (
     admin_bp,
     auth_bp,
     dashboard_bp,
+    diagnostics_bp,
     health_bp,
     payments_bp,
     public_bp,
@@ -49,6 +50,7 @@ def create_app(config_class=Config):
 
     app.register_blueprint(public_bp)
     app.register_blueprint(health_bp)
+    app.register_blueprint(diagnostics_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(payments_bp)

@@ -348,8 +348,8 @@ def proof():
 def bot_check():
     return render_template(
         "bot_check.html",
-        bot_link=os.environ.get("BOT_LINK", BOT_LINK),
-        base_url=BASE_URL,
+        bot_link=current_bot_link(),
+        base_url=current_base_url(),
     )
 
 
@@ -429,6 +429,46 @@ def test_telegram():
 
     except Exception as e:
         return f"ERROR: {str(e)}"
+
+
+@diagnostics_bp.route("/telegram-status")
+def telegram_status():
+    if not admin_required():
+        return "Forbidden", 403
+
+    expected_webhook = f"{current_base_url()}/webhook"
+    status = {
+        "token_configured": bool(TOKEN),
+        "base_url": current_base_url(),
+        "bot_link": current_bot_link(),
+        "expected_webhook": expected_webhook,
+        "telegram_ok": False,
+        "telegram_webhook_url": None,
+        "webhook_matches_expected": None,
+        "pending_update_count": None,
+        "telegram_last_error": None,
+    }
+
+    if not TOKEN:
+        status["telegram_last_error"] = "TELEGRAM_TOKEN is missing"
+        return jsonify(status), 500
+
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{TOKEN}/getWebhookInfo", timeout=10)
+        payload = r.json()
+        result = payload.get("result") or {}
+        webhook_url = result.get("url") or ""
+        status.update({
+            "telegram_ok": bool(payload.get("ok")),
+            "telegram_webhook_url": webhook_url,
+            "webhook_matches_expected": webhook_url.rstrip("/") == expected_webhook.rstrip("/"),
+            "pending_update_count": result.get("pending_update_count", 0),
+            "telegram_last_error": result.get("last_error_message"),
+        })
+        return jsonify(status), 200 if status["telegram_ok"] else 502
+    except Exception as e:
+        status["telegram_last_error"] = str(e)
+        return jsonify(status), 502
 
 
 # ================= REGISTER =================
@@ -1329,9 +1369,9 @@ def create_payment():
             "pay_currency": "usdttrc20",
             "order_id": chat_id,
             "order_description": plan,
-            "success_url": f"{BASE_URL}/success",
-            "cancel_url": f"{BASE_URL}/cancel",
-            "ipn_callback_url": f"{BASE_URL}/payment-webhook"
+            "success_url": f"{current_base_url()}/success",
+            "cancel_url": f"{current_base_url()}/cancel",
+            "ipn_callback_url": f"{current_base_url()}/payment-webhook"
         }
 
         headers = {
@@ -1948,6 +1988,40 @@ def activate_user():
         return f"❌ Error: {str(e)}"
 
 
+@admin_bp.route("/deactivate-user", methods=["POST"])
+def deactivate_user():
+    if not session.get("user"):
+        return redirect("/login")
+
+    if not is_current_admin():
+        return "Unauthorized", 403
+
+    conn = None
+    try:
+        user_id = request.form.get("id", "").strip()
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            UPDATE users
+            SET is_paid = 0,
+                bot_active = 0,
+                expiry = NULL,
+                lifetime_owner = 0
+            WHERE id = %s
+        """, (user_id,))
+        conn.commit()
+        audit_log("admin_deactivate_user", details=f"user_id={user_id}")
+        return redirect("/admin")
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        log(f"deactivate_user error: {e}")
+        return f"Error: {str(e)}", 500
+    finally:
+        if conn:
+            conn.close()
+
+
 @admin_bp.route("/delete-user", methods=["POST"])
 def delete_user():
     if not session.get("user"):
@@ -2429,7 +2503,7 @@ def webhook():
 """)
 
                 else:
-                    register_link = f"{BASE_URL}/register?chat_id={chat_id}"
+                    register_link = f"{current_base_url()}/register?chat_id={chat_id}"
 
                     send(chat_id, welcome_message(register_link))
 
@@ -2453,7 +2527,7 @@ def webhook():
                 user = c.fetchone()
 
                 if not user:
-                    register_link = f"{BASE_URL}/register?chat_id={chat_id}"
+                    register_link = f"{current_base_url()}/register?chat_id={chat_id}"
                     send(chat_id, f"""لم يتم العثور على هذا الإيميل في الموقع.
 
 سجل حسابك من الرابط الآمن:
@@ -2461,7 +2535,7 @@ def webhook():
 """)
                     return "ok", 200
 
-                login_link = f"{BASE_URL}/login?chat_id={chat_id}"
+                login_link = f"{current_base_url()}/login?chat_id={chat_id}"
                 send(chat_id, f"""لحماية حسابك، لا يتم ربط تيليجرام بمجرد كتابة الإيميل.
 
 ادخل من الرابط الآمن وسجل دخولك بكلمة السر لربط الحساب:

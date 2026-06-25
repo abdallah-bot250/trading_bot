@@ -21,7 +21,8 @@ FERNET_KEY=generate_a_real_fernet_key
 DATABASE_URL=postgresql://...
 TELEGRAM_TOKEN=...
 BOT_LINK=https://t.me/your_bot_username
-BASE_URL=https://your-domain.com
+BASE_URL=https://nexoratrader.net
+CANONICAL_DOMAIN=https://nexoratrader.net
 ADMIN_EMAIL=admin@example.com
 NOWPAYMENTS_API_KEY=...
 NOWPAYMENTS_IPN_SECRET=...
@@ -54,10 +55,11 @@ Checklist:
 
 - Add a Postgres database and set `DATABASE_URL`.
 - Add all required environment variables.
-- Set `BASE_URL` to the final Railway or custom domain URL.
-- Set Telegram webhook to `https://your-domain.com/webhook`.
-- Set NOWPayments IPN callback to `https://your-domain.com/payment-webhook`.
-- Verify `https://your-domain.com/health` returns `{"status":"ok"}`.
+- Set `BASE_URL` to `https://nexoratrader.net`.
+- Set `CANONICAL_DOMAIN` to `https://nexoratrader.net`.
+- Set Telegram webhook to `https://nexoratrader.net/webhook`.
+- Set NOWPayments IPN callback to `https://nexoratrader.net/payment-webhook`.
+- Verify `https://nexoratrader.net/health` returns `{"status":"ok"}`.
 
 ## Docker Compose
 

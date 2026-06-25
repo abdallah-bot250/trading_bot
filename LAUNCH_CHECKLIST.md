@@ -44,8 +44,8 @@ Automated checks performed:
 
 - Railway variables are filled with production values.
 - `BASE_URL` matches the final custom domain.
-- Telegram webhook points to `https://your-domain.com/webhook`.
-- NOWPayments IPN callback points to `https://your-domain.com/payment-webhook`.
+- Telegram webhook points to `https://nexoratrader.net/webhook`.
+- NOWPayments IPN callback points to `https://nexoratrader.net/payment-webhook`.
 - Admin account is created and matches `ADMIN_EMAIL`.
 - Manual payment wallet and support link are real production values.
 - Test one Starter, Pro, and Elite activation flow.
