@@ -510,13 +510,31 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
 @limiter.limit("8 per minute", methods=["POST"])
 def register():
     chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
-    ref = (request.args.get("ref") or session.get("ref") or "").strip()
+    ref = (request.form.get("ref") or request.args.get("ref") or session.get("ref") or "").strip()
 
     if chat_id:
         session["chat_id"] = chat_id
 
-    if request.args.get("ref"):
-        session["ref"] = request.args.get("ref").strip()
+    if ref:
+        session["ref"] = ref
+
+    if request.method == "GET" and chat_id:
+        try:
+            conn = db()
+            c = conn.cursor()
+            c.execute("""
+                SELECT id
+                FROM users
+                WHERE chat_id = %s
+                LIMIT 1
+            """, (chat_id,))
+            existing_chat_user = c.fetchone()
+            conn.close()
+            if existing_chat_user:
+                log(f"REGISTER_CHAT_ID_EXISTS user_id={existing_chat_user[0]} chat_id={chat_id}")
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
+        except Exception as e:
+            log(f"register chat_id precheck skipped: {e}")
 
     if request.method == "POST":
         conn = None
@@ -570,7 +588,21 @@ def register():
             if existing:
                 conn.close()
                 flash("Email already registered. Please login.", "error")
-                return redirect(url_for("auth.login", chat_id=chat_id))
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
+
+            if chat_id:
+                c.execute("""
+                    SELECT id
+                    FROM users
+                    WHERE chat_id = %s
+                    LIMIT 1
+                """, (chat_id,))
+                existing_chat_user = c.fetchone()
+                if existing_chat_user:
+                    conn.close()
+                    log(f"REGISTER_CHAT_ID_EXISTS user_id={existing_chat_user[0]} chat_id={chat_id}")
+                    flash("Telegram account already linked. Please login.", "error")
+                    return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             referred_by = None
             if final_ref:
@@ -586,11 +618,12 @@ def register():
                     expiry, api_key, api_secret, profit, trade_amount, trade_type,
                     bot_active, referred_by, is_admin, lifetime_owner
                 )
-                VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 email,
                 password,
+                chat_id or None,
                 0,
                 "trial",
                 datetime.now().strftime("%Y-%m-%d"),
@@ -608,13 +641,10 @@ def register():
             ))
 
             new_user = c.fetchone()
-            new_user_id = new_user[0]
 
-            moved_chat = False
             if chat_id:
-                moved_chat = reassign_telegram_chat(c, new_user_id, chat_id, email)
-                if moved_chat:
-                    flash("Telegram account linked successfully.", "success")
+                log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
+                flash("Telegram account linked successfully.", "success")
 
             verification_token = create_email_verification_token(email, conn)
             conn.commit()
@@ -643,7 +673,11 @@ def register():
                     conn.close()
             except Exception:
                 pass
+            error_text = str(e)
             log(f"Register error: {e}")
+            if chat_id and ("users_chat_id_unique" in error_text or "duplicate key" in error_text):
+                flash("Telegram account already linked. Please login.", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
             flash("❌ حصل خطأ أثناء التسجيل", "error")
             return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
@@ -655,9 +689,13 @@ def register():
 @limiter.limit("5 per minute", methods=["POST"])
 def login():
     chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
+    ref = (request.form.get("ref") or request.args.get("ref") or session.get("ref") or "").strip()
 
     if chat_id:
         session["chat_id"] = chat_id
+
+    if ref:
+        session["ref"] = ref
 
     if request.method == "POST":
         conn = None
@@ -668,13 +706,13 @@ def login():
             if not email or not password:
                 log(f"LOGIN_FAILED email={email} reason=missing_credentials")
                 flash("❌ لازم تكتب الإيميل والباسورد", "error")
-                return redirect(url_for("auth.login", chat_id=chat_id))
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
                 log(f"LOGIN_FAILED email={email} reason=invalid_email")
                 flash("❌ لازم تدخل إيميل صحيح", "error")
-                return redirect(url_for("auth.login", chat_id=chat_id))
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             conn = db()
             c = conn.cursor()
@@ -692,7 +730,7 @@ def login():
                 log(f"LOGIN_FAILED email={email} reason=unknown_email")
                 audit_log("login_unknown_email", email)
                 flash("❌ الإيميل غير موجود", "error")
-                return redirect(url_for("auth.login", chat_id=chat_id))
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             user_id = user[0]
             stored_password = str(user[2] or "").strip()
@@ -702,7 +740,7 @@ def login():
                 log(f"LOGIN_FAILED email={email} reason=bad_password")
                 audit_log("login_bad_password", email)
                 flash("❌ الباسورد غير صحيح", "error")
-                return redirect(url_for("auth.login", chat_id=chat_id))
+                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             moved_chat = False
             if chat_id:
@@ -732,9 +770,9 @@ def login():
                 pass
             log(f"LOGIN_FAILED email={(request.form.get('email') or '').strip().lower()} reason=exception error={e}")
             flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
-            return redirect(url_for("auth.login", chat_id=chat_id))
+            return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
-    return render_template("login.html", chat_id=chat_id)
+    return render_template("login.html", chat_id=chat_id, ref=ref)
 
 
 @auth_bp.route("/logout")
