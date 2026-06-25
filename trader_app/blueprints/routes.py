@@ -1623,7 +1623,6 @@ def is_current_admin():
             c.execute("""
                 UPDATE users
                 SET is_admin = 1,
-                    lifetime_owner = 0,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE LOWER(email) = %s
             """, (email,))
@@ -1638,7 +1637,7 @@ def is_current_admin():
         c = conn.cursor()
 
         c.execute("""
-            SELECT is_admin, lifetime_owner
+            SELECT is_admin
             FROM users
             WHERE LOWER(email) = %s
             LIMIT 1
@@ -1651,10 +1650,14 @@ def is_current_admin():
             return False
 
         is_admin_flag = int(row[0] or 0)
-        # لازم يكون الأدمن الحقيقي من الداتابيز + يطابق ADMIN_EMAIL
-        return is_admin_flag == 1 and is_admin_email(email)
+        return is_admin_flag == 1
 
     except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
         log(f"is_current_admin error: {e}")
         return False
 

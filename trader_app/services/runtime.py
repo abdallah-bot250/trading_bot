@@ -71,6 +71,13 @@ CSRF_EXEMPT_ENDPOINTS = {
     "payments.payment_webhook",
 }
 
+REDIRECT_EXEMPT_PATHS = {
+    "/webhook",
+    "/payment-webhook",
+    "/health",
+    "/api/data",
+}
+
 
 def get_csrf_token():
     token = session.get("_csrf_token")
@@ -110,6 +117,9 @@ def protect_post_requests():
 
 
 def redirect_legacy_domains():
+    if request.path in REDIRECT_EXEMPT_PATHS:
+        return None
+
     """Redirect public Railway URLs to the configured custom domain.
 
     This keeps Telegram, browser bookmarks, and old Railway links on the
