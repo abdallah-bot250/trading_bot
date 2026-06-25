@@ -489,7 +489,8 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
         c.execute("""
             UPDATE users
             SET chat_id = NULL,
-                bot_active = 0
+                bot_active = 0,
+                plan = CASE WHEN plan = 'pro_2y' THEN 'vip' ELSE plan END
             WHERE id = %s
         """, (old_user_id,))
         log(f"TELEGRAM_CHAT_REASSIGNED old_user_id={old_user_id} new_user_id={current_user_id} chat_id={chat_id}")
@@ -497,7 +498,8 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
     c.execute("""
         UPDATE users
         SET chat_id = %s,
-            bot_active = 1
+            bot_active = 1,
+            plan = CASE WHEN plan = 'pro_2y' THEN 'vip' ELSE plan END
         WHERE id = %s
     """, (chat_id, current_user_id))
     if email:
@@ -517,24 +519,6 @@ def register():
 
     if ref:
         session["ref"] = ref
-
-    if request.method == "GET" and chat_id:
-        try:
-            conn = db()
-            c = conn.cursor()
-            c.execute("""
-                SELECT id
-                FROM users
-                WHERE chat_id = %s
-                LIMIT 1
-            """, (chat_id,))
-            existing_chat_user = c.fetchone()
-            conn.close()
-            if existing_chat_user:
-                log(f"REGISTER_CHAT_ID_EXISTS user_id={existing_chat_user[0]} chat_id={chat_id}")
-                return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
-        except Exception as e:
-            log(f"register chat_id precheck skipped: {e}")
 
     if request.method == "POST":
         conn = None
