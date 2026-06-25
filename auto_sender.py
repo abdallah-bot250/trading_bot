@@ -194,17 +194,31 @@ def get_live_price(symbol):
     try:
         rest_symbol = normalize_symbol_for_rest(symbol)
 
+        failures = []
+        binance_global_451 = False
+
         # Primary: Binance global
         for provider, url in [
             ("BINANCE", f"https://api.binance.com/api/v3/ticker/price?symbol={rest_symbol}"),
             ("BINANCE_US", f"https://api.binance.us/api/v3/ticker/price?symbol={rest_symbol}"),
         ]:
             try:
-                r = requests.get(url, timeout=10).json()
+                response = requests.get(url, timeout=10)
+                if provider == "BINANCE" and response.status_code == 451:
+                    binance_global_451 = True
+                    failures.append(f"{provider}=451")
+                    continue
+                if response.status_code != 200:
+                    failures.append(f"{provider}={response.status_code}")
+                    continue
+                r = response.json()
                 if "price" in r:
+                    if provider == "BINANCE_US" and binance_global_451:
+                        log(f"MARKET_DATA_SOURCE BINANCE_US symbol={symbol} timeframe=price")
                     return float(r["price"])
+                failures.append(f"{provider}=missing_price")
             except Exception as provider_error:
-                log(f"{provider} price fallback error for {symbol}: {provider_error}")
+                failures.append(f"{provider}=error:{provider_error}")
 
         # Fallback: KuCoin when Binance is unavailable or blocks the request.
         try:
@@ -213,11 +227,12 @@ def get_live_price(symbol):
             k = requests.get(kucoin_url, timeout=10).json()
             price = ((k.get("data") or {}).get("price"))
             if price:
-                log(f"KuCoin fallback price used for {symbol}")
                 return float(price)
+            failures.append("KUCOIN=missing_price")
         except Exception as kucoin_error:
-            log(f"KuCoin price fallback error for {symbol}: {kucoin_error}")
+            failures.append(f"KUCOIN=error:{kucoin_error}")
 
+        log(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe=price failures={'; '.join(failures)}")
         return None
     except Exception as e:
         log(f"get_live_price error for {symbol}: {e}")

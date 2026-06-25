@@ -144,39 +144,42 @@ def get_market_data(symbol, interval="5m", limit=250):
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
+    failures = []
+    binance_global_451 = False
+
     for source_name, url in endpoints:
         try:
             response = requests.get(url, timeout=REQUEST_TIMEOUT)
-            print(f"🌐 {source_name} STATUS {symbol} {interval}: {response.status_code}")
 
-            # لو Binance restricted / blocked
-            if response.status_code == 451:
-                print(f"⚠️ {source_name} restricted for {symbol} {interval}")
+            if source_name == "BINANCE" and response.status_code == 451:
+                binance_global_451 = True
+                failures.append(f"{source_name}=451")
                 continue
 
-            # لو مش 200
             if response.status_code != 200:
-                print(f"⚠️ {source_name} bad status for {symbol} {interval}: {response.status_code}")
+                failures.append(f"{source_name}={response.status_code}")
                 continue
 
             try:
                 data = response.json()
-            except Exception:
-                print(f"❌ {source_name} invalid JSON for {symbol} {interval}")
-                data = None
+            except Exception as json_error:
+                failures.append(f"{source_name}=invalid_json:{json_error}")
+                continue
 
             if isinstance(data, dict):
-                print(f"⚠️ {source_name} API error for {symbol} {interval}: {data}")
+                failures.append(f"{source_name}=api_error")
                 continue
 
             df = parse_binance_klines_to_df(data)
             if df is not None and not df.empty:
+                if source_name == "BINANCE_US" and binance_global_451:
+                    print(f"MARKET_DATA_SOURCE BINANCE_US symbol={symbol} timeframe={interval}")
                 return df
 
-            print(f"❌ {source_name} no kline data for {symbol} {interval}")
+            failures.append(f"{source_name}=empty")
 
         except Exception as e:
-            print(f"❌ {source_name} request failed for {symbol} {interval}: {e}")
+            failures.append(f"{source_name}=request_failed:{e}")
             continue
 
     # ===================== FALLBACK TO KUCOIN =====================
@@ -187,25 +190,25 @@ def get_market_data(symbol, interval="5m", limit=250):
         kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
         response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
 
-        print(f"🌐 KUCOIN STATUS {symbol} {interval}: {response.status_code}")
-
         if response.status_code != 200:
-            print(f"⚠️ KUCOIN bad status for {symbol} {interval}: {response.status_code}")
+            failures.append(f"KUCOIN={response.status_code}")
+            print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
             return None
 
         data = response.json()
 
         if not isinstance(data, dict) or "data" not in data:
-            print(f"⚠️ KUCOIN invalid response for {symbol} {interval}: {data}")
+            failures.append("KUCOIN=invalid_response")
+            print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
             return None
 
         candles = data["data"]
 
         if not candles:
-            print(f"❌ KUCOIN no candles for {symbol} {interval}")
+            failures.append("KUCOIN=empty")
+            print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
             return None
 
-        # KuCoin بيرجع الشموع بالعكس، نقلبها
         candles = candles[::-1]
 
         import pandas as pd
@@ -224,13 +227,14 @@ def get_market_data(symbol, interval="5m", limit=250):
         if df is not None and not df.empty:
             return df
 
-        print(f"❌ KUCOIN parsed empty df for {symbol} {interval}")
+        failures.append("KUCOIN=parsed_empty")
+        print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
         return None
 
     except Exception as e:
-        print(f"❌ KUCOIN API error for {symbol} {interval}: {e}")
+        failures.append(f"KUCOIN=api_error:{e}")
+        print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
         return None
-
 
 # ================= RSI =================
 def rsi(df, period=14):

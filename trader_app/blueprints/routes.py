@@ -474,7 +474,7 @@ def telegram_status():
 @auth_bp.route("/register", methods=["GET", "POST"])
 @limiter.limit("8 per minute", methods=["POST"])
 def register():
-    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
+    chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
     ref = (request.args.get("ref") or session.get("ref") or "").strip()
 
     if request.args.get("chat_id"):
@@ -675,7 +675,7 @@ def register():
 @auth_bp.route("/login", methods=["GET", "POST"])
 @limiter.limit("5 per minute", methods=["POST"])
 def login():
-    chat_id = (request.args.get("chat_id") or session.get("chat_id") or "").strip()
+    chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
 
     if request.args.get("chat_id"):
         session["chat_id"] = request.args.get("chat_id").strip()
@@ -704,6 +704,7 @@ def login():
 
             if not user:
               conn.close()
+              log(f"LOGIN_FAILED email={email} reason=unknown_email")
               audit_log("login_unknown_email", email)
               flash("❌ الإيميل غير موجود", "error")
               return redirect("/login")
@@ -714,39 +715,57 @@ def login():
                 user_id = user[0]
 
                 if chat_id:
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = NULL
-                        WHERE chat_id = %s AND id != %s
-                    """, (chat_id, user_id))
+                    try:
+                        c.execute("""
+                            UPDATE users
+                            SET chat_id = NULL
+                            WHERE chat_id = %s AND id != %s
+                        """, (chat_id, user_id))
 
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = %s
-                        WHERE id = %s
-                    """, (chat_id, user_id))
-                    conn.commit()
+                        c.execute("""
+                            UPDATE users
+                            SET chat_id = %s,
+                                bot_active = 1
+                            WHERE id = %s
+                        """, (chat_id, user_id))
+                        conn.commit()
+                    except Exception as link_error:
+                        conn.rollback()
+                        log(f"LOGIN_LINKED_TELEGRAM bot_active skipped email={email} chat_id={chat_id} error={link_error}")
+                        c.execute("""
+                            UPDATE users
+                            SET chat_id = NULL
+                            WHERE chat_id = %s AND id != %s
+                        """, (chat_id, user_id))
+                        c.execute("""
+                            UPDATE users
+                            SET chat_id = %s
+                            WHERE id = %s
+                        """, (chat_id, user_id))
+                        conn.commit()
 
+                    log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
                     ensure_user_has_referral_code(chat_id, conn)
 
                 session["user"] = email
                 session["is_admin"] = True if is_admin_email(email) else False
                 audit_log("login_success", email, f"chat_id_linked={bool(chat_id)}")
-                log(f"✅ Login success: {email} | chat_id={chat_id}")
+                log(f"LOGIN_SUCCESS email={email} chat_id={chat_id}")
                 conn.close()
                 return redirect("/dashboard")
 
             conn.close()
+            log(f"LOGIN_FAILED email={email} reason=bad_password")
             audit_log("login_bad_password", email)
             flash("❌ الباسورد غير صحيح", "error")
             return redirect("/login")
 
         except Exception as e:
-         log(f"❌ Login error: {e}")
+         log(f"LOGIN_FAILED email={(request.form.get('email') or '').strip().lower()} reason=exception error={e}")
          flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
          return redirect("/login")
 
-    return render_template("login.html")
+    return render_template("login.html", chat_id=chat_id)
 
 
 @auth_bp.route("/logout")

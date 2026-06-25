@@ -228,6 +228,7 @@ input:focus {
 
 <form method="POST">
 {{ csrf_field() }}
+<input type="hidden" name="chat_id" value="{{ chat_id }}">
 
 <div class="form-group">
 <label for="email">البريد الإلكتروني</label>
@@ -248,7 +249,7 @@ input:focus {
 </div>
 
 <div class="links">
-ليس لديك حساب؟ <a href="/register">إنشاء حساب</a>
+ليس لديك حساب؟ <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">إنشاء حساب</a>
 </div>
 
 <div class="note">

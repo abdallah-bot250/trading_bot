@@ -371,7 +371,7 @@ button.main-btn:hover {
         افتح البوت الرسمي واتبع رابط الربط الآمن. لن يتم ربط تيليجرام إلا بعد تسجيل الدخول من الموقع.
     </div>
 
-    <a href="{{ url_for('auth.login') }}" class="bottom-link">لديك حساب بالفعل؟ تسجيل الدخول</a>
+    <a href="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}" class="bottom-link">لديك حساب بالفعل؟ تسجيل الدخول</a>
 
     <div class="note">
         Nexora AI Trader يساعدك على تقليل العشوائية وتحسين جودة الدخول،
