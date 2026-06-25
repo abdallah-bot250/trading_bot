@@ -576,7 +576,7 @@ a {
             <a class="nav-btn secondary" href="/proof">الإثباتات</a>
             <a class="nav-btn secondary" href="/bot-check">فحص البوت</a>
             <a class="nav-btn secondary" href="/login">دخول</a>
-            <a class="nav-btn primary" href="/register">ابدأ الآن</a>
+            <a class="nav-btn primary" href="/register{% if referral_code %}?ref={{ referral_code }}{% endif %}">ابدأ الآن</a>
         </nav>
     </div>
 </header>
@@ -592,6 +592,10 @@ a {
                 </p>
                 <div class="hero-cta">
                     <a class="btn primary" href="/register">ابدأ التجربة</a>
+                    {% if referral_code %}
+                    <a class="btn primary" href="/register?ref={{ referral_code }}">Create Website Account</a>
+                    <a class="btn secondary" href="{{ referral_telegram_link }}" target="_blank" rel="noopener">Open Official Telegram Bot</a>
+                    {% endif %}
                     <a class="btn secondary" href="#demo">شاهد الديمو</a>
                     <a class="btn secondary" href="/proof">شاهد النتائج</a>
                 </div>
@@ -699,23 +703,23 @@ a {
             </div>
             <div class="grid-3">
                 <div class="price-card">
-                    <h3>Starter</h3>
+                    <h3>Basic</h3>
                     <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$49</small> $25 <span>/ month</span></div><span class="badge">Limited Time Offer</span>
                     <ul>
                         <li>5 Signals / Day</li>
-                        <li>Starter Dashboard</li>
+                        <li>Basic Dashboard</li>
                         <li>Telegram Delivery</li>
                         <li>Basic Analysis</li>
                         <li>Signal history basics</li>
                         <li>Best for validating the system</li>
                     </ul>
-                    <a class="btn primary" href="/register">ابدأ Starter</a>
+                    <a class="btn primary" href="/register">ابدأ Basic</a>
                 </div>
                 <div class="price-card featured">
                     <h3>Pro</h3>
                     <div class="price"><small style="text-decoration:line-through;color:#94a3b8;">$119</small> $59.99 <span>/ month</span></div><span class="badge">Limited Time Offer</span>
                     <ul>
-                        <li>كل مميزات Starter</li>
+                        <li>كل مميزات Basic</li>
                         <li>AI Analysis</li>
                         <li>Portfolio Tracker</li>
                         <li>Email Alerts</li>

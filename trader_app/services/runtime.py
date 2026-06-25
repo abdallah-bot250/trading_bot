@@ -48,7 +48,8 @@ PLAN_DURATIONS_DAYS = {
 }
 
 PLAN_LABELS = {
-    "basic": "Starter",
+    "trial": "Free Trial",
+    "basic": "Basic",
     "pro": "Pro",
     "vip": "Elite",
     "pro_2y": "Pro 2 Years",
@@ -382,6 +383,10 @@ def ensure_user_has_referral_code(chat_id, conn):
 
 
 def telegram_referral_link(referral_code):
+    return f"{current_base_url()}/r/{referral_code}"
+
+
+def telegram_deep_referral_link(referral_code):
     return f"{current_bot_link()}?start=ref_{referral_code}"
 
 

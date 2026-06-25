@@ -37,6 +37,19 @@ def landing():
     return render_template("landing.html")
 
 
+@public_bp.route("/r/<referral_code>")
+@public_bp.route("/ref/<referral_code>")
+def referral_landing(referral_code):
+    referral_code = str(referral_code or "").strip()
+    if referral_code:
+        session["ref"] = referral_code
+    return render_template(
+        "landing.html",
+        referral_code=referral_code,
+        referral_telegram_link=telegram_deep_referral_link(referral_code) if referral_code else current_bot_link(),
+    )
+
+
 @public_bp.route("/set-language/<lang>")
 def set_language(lang):
     lang = (lang or "").strip().lower()
@@ -94,7 +107,7 @@ COMPANY_PAGES = {
             ]),
             ("Subscriptions", [
                 "Plan access depends on the active subscription status recorded in the platform.",
-                "Features may differ between Starter, Pro, and Elite plans as described on the pricing page and dashboard."
+                "Features may differ between Basic, Pro, and Elite plans as described on the pricing page and dashboard."
             ]),
             ("Availability", [
                 "Crypto markets, exchanges, Telegram, hosting providers, and payment networks can experience delays or outages.",
@@ -187,7 +200,7 @@ COMPANY_PAGES = {
             ("Product Principles", [
                 "No fake certainty: trading risk is always visible.",
                 "Operational trust: payment history, bot verification, admin audit logs, and secure account flows matter.",
-                "Plan value: Starter, Pro, and Elite should each have real differences and useful features."
+                "Plan value: Basic, Pro, and Elite should each have real differences and useful features."
             ])
         ]
     },
@@ -222,10 +235,10 @@ COMPANY_PAGES = {
         "sections": [
             ("Getting Started", [
                 "Create an account, log in, open your dashboard, and link Telegram through the official bot.",
-                "Choose Starter, Pro, or Elite based on the dashboard and signal features you need."
+                "Choose Basic, Pro, or Elite based on the dashboard and signal features you need."
             ]),
             ("Plans", [
-                "Starter includes basic signal access and Telegram delivery.",
+                "Basic includes basic signal access and Telegram delivery.",
                 "Pro adds AI analysis, portfolio tracking, email alerts, advanced dashboard, risk analysis, and history.",
                 "Elite adds AI chat, whale alerts, private community, early signals, live scanner, VIP dashboard, priority support, and advanced AI."
             ]),
@@ -489,8 +502,7 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
         c.execute("""
             UPDATE users
             SET chat_id = NULL,
-                bot_active = 0,
-                plan = CASE WHEN plan = 'pro_2y' THEN 'vip' ELSE plan END
+                bot_active = 0
             WHERE id = %s
         """, (old_user_id,))
         log(f"TELEGRAM_CHAT_REASSIGNED old_user_id={old_user_id} new_user_id={current_user_id} chat_id={chat_id}")
@@ -498,8 +510,7 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
     c.execute("""
         UPDATE users
         SET chat_id = %s,
-            bot_active = 1,
-            plan = CASE WHEN plan = 'pro_2y' THEN 'vip' ELSE plan END
+            bot_active = 1
         WHERE id = %s
     """, (chat_id, current_user_id))
     if email:
@@ -1245,8 +1256,12 @@ def dashboard():
             dashboard_subtitle = "Advanced signal workspace with performance, risk, and referral intelligence."
         else:
             dashboard_tier = "starter"
-            dashboard_title = "Starter Dashboard"
-            dashboard_subtitle = "Clean starter workspace with 5 signals per day, Telegram delivery, basic analysis, and essential tracking."
+            dashboard_title = "Free Trial Dashboard"
+            dashboard_subtitle = "Clean free-trial workspace with 2 free signals, Telegram delivery, basic analysis, and essential tracking."
+
+        plan_label = PLAN_LABELS.get(plan, plan.title())
+        free_signal_limit = 2
+        free_signal_usage = min(trades, free_signal_limit) if plan == "trial" else None
 
         dashboard_widgets = {
             "portfolio": portfolio_value,
@@ -1267,6 +1282,8 @@ def dashboard():
             "started_days_ago": subscription["started_days_ago"],
             "premium_enabled": subscription["is_premium"],
             "bot_connected": is_linked,
+            "free_signal_usage": free_signal_usage,
+            "free_signal_limit": free_signal_limit,
         }
         notifications = []
         if not is_linked:
@@ -1276,7 +1293,7 @@ def dashboard():
         elif subscription["status"] == "expiring" and subscription["remaining_days"] is not None:
             notifications.append(f"Subscription expires in {subscription['remaining_days']} day(s). Renew before expiry to keep premium signals active.")
         if plan in ("trial", "basic") and user.get("is_paid", 0) != 1:
-            notifications.append("Starter includes 5 signals per day, Telegram, basic analysis, and the Starter dashboard.")
+            notifications.append("Free Trial includes 2 free signals. Basic and paid plans unlock higher access.")
         if plan in AUTO_TRADE_PLANS and not user.get("api_key"):
             notifications.append("Elite automation needs API keys before auto trading can run.")
         if user.get("bot_active", 0) == 1:
@@ -1286,7 +1303,7 @@ def dashboard():
 
         recent_activity = [
             {"label": "Dashboard loaded", "value": dashboard_title},
-            {"label": "Current plan", "value": plan.upper()},
+            {"label": "Current plan", "value": plan_label},
             {"label": "Telegram link", "value": "Connected" if is_linked else "Pending"},
             {"label": "Bot status", "value": "Running" if user.get("bot_active", 0) == 1 else "Stopped"},
             {"label": "Subscription", "value": subscription["status"].title()},
@@ -1296,6 +1313,7 @@ def dashboard():
         return render_template(
             "dashboard.html",
             plan=plan,
+            plan_label=plan_label,
             expiry=user.get("expiry"),
             subscription=subscription,
             profit=profit,

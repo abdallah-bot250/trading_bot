@@ -685,7 +685,7 @@ tbody tr:hover {
             <strong>{{ free_users }}</strong>
         </div>
         <div class="metric-card accent">
-            <span>Starter</span>
+            <span>Basic</span>
             <strong>{{ basic_users }}</strong>
         </div>
         <div class="metric-card warn">
@@ -791,7 +791,7 @@ tbody tr:hover {
         </div>
         <div class="ops-panel">
             <h3>Active Plans</h3>
-            <div class="ops-row"><span>Starter</span><strong>{{ basic_users }}</strong></div>
+            <div class="ops-row"><span>Basic</span><strong>{{ basic_users }}</strong></div>
             <div class="ops-row"><span>Pro</span><strong>{{ pro_users }}</strong></div>
             <div class="ops-row"><span>Elite</span><strong>{{ vip_users }}</strong></div>
             <div class="ops-row"><span>Pro 2 Years</span><strong>{{ pro_2y_users|default(0) }}</strong></div>
@@ -867,13 +867,13 @@ tbody tr:hover {
         <div class="section-head">
             <div class="section-title">
                 <h2>إدارة المستخدمين</h2>
-                <p>بحث، فلترة، وتفعيل خطط Starter و Pro و Elite و Pro 2 Years بدون تغيير مسار الدفع.</p>
+                <p>بحث، فلترة، وتفعيل خطط Basic و Pro و Elite و Pro 2 Years بدون تغيير مسار الدفع.</p>
             </div>
             <div class="tools">
                 <input class="search" id="userSearch" type="search" placeholder="ابحث بالإيميل أو Chat ID أو ID">
                 <select class="filter" id="planFilter">
                     <option value="all">كل الخطط</option>
-                    <option value="basic">Starter</option>
+                    <option value="basic">Basic</option>
                     <option value="pro">Pro</option>
                     <option value="vip">Elite</option>
                     <option value="pro_2y">Pro 2 Years</option>
@@ -920,7 +920,7 @@ tbody tr:hover {
                             {% elif u[2] == 'pro' %}
                                 <span class="badge badge-pro">PRO</span>
                             {% elif u[2] == 'basic' %}
-                                <span class="badge badge-basic">STARTER</span>
+                                <span class="badge badge-basic">BASIC</span>
                             {% else %}
                                 <span class="badge badge-free">{{ u[2] or 'trial' }}</span>
                             {% endif %}
@@ -945,7 +945,7 @@ tbody tr:hover {
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ u[0] }}">
                                     <input type="hidden" name="plan" value="basic">
-                                    <button class="btn basic" type="submit">Starter</button>
+                                    <button class="btn basic" type="submit">Basic</button>
                                 </form>
 
                                 <form action="/activate-user" method="POST">
