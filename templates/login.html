@@ -226,7 +226,7 @@ input:focus {
 </a>
 </div>
 
-<form method="POST">
+<form method="POST" action="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">
 {{ csrf_field() }}
 <input type="hidden" name="chat_id" value="{{ chat_id }}">
 

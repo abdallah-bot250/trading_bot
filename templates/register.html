@@ -340,7 +340,7 @@ button.main-btn:hover {
         </div>
     </div>
 
-    <form method="POST">
+    <form method="POST" action="{{ url_for('auth.register', chat_id=chat_id, ref=ref) if chat_id else url_for('auth.register', ref=ref) }}">
         {{ csrf_field() }}
         <div class="form-group">
             <label for="name">الاسم الكامل</label>

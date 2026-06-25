@@ -470,6 +470,41 @@ def telegram_status():
         return jsonify(status), 502
 
 
+
+def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
+    chat_id = str(chat_id or "").strip()
+    if not chat_id:
+        return False
+
+    c.execute("""
+        SELECT id
+        FROM users
+        WHERE chat_id = %s
+        LIMIT 1
+    """, (chat_id,))
+    owner = c.fetchone()
+    old_user_id = owner[0] if owner else None
+
+    if old_user_id and int(old_user_id) != int(current_user_id):
+        c.execute("""
+            UPDATE users
+            SET chat_id = NULL,
+                bot_active = 0
+            WHERE id = %s
+        """, (old_user_id,))
+        log(f"TELEGRAM_CHAT_REASSIGNED old_user_id={old_user_id} new_user_id={current_user_id} chat_id={chat_id}")
+
+    c.execute("""
+        UPDATE users
+        SET chat_id = %s,
+            bot_active = 1
+        WHERE id = %s
+    """, (chat_id, current_user_id))
+    if email:
+        log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
+    return bool(old_user_id and int(old_user_id) != int(current_user_id))
+
+
 # ================= REGISTER =================
 @auth_bp.route("/register", methods=["GET", "POST"])
 @limiter.limit("8 per minute", methods=["POST"])
@@ -477,13 +512,14 @@ def register():
     chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
     ref = (request.args.get("ref") or session.get("ref") or "").strip()
 
-    if request.args.get("chat_id"):
-        session["chat_id"] = request.args.get("chat_id").strip()
+    if chat_id:
+        session["chat_id"] = chat_id
 
     if request.args.get("ref"):
         session["ref"] = request.args.get("ref").strip()
 
     if request.method == "POST":
+        conn = None
         try:
             email = (request.form.get("email") or "").strip().lower()
             password_raw = (request.form.get("password") or "").strip()
@@ -516,14 +552,15 @@ def register():
                     tg_ref = c.fetchone()
                     if tg_ref and tg_ref[0]:
                         telegram_ref = str(tg_ref[0]).strip()
-                        log(f"✅ Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
+                        log(f"Telegram referral loaded in register: {chat_id} -> {telegram_ref}")
                 except Exception as tg_err:
-                    log(f"❌ Telegram referral fetch error in register: {tg_err}")
+                    conn.rollback()
+                    log(f"Telegram referral fetch error in register: {tg_err}")
 
             final_ref = ref or telegram_ref
 
             c.execute("""
-                SELECT id, email, password, chat_id, is_admin, plan, is_paid
+                SELECT id
                 FROM users
                 WHERE LOWER(email) = %s
                 LIMIT 1
@@ -531,79 +568,9 @@ def register():
             existing = c.fetchone()
 
             if existing:
-                user_id = existing[0]
-                stored_password = existing[2]
-
-                if not check_password_hash(stored_password, password_raw):
-                    conn.close()
-                    audit_log("register_existing_bad_password", email)
-                    flash("❌ هذا الإيميل مسجل بالفعل لكن كلمة السر غير صحيحة", "error")
-                    return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
-
-                if chat_id:
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = NULL
-                        WHERE chat_id = %s AND id != %s
-                    """, (chat_id, user_id))
-
-                    c.execute("""
-                        UPDATE users
-                        SET chat_id = %s
-                        WHERE id = %s
-                    """, (chat_id, user_id))
-                    conn.commit()
-
-                    ensure_user_has_referral_code(chat_id, conn)
-
-                if final_ref:
-                    c.execute("""
-                        SELECT referred_by, chat_id
-                        FROM users
-                        WHERE id = %s
-                        LIMIT 1
-                    """, (user_id,))
-                    existing_user_data = c.fetchone()
-
-                    current_referred_by = existing_user_data[0] if existing_user_data else None
-                    current_chat_id = str(existing_user_data[1] or "").strip() if existing_user_data else ""
-
-                    c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
-                    ref_user = c.fetchone()
-
-                    if ref_user and not current_referred_by:
-                        ref_owner_chat_id = str(ref_user[0] or "").strip()
-                        if ref_owner_chat_id != current_chat_id:
-                            c.execute("""
-                                UPDATE users
-                                SET referred_by = %s
-                                WHERE id = %s
-                            """, (final_ref, user_id))
-                            conn.commit()
-                            log(f"✅ Existing user referred_by updated: {email} -> {final_ref}")
-
-                if is_admin_email(email):
-                    c.execute("""
-                        UPDATE users
-                        SET is_admin = 1
-                        WHERE id = %s
-                    """, (user_id,))
-                    conn.commit()
-
                 conn.close()
-
-                session["user"] = email
-                session["is_admin"] = True if is_admin_email(email) else False
-                audit_log("register_existing_login", email, f"chat_id_linked={bool(chat_id)}")
-
-                log(f"✅ Existing user logged in from register: {email} | chat_id={chat_id} | ref={final_ref}")
-
-                flash("✅ تم تسجيل الدخول بنجاح", "success")
-                flash("مهم جدًا: افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.", "success")
-
-                return redirect("/dashboard")
-
-            password = generate_password_hash(password_raw)
+                flash("Email already registered. Please login.", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id))
 
             referred_by = None
             if final_ref:
@@ -612,18 +579,18 @@ def register():
                 if ref_user and str(ref_user[0] or "").strip() != str(chat_id).strip():
                     referred_by = final_ref
 
+            password = generate_password_hash(password_raw)
             c.execute("""
-            INSERT INTO users (
-                email, password, chat_id, is_paid, plan, trial_start, trades,
-                expiry, api_key, api_secret, profit, trade_amount, trade_type,
-                bot_active, referred_by, is_admin, lifetime_owner
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
+                INSERT INTO users (
+                    email, password, chat_id, is_paid, plan, trial_start, trades,
+                    expiry, api_key, api_secret, profit, trade_amount, trade_type,
+                    bot_active, referred_by, is_admin, lifetime_owner
+                )
+                VALUES (%s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
             """, (
                 email,
                 password,
-                chat_id,
                 0,
                 "trial",
                 datetime.now().strftime("%Y-%m-%d"),
@@ -634,13 +601,21 @@ def register():
                 0,
                 10,
                 "futures",
-                0,
+                1 if chat_id else 0,
                 referred_by,
                 1 if is_admin_email(email) else 0,
                 0
             ))
 
             new_user = c.fetchone()
+            new_user_id = new_user[0]
+
+            moved_chat = False
+            if chat_id:
+                moved_chat = reassign_telegram_chat(c, new_user_id, chat_id, email)
+                if moved_chat:
+                    flash("Telegram account linked successfully.", "success")
+
             verification_token = create_email_verification_token(email, conn)
             conn.commit()
 
@@ -656,15 +631,19 @@ def register():
             if not sent:
                 flash(f"Verification link: {verification_link}", "success")
 
-            log(f"✅ New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
+            log(f"New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
 
             flash("✅ تم إنشاء الحساب بنجاح", "success")
-            flash("مهم جدًا: افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.", "success")
-
             return redirect("/dashboard")
 
         except Exception as e:
-            log(f"❌ Register error: {e}")
+            try:
+                if conn:
+                    conn.rollback()
+                    conn.close()
+            except Exception:
+                pass
+            log(f"Register error: {e}")
             flash("❌ حصل خطأ أثناء التسجيل", "error")
             return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
@@ -677,93 +656,83 @@ def register():
 def login():
     chat_id = (request.form.get("chat_id") or request.args.get("chat_id") or session.get("chat_id") or "").strip()
 
-    if request.args.get("chat_id"):
-        session["chat_id"] = request.args.get("chat_id").strip()
+    if chat_id:
+        session["chat_id"] = chat_id
 
     if request.method == "POST":
+        conn = None
         try:
             email = (request.form.get("email") or "").strip().lower()
             password = (request.form.get("password") or "").strip()
 
             if not email or not password:
-                return "❌ لازم تكتب الإيميل والباسورد"
+                log(f"LOGIN_FAILED email={email} reason=missing_credentials")
+                flash("❌ لازم تكتب الإيميل والباسورد", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id))
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
-                return "❌ لازم تدخل إيميل صحيح"
+                log(f"LOGIN_FAILED email={email} reason=invalid_email")
+                flash("❌ لازم تدخل إيميل صحيح", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id))
 
             conn = db()
             c = conn.cursor()
 
             c.execute("""
-                SELECT * FROM users
+                SELECT id, email, password
+                FROM users
                 WHERE LOWER(email) = %s
                 LIMIT 1
             """, (email,))
             user = c.fetchone()
 
             if not user:
-              conn.close()
-              log(f"LOGIN_FAILED email={email} reason=unknown_email")
-              audit_log("login_unknown_email", email)
-              flash("❌ الإيميل غير موجود", "error")
-              return redirect("/login")
+                conn.close()
+                log(f"LOGIN_FAILED email={email} reason=unknown_email")
+                audit_log("login_unknown_email", email)
+                flash("❌ الإيميل غير موجود", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id))
 
+            user_id = user[0]
             stored_password = str(user[2] or "").strip()
 
-            if check_password_hash(stored_password, password):
-                user_id = user[0]
-
-                if chat_id:
-                    try:
-                        c.execute("""
-                            UPDATE users
-                            SET chat_id = NULL
-                            WHERE chat_id = %s AND id != %s
-                        """, (chat_id, user_id))
-
-                        c.execute("""
-                            UPDATE users
-                            SET chat_id = %s,
-                                bot_active = 1
-                            WHERE id = %s
-                        """, (chat_id, user_id))
-                        conn.commit()
-                    except Exception as link_error:
-                        conn.rollback()
-                        log(f"LOGIN_LINKED_TELEGRAM bot_active skipped email={email} chat_id={chat_id} error={link_error}")
-                        c.execute("""
-                            UPDATE users
-                            SET chat_id = NULL
-                            WHERE chat_id = %s AND id != %s
-                        """, (chat_id, user_id))
-                        c.execute("""
-                            UPDATE users
-                            SET chat_id = %s
-                            WHERE id = %s
-                        """, (chat_id, user_id))
-                        conn.commit()
-
-                    log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
-                    ensure_user_has_referral_code(chat_id, conn)
-
-                session["user"] = email
-                session["is_admin"] = True if is_admin_email(email) else False
-                audit_log("login_success", email, f"chat_id_linked={bool(chat_id)}")
-                log(f"LOGIN_SUCCESS email={email} chat_id={chat_id}")
+            if not check_password_hash(stored_password, password):
                 conn.close()
-                return redirect("/dashboard")
+                log(f"LOGIN_FAILED email={email} reason=bad_password")
+                audit_log("login_bad_password", email)
+                flash("❌ الباسورد غير صحيح", "error")
+                return redirect(url_for("auth.login", chat_id=chat_id))
+
+            moved_chat = False
+            if chat_id:
+                moved_chat = reassign_telegram_chat(c, user_id, chat_id, email)
+                if moved_chat:
+                    flash("Telegram account linked successfully.", "success")
+
+            conn.commit()
+
+            if chat_id:
+                ensure_user_has_referral_code(chat_id, conn)
 
             conn.close()
-            log(f"LOGIN_FAILED email={email} reason=bad_password")
-            audit_log("login_bad_password", email)
-            flash("❌ الباسورد غير صحيح", "error")
-            return redirect("/login")
+
+            session["user"] = email
+            session["is_admin"] = True if is_admin_email(email) else False
+            audit_log("login_success", email, f"chat_id_linked={bool(chat_id)}")
+            log(f"LOGIN_SUCCESS email={email} chat_id={chat_id}")
+            return redirect("/dashboard")
 
         except Exception as e:
-         log(f"LOGIN_FAILED email={(request.form.get('email') or '').strip().lower()} reason=exception error={e}")
-         flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
-         return redirect("/login")
+            try:
+                if conn:
+                    conn.rollback()
+                    conn.close()
+            except Exception:
+                pass
+            log(f"LOGIN_FAILED email={(request.form.get('email') or '').strip().lower()} reason=exception error={e}")
+            flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
+            return redirect(url_for("auth.login", chat_id=chat_id))
 
     return render_template("login.html", chat_id=chat_id)
 
