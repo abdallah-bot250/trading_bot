@@ -1,51 +1,34 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Health - Nexora Admin</title>
-    <style>
-        body { margin:0; font-family:Arial, sans-serif; background:#07111f; color:#e5eefb; }
-        .wrap { max-width:1100px; margin:0 auto; padding:32px 18px; }
-        a { color:#38bdf8; text-decoration:none; }
-        .top { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:22px; }
-        .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:14px; }
-        .card { background:#0f1b2d; border:1px solid rgba(148,163,184,.22); border-radius:10px; padding:18px; }
-        .card span { display:block; color:#94a3b8; font-size:13px; margin-bottom:7px; }
-        .card strong { display:block; font-size:24px; margin-bottom:8px; word-break:break-word; }
-        .online, .configured { color:#22c55e; }
-        .missing, .missing_key, .offline, .degraded { color:#f59e0b; }
-        .meta { color:#94a3b8; line-height:1.7; word-break:break-word; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Health - Nexora Admin</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:radial-gradient(circle at top left,rgba(32,214,138,.14),transparent 30rem),linear-gradient(180deg,#06110f,#07111f);color:#e5eefb}.wrap{max-width:1180px;margin:0 auto;padding:34px 18px}a{color:#38bdf8;text-decoration:none}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:24px}.top h1{margin:0 0 8px;font-size:clamp(2rem,4vw,3.4rem)}.meta{color:#94a3b8;line-height:1.7;word-break:break-word}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:rgba(15,27,45,.86);border:1px solid rgba(148,163,184,.22);border-radius:8px;padding:18px;box-shadow:0 18px 55px rgba(0,0,0,.24)}.card span{display:block;color:#94a3b8;font-size:13px;margin-bottom:7px}.card strong{display:block;font-size:25px;margin-bottom:8px;word-break:break-word;text-transform:capitalize}.online,.configured{color:#22c55e}.missing,.missing_key,.offline,.degraded{color:#f59e0b}.footer-note{margin-top:22px;border:1px solid rgba(245,158,11,.26);background:rgba(245,158,11,.09);color:#fde68a;border-radius:8px;padding:15px;line-height:1.75}@media(max-width:680px){.top{align-items:flex-start;flex-direction:column}.top a{width:100%;padding:11px;border:1px solid rgba(148,163,184,.22);border-radius:8px;text-align:center}}
+</style>
 </head>
 <body>
-    <main class="wrap">
-        <div class="top">
-            <div>
-                <h1>System Health</h1>
-                <p class="meta">Read-only admin diagnostics. No production data is modified.</p>
-            </div>
-            <a href="/admin">Back to Admin</a>
-        </div>
-        <section class="grid">
-            {% for name, check in checks.items() %}
-            <div class="card">
-                <span>{{ name }}</span>
-                <strong class="{{ check.status }}">{{ check.status }}</strong>
-                <div class="meta">{{ check.detail }}</div>
-            </div>
-            {% endfor %}
-            <div class="card">
-                <span>Current Time</span>
-                <strong>{{ current_time }}</strong>
-                <div class="meta">Server local time</div>
-            </div>
-            <div class="card">
-                <span>Last Signal</span>
-                <strong>{{ last_signal }}</strong>
-                <div class="meta">Latest trades_log.created_at value</div>
-            </div>
-        </section>
-    </main>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <h1>System Health</h1>
+      <p class="meta">Read-only production diagnostics for database, Telegram, worker, AI, signal, and payment readiness. This page does not modify data.</p>
+    </div>
+    <a href="/admin">Back to Admin</a>
+  </div>
+  <section class="grid">
+    {% for name, check in checks.items() %}
+    <div class="card">
+      <span>{{ name }}</span>
+      <strong class="{{ check.status }}">{{ check.status }}</strong>
+      <div class="meta">{{ check.detail }}</div>
+    </div>
+    {% endfor %}
+    <div class="card"><span>Current Time</span><strong>{{ current_time }}</strong><div class="meta">Server local time</div></div>
+    <div class="card"><span>Last Signal</span><strong>{{ last_signal }}</strong><div class="meta">Latest tracked signal timestamp</div></div>
+  </section>
+  <div class="footer-note">Operational reminder: this screen is read-only. Use it before paid ads to confirm Telegram, database, scheduler, market data, signal engine, and payment readiness.</div>
+</main>
 </body>
 </html>

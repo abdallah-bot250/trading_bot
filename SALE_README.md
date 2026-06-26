@@ -46,3 +46,13 @@ This is not a profit guarantee. Auto trading requires user API keys and careful 
 - [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
 - [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
 - [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`
+
+## Premium Marketing Lockdown Checklist
+
+- Landing page has a clear paid-ads hero, free-trial CTA, proof CTA, and honest risk disclaimer.
+- Pricing displays Free Trial, Basic, Pro, Elite, and Pro 2 Years without renaming production plan IDs.
+- Referral traffic stays on the website first, with Telegram shown as the official secondary step.
+- Dashboard shows plan, subscription status, Telegram connection, and free signal usage using existing data only.
+- Admin keeps the manual Pro 2Y constraint repair button visible for one-time post-deploy use if needed.
+- Before paid ads: test register, login, Telegram linking, payment, manual payment, proof page, bot check, and admin health.
+- No guaranteed profit copy should be used in ads, landing pages, or sales messages.

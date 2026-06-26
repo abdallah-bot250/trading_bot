@@ -602,6 +602,77 @@ input, select {
         grid-template-columns: 1fr;
     }
 }
+
+
+/* Premium marketing dashboard additions */
+.premium-status-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 26px auto 0;
+    max-width: 1180px;
+}
+.premium-status-card {
+    background: rgba(12,18,31,0.82);
+    border: 1px solid rgba(226,232,240,0.12);
+    border-radius: 8px;
+    padding: 18px;
+    text-align: left;
+    box-shadow: 0 16px 46px rgba(0,0,0,0.24);
+}
+.premium-status-card span {
+    display: block;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+.premium-status-card strong {
+    display: block;
+    color: #f8fafc;
+    font-size: 24px;
+}
+.premium-status-card small {
+    display: block;
+    color: #20d68a;
+    margin-top: 8px;
+    line-height: 1.5;
+}
+.premium-upgrade-box {
+    max-width: 1180px;
+    margin: 18px auto 0;
+    padding: 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(32,214,138,0.22);
+    background: linear-gradient(135deg, rgba(32,214,138,0.11), rgba(56,189,248,0.07));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.premium-upgrade-box p {
+    margin: 0;
+    color: #cbd5e1;
+    line-height: 1.7;
+}
+.premium-upgrade-box a {
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: #20d68a;
+    color: #03110d;
+    font-weight: 900;
+    text-decoration: none;
+}
+@media (max-width: 900px) {
+    .premium-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+    .premium-status-grid { grid-template-columns: 1fr; }
+    .premium-status-card { text-align: center; }
+}
+
 </style>
 <link rel="stylesheet" href="/static/premium.css">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
@@ -694,6 +765,36 @@ input, select {
             {% endif %}
         </div>
     </div>
+
+
+    <section class="premium-status-grid" aria-label="Subscription and account summary">
+        <div class="premium-status-card">
+            <span>Current Plan</span>
+            <strong>{{ plan_label }}</strong>
+            <small>Production plan ID stays unchanged: {{ plan }}</small>
+        </div>
+        <div class="premium-status-card">
+            <span>Subscription Status</span>
+            <strong>{{ subscription.status|default("free")|title }}</strong>
+            <small>{% if dashboard_widgets.remaining_days is not none %}{{ dashboard_widgets.remaining_days }} day(s) remaining{% else %}No paid expiry set{% endif %}</small>
+        </div>
+        <div class="premium-status-card">
+            <span>Telegram Bot</span>
+            <strong>{% if is_linked %}Connected{% else %}Not Connected{% endif %}</strong>
+            <small>{% if bot_active == 1 %}Bot delivery is enabled{% else %}Bot delivery is currently off{% endif %}</small>
+        </div>
+        <div class="premium-status-card">
+            <span>Free Signal Usage</span>
+            <strong>{% if (plan or "trial") == "trial" %}{{ [trades or 0, 2]|min }}/2{% else %}Premium{% endif %}</strong>
+            <small>Free users keep limited signals; paid users keep premium access.</small>
+        </div>
+    </section>
+    {% if (plan or "trial") == "trial" %}
+    <section class="premium-upgrade-box">
+        <p><strong>Ready for more signals?</strong><br>Upgrade when you are ready. Payment routes and plan IDs are unchanged.</p>
+        <a href="#pricing">View Plans</a>
+    </section>
+    {% endif %}
 
     <div class="helper-text">
         ⚠️ البوت لا يرسل صفقات عشوائية — يتم الإرسال فقط عند وجود فرصة واضحة وقوية

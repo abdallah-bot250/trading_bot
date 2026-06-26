@@ -716,7 +716,7 @@ tbody tr:hover {
         <div class="overview-card">
             <div class="label">Users</div>
             <div class="value">{{ admin_overview.users }}</div>
-            <div class="sub">Active: {{ admin_overview.active_users }} Â· Free: {{ admin_overview.free_users }} Â· Premium: {{ admin_overview.premium_users }}</div>
+            <div class="sub">Active: {{ admin_overview.active_users }} &middot; Free: {{ admin_overview.free_users }} &middot; Premium: {{ admin_overview.premium_users }}</div>
             <div class="bar"><span style="width: {{ [admin_overview.paid_conversion, 100]|min }}%;"></span></div>
         </div>
         <div class="overview-card">
@@ -800,6 +800,8 @@ tbody tr:hover {
                 {{ csrf_field() }}
                 <button class="btn warn" type="submit">Repair Pro 2Y Plan Constraint</button>
             </form>
+            <p style="color:#fde68a; line-height:1.6; margin:10px 0 0;">Run this once after deploy only if production rejects plan=pro_2y. It is POST-only and admin-only.</p>
+            <p style="color:#fde68a; line-height:1.6; margin:10px 0 0;">Run this once after deploy only if production rejects plan=pro_2y. It is POST-only and admin-only.</p>
         </div>
     </section>
 
@@ -928,6 +930,10 @@ tbody tr:hover {
                                 <span class="badge badge-pro">PRO</span>
                             {% elif u[2] == 'basic' %}
                                 <span class="badge badge-basic">BASIC</span>
+                            {% elif u[2] == 'pro_2y' %}
+                                <span class="badge badge-pro">PRO 2 YEARS</span>
+                            {% elif u[2] == 'pro_2y' %}
+                                <span class="badge badge-pro">PRO 2 YEARS</span>
                             {% else %}
                                 <span class="badge badge-free">{{ u[2] or 'trial' }}</span>
                             {% endif %}
