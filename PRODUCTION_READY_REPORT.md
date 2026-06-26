@@ -28,3 +28,15 @@ Supported plans: `basic`, `pro`, `vip`, `pro_2y`.
 - Subscription status and remaining-days calculations are visible without schema changes.
 - Admin now has safe counters for active/free/premium users, expiring/expired subscriptions, system status, and last signal time.
 - Optional admin metrics continue to fail closed with empty dashboard values instead of breaking the page.
+
+## Final Launch Checklist
+
+- [ ] Domain connected
+- [ ] Telegram webhook returns 200 OK
+- [ ] Admin clicked `Repair Pro 2Y Plan Constraint` once after deploy
+- [ ] Free trial tested: only 2 free signals total
+- [ ] Paid plan tested: no free signal cap
+- [ ] Admin dashboard tested
+- [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
+- [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
+- [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`

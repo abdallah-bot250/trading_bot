@@ -901,7 +901,10 @@ tbody tr:hover {
                         <th>الخطة</th>
                         <th>الدفع</th>
                         <th>تاريخ الانتهاء</th>
+                        <th>Start</th>
                         <th>Chat ID</th>
+                        <th>Remaining</th>
+                        <th>Free Signals</th>
                         <th>Affiliate Balance</th>
                         <th>Referrals</th>
                         <th>التحكم</th>
@@ -939,7 +942,10 @@ tbody tr:hover {
                         </td>
 
                         <td class="ltr">{{ u[4] or '-' }}</td>
+                        <td class="ltr">{{ u[8] or '-' }}</td>
                         <td class="ltr">{{ u[5] or '-' }}</td>
+                        <td class="ltr">{% if u[10] is not none %}{{ u[10] }} day(s){% else %}-{% endif %}</td>
+                        <td class="ltr">{% if (u[2] or 'trial') == 'trial' %}{{ [u[9] or 0, 2]|min }}/2{% else %}Paid{% endif %}</td>
                         <td class="ltr">${{ u[6] or 0 }}</td>
                         <td class="ltr">{{ u[7] or 0 }}</td>
 

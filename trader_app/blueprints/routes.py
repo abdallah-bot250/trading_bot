@@ -2021,11 +2021,20 @@ def admin_dashboard():
             "worker_status": "configured" if os.environ.get("RAILWAY_SERVICE_NAME") or os.environ.get("DATABASE_URL") else "local",
         }
 
-        users = safe_rows("""
-            SELECT id, email, plan, is_paid, expiry, chat_id, affiliate_balance, total_referrals
+        user_rows = safe_rows("""
+            SELECT id, email, plan, is_paid, expiry, chat_id, affiliate_balance, total_referrals,
+                   trial_start, trades
             FROM users
             ORDER BY id DESC
         """)
+        users = []
+        today = datetime.now().date()
+        for row in user_rows:
+            expiry_date = _safe_date(row[4])
+            remaining_days = None
+            if expiry_date:
+                remaining_days = max((expiry_date - today).days, 0)
+            users.append(tuple(row) + (remaining_days,))
 
         withdrawals = safe_rows("""
             SELECT id, chat_id, wallet_address, amount, status, created_at

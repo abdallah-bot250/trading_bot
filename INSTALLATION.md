@@ -56,3 +56,15 @@ After installation, verify:
 - Open `/dashboard` with a test user and confirm lifecycle/referral cards render.
 - Open `/admin` and `/admin/system-health` with an admin account.
 - Confirm no migration is required and no production data is modified by the new health page.
+
+## Final Launch Checklist
+
+- [ ] Domain connected
+- [ ] Telegram webhook returns 200 OK
+- [ ] Admin clicked `Repair Pro 2Y Plan Constraint` once after deploy
+- [ ] Free trial tested: only 2 free signals total
+- [ ] Paid plan tested: no free signal cap
+- [ ] Admin dashboard tested
+- [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
+- [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
+- [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`

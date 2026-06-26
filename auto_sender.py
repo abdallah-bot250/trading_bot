@@ -957,6 +957,52 @@ def update_signal_outcomes():
     except Exception as e:
         log(f"update_signal_outcomes error: {e}")
 
+
+def clean_number(value, digits=4):
+    try:
+        value = round(float(value or 0), digits)
+        if value == 0:
+            value = 0.0
+        return value
+    except Exception:
+        return value
+
+
+def trade_close_reason(direction, current_price, tp, sl):
+    try:
+        direction = str(direction or "").upper()
+        current_price = float(current_price)
+        tp = float(tp)
+        sl = float(sl)
+        if direction == "LONG":
+            if current_price >= tp:
+                return "TP Hit"
+            if current_price <= sl:
+                return "SL Hit"
+        if direction == "SHORT":
+            if current_price <= tp:
+                return "TP Hit"
+            if current_price >= sl:
+                return "SL Hit"
+    except Exception:
+        pass
+    return "Manual/Unknown Exit"
+
+
+def format_duration(created_at):
+    if not created_at:
+        return "N/A"
+    try:
+        delta = datetime.now() - created_at
+        seconds = max(int(delta.total_seconds()), 0)
+        hours, rem = divmod(seconds, 3600)
+        minutes, _ = divmod(rem, 60)
+        if hours:
+            return f"{hours}h {minutes}m"
+        return f"{minutes}m"
+    except Exception:
+        return "N/A"
+
 # ================= TRADE MONITOR =================
 def update_closed_trades():
     try:
@@ -964,14 +1010,14 @@ def update_closed_trades():
         c = conn.cursor()
 
         c.execute("""
-        SELECT id, chat_id, pair, direction, entry, tp, sl, amount
+        SELECT id, chat_id, pair, direction, entry, tp, sl, amount, created_at
         FROM trades_log
         WHERE status = 'OPEN'
         """)
         open_trades = c.fetchall()
 
         for trade in open_trades:
-            trade_id, chat_id, pair, direction, entry, tp, sl, amount = trade
+            trade_id, chat_id, pair, direction, entry, tp, sl, amount, created_at = trade
 
             try:
                 current_price = get_live_price(pair)
@@ -1000,26 +1046,44 @@ def update_closed_trades():
                         should_close = True
 
                 if should_close:
+                    close_reason = trade_close_reason(direction, current_price, tp, sl)
+                    pnl = clean_number(pnl, 4)
+                    pnl_percent = 0.0
+                    try:
+                        if direction == "LONG":
+                            pnl_percent = ((float(current_price) - float(entry)) / float(entry)) * 100
+                        elif direction == "SHORT":
+                            pnl_percent = ((float(entry) - float(current_price)) / float(entry)) * 100
+                    except Exception:
+                        pnl_percent = 0.0
+                    pnl_percent = clean_number(pnl_percent, 2)
+                    duration_text = format_duration(created_at)
+
                     c.execute("""
                     UPDATE trades_log
                     SET status = 'CLOSED', pnl = %s, closed_at = NOW()
                     WHERE id = %s
-                    """, (round(pnl, 4), trade_id))
+                    """, (pnl, trade_id))
 
                     c.execute("""
                     UPDATE users
                     SET profit = COALESCE(profit, 0) + %s
                     WHERE chat_id = %s
-                    """, (round(pnl, 4), chat_id))
+                    """, (pnl, chat_id))
 
                     conn.commit()
-                    write_log(chat_id, "INFO", f"Trade closed {pair} pnl={round(pnl,4)}")
+                    write_log(chat_id, "INFO", f"Trade closed {pair} reason={close_reason} pnl={pnl}")
 
-                    send(chat_id, f"""📌 تم إغلاق الصفقة
+                    send(chat_id, f"""📌 Trade Closed
 
-🔥 {pair}
-📊 Direction: {direction}
-💰 PNL: {round(pnl, 4)} USDT
+Pair: {pair}
+Direction: {direction}
+Entry: {clean_number(entry, 6)}
+Exit: {clean_number(current_price, 6)}
+Close Reason: {close_reason}
+PNL: {pnl} USDT
+PNL %: {pnl_percent}%
+Duration: {duration_text}
 """)
 
             except Exception as e:

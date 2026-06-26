@@ -34,3 +34,15 @@ This is not a profit guarantee. Auto trading requires user API keys and careful 
 
 - Includes subscription lifecycle visibility, referral QR/code dashboard, richer admin health cards, and read-only system diagnostics.
 - These additions are backward compatible and do not alter authentication, Telegram linking, payments, trading, or AI logic.
+
+## Final Launch Checklist
+
+- [ ] Domain connected
+- [ ] Telegram webhook returns 200 OK
+- [ ] Admin clicked `Repair Pro 2Y Plan Constraint` once after deploy
+- [ ] Free trial tested: only 2 free signals total
+- [ ] Paid plan tested: no free signal cap
+- [ ] Admin dashboard tested
+- [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
+- [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
+- [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`

@@ -496,3 +496,15 @@ No database schema, migrations, payment flow, Telegram token, route names, or au
 - Referral dashboard shows link, code, QR code, total referrals, active referrals, paid referrals, commissions, balance, and withdrawals.
 - Admin includes today registrations/payments, expired/expiring subscriptions, service status, worker status, and a read-only `/admin/system-health` page.
 - Market source logs are throttled to reduce repeated Railway/Binance noise without changing signal calculations.
+
+## Final Launch Checklist
+
+- [ ] Domain connected
+- [ ] Telegram webhook returns 200 OK
+- [ ] Admin clicked `Repair Pro 2Y Plan Constraint` once after deploy
+- [ ] Free trial tested: only 2 free signals total
+- [ ] Paid plan tested: no free signal cap
+- [ ] Admin dashboard tested
+- [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
+- [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
+- [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`
