@@ -114,6 +114,47 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
 @media (max-width: 920px) { .hero, .proof-grid { grid-template-columns:1fr; } .methods-grid { grid-template-columns:1fr; } .methods-head { align-items:flex-start; flex-direction:column; } }
 @media (max-width: 640px) { .page-shell { width:min(100% - 20px, 1180px); padding-top:16px; } .topbar { align-items:flex-start; flex-direction:column; } .hero-card, .summary-card, .method-card, .proof-card, .trust-card { border-radius:18px; padding:18px; } .hero-grid { grid-template-columns:1fr; } .current-price { font-size:40px; } .detail-row { grid-template-columns:1fr; } .actions { flex-direction:column; } .btn { width:100%; } }
 </style>
+<!-- TikTok Pixel Code Start -->
+<script>
+!function (w, d, t) {
+  w.TiktokAnalyticsObject=t;
+  var ttq=w[t]=w[t]||[];
+  ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];
+  ttq.setAndDefer=function(t,e){
+      t[e]=function(){
+          t.push([e].concat(Array.prototype.slice.call(arguments,0)))
+      }
+  };
+  for(var i=0;i<ttq.methods.length;i++){
+      ttq.setAndDefer(ttq,ttq.methods[i]);
+  }
+  ttq.instance=function(t){
+      for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++){
+          ttq.setAndDefer(e,ttq.methods[n]);
+      }
+      return e;
+  };
+  ttq.load=function(e,n){
+      var r="https://analytics.tiktok.com/i18n/pixel/events.js";
+      ttq._i=ttq._i||{};
+      ttq._i[e]=[];
+      ttq._i[e]._u=r;
+      ttq._t=ttq._t||{};
+      ttq._o=ttq._o||{};
+      ttq._o[e]=n||{};
+      n=document.createElement("script");
+      n.type="text/javascript";
+      n.async=true;
+      n.src=r+"?sdkid="+e+"&lib="+t;
+      e=document.getElementsByTagName("script")[0];
+      e.parentNode.insertBefore(n,e);
+  };
+
+  ttq.load("D8VH7OJC77UCME2CL23G");
+  ttq.page();
+}(window, document, "ttq");
+</script>
+<!-- TikTok Pixel Code End -->
 </head>
 <body>
 <main class="page-shell">
