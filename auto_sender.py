@@ -493,8 +493,9 @@ def logical_signal(signal):
 def format_signal(signal):
     return f"""🔥 {signal['pair']}
 
-📊 Type: {signal.get('type', 'FUTURES')}
+📊 Mode: {signal.get('type', 'FUTURES')}
 📈 Direction: {signal['direction']}
+🌍 Market Regime: {signal.get('market_regime', 'N/A')}
 
 💰 Entry: {signal['entry']}
 🎯 TP: {signal['tp']}
@@ -503,7 +504,10 @@ def format_signal(signal):
 Support: {signal.get('nearest_support', signal.get('support', 'N/A'))}
 Resistance: {signal.get('nearest_resistance', signal.get('resistance', 'N/A'))}
 Risk/Reward: {signal.get('risk_reward', 'N/A')}
+Final Score: {signal.get('final_score', 'N/A')} / 100
+Setup Type: {signal.get('setup_type', 'N/A')}
 Target Basis: {signal.get('target_basis', 'Support/Resistance')}
+Quality Reason: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
 
 🎯 Signal Strength: {signal['confidence']}%
 🧠 AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%
@@ -941,13 +945,19 @@ def update_signal_outcomes():
 
                     if SIGNAL_TRACKING_NOTIFY:
                         icon = "✅" if outcome == "TP_HIT" else "🛑"
+                        clean_pnl_percent = clean_number(pnl_percent, 2)
+                        what_happened = "TP Hit" if outcome == "TP_HIT" else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
                         send(chat_id, f"""{icon} Signal Update
 
-🔥 {pair}
-📊 Direction: {direction}
-📌 Result: {outcome.replace('_', ' ')}
-💰 Current Price: {round(float(current_price), 6)}
-📈 PnL: {round(float(pnl_percent), 2)}%
+Pair: {pair}
+Direction: {direction}
+Entry: {clean_number(entry, 6)}
+Exit: {clean_number(current_price, 6)}
+Close Reason: {what_happened}
+PNL: {clean_pnl_percent}%
+PNL %: {clean_pnl_percent}%
+Duration: N/A
+What happened: {what_happened}
 """)
                     write_log(chat_id, "INFO", f"Signal outcome {pair} {outcome} pnl={round(float(pnl_percent), 4)}%")
             except Exception as inner_e:
@@ -1074,6 +1084,7 @@ def update_closed_trades():
                     conn.commit()
                     write_log(chat_id, "INFO", f"Trade closed {pair} reason={close_reason} pnl={pnl}")
 
+                    what_happened = close_reason if close_reason in ["TP Hit", "SL Hit"] else "Manual/Unknown Exit"
                     send(chat_id, f"""📌 Trade Closed
 
 Pair: {pair}
@@ -1084,6 +1095,7 @@ Close Reason: {close_reason}
 PNL: {pnl} USDT
 PNL %: {pnl_percent}%
 Duration: {duration_text}
+What happened: {what_happened}
 """)
 
             except Exception as e:

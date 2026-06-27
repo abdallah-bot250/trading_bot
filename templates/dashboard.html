@@ -749,7 +749,7 @@ input, select {
         ❗ بدون الخطوة دي الإشارات مش هتوصلك
     </div>
 
-    <a href="{{ bot_link }}" target="_blank"
+    <a href="{{ telegram_connect_link|default(bot_link) }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
        🤖 افتح البوت الآن
     </a>
@@ -766,7 +766,7 @@ input, select {
         لو البوت شغال والفرصة قوية، هتوصلك مباشرة.
     </div>
 
-    <a href="{{ bot_link }}" target="_blank"
+    <a href="{{ telegram_connect_link|default(bot_link) }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
        💬 افتح البوت
     </a>

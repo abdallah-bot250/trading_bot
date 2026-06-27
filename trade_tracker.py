@@ -37,7 +37,12 @@ def add_trade(signal):
             "tp": float(signal["tp"]),
             "sl": float(signal["sl"]),
             "confidence": float(signal["confidence"]),
-            "rr": float(signal.get("rr", 0)),
+            "rr": float(signal.get("risk_reward", signal.get("rr", 0))),
+            "market_regime": signal.get("market_regime"),
+            "setup_type": signal.get("setup_type"),
+            "final_score": signal.get("final_score"),
+            "support": signal.get("support"),
+            "resistance": signal.get("resistance"),
             "status": "OPEN",
             "pnl": 0,
             "sent_result": False,
@@ -91,6 +96,7 @@ def update_trades(get_price_func):
 
                 if price >= trade["tp"]:
                     trade["status"] = "TP"
+                    trade["close_reason"] = "TP Hit"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["tp"])
                     updated = True
@@ -101,6 +107,7 @@ def update_trades(get_price_func):
 
                 elif price <= trade["sl"]:
                     trade["status"] = "SL"
+                    trade["close_reason"] = "SL Hit"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["sl"])
                     updated = True
@@ -114,6 +121,7 @@ def update_trades(get_price_func):
 
                 if price <= trade["tp"]:
                     trade["status"] = "TP"
+                    trade["close_reason"] = "TP Hit"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["tp"])
                     updated = True
@@ -123,6 +131,7 @@ def update_trades(get_price_func):
                        trade["sent_result"] = True
                 elif price >= trade["sl"]:
                     trade["status"] = "SL"
+                    trade["close_reason"] = "SL Hit"
                     trade["closed_at"] = datetime.utcnow().isoformat()
                     trade["pnl"] = calculate_pnl(trade, trade["sl"])
                     updated = True

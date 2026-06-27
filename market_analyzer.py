@@ -3,6 +3,9 @@ import requests
 import pandas as pd
 import numpy as np
 import random
+import json
+import os
+from datetime import datetime
 from ai_model import predict_trade
 from ai_engine import build_ai_engine_report
 from spot_futures_engine import choose_trade_type, evaluate_trade_types, record_trade_type
@@ -10,13 +13,8 @@ from spot_futures_engine import choose_trade_type, evaluate_trade_types, record_
 # ================= SETTINGS =================
 SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "MATICUSDT",
-    "DOTUSDT", "LTCUSDT", "NEARUSDT", "APTUSDT", "FILUSDT",
-    "ATOMUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT",
-    "SEIUSDT", "TIAUSDT", "UNIUSDT", "AAVEUSDT",
-    "ETCUSDT", "ALGOUSDT", "ICPUSDT", "HBARUSDT",
-    "FTMUSDT", "RUNEUSDT", "XLMUSDT", "EGLDUSDT", "THETAUSDT",
-    "AXSUSDT", "SANDUSDT", "MANAUSDT", "GALAUSDT", "APEUSDT"
+    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
+    "LTCUSDT"
 ]
 
 TIMEFRAMES = ["5m", "15m", "1h"]
@@ -26,6 +24,13 @@ MIN_SCORE_TO_TRADE = 5
 MIN_CONFIDENCE = 70
 MARKET_SOURCE_LOG_CACHE = {}
 MARKET_SOURCE_LOG_TTL_SECONDS = 900
+MARKET_CONTEXT_CACHE = {}
+MARKET_CONTEXT_TTL_SECONDS = 180
+SIGNAL_SKIP_LOG_CACHE = {}
+SIGNAL_SKIP_LOG_TTL_SECONDS = 600
+LAST_DRY_RUN_SKIPS = []
+MIN_SPOT_FINAL_SCORE = 80
+MIN_FUTURES_FINAL_SCORE = 85
 
 
 def log_market_source_once(source, symbol, timeframe):
@@ -607,6 +612,273 @@ def volatility_ok(df):
         return True
 
 
+
+def cached_market_data(symbol, interval="5m", limit=250, ttl=MARKET_CONTEXT_TTL_SECONDS):
+    try:
+        key = (symbol, interval, int(limit))
+        now = time.time()
+        cached = MARKET_CONTEXT_CACHE.get(key)
+        if cached and now - cached["time"] <= ttl:
+            return cached["df"]
+        df = get_market_data(symbol, interval, limit=limit)
+        if df is not None and not df.empty:
+            MARKET_CONTEXT_CACHE[key] = {"time": now, "df": df}
+        return df
+    except Exception as e:
+        print(f"cached_market_data error {symbol} {interval}: {e}")
+        return None
+
+
+def _safe_ema_value(df, period):
+    try:
+        value = ema(df, period).iloc[-1]
+        return None if pd.isna(value) else float(value)
+    except Exception:
+        return None
+
+
+def _lower_highs_lows(df):
+    try:
+        if df is None or len(df) < 40:
+            return False
+        recent = df.tail(40)
+        first = recent.head(20)
+        last = recent.tail(20)
+        return float(last["high"].max()) < float(first["high"].max()) and float(last["low"].min()) < float(first["low"].min())
+    except Exception:
+        return False
+
+
+def detect_market_regime(btc_candles, eth_candles=None):
+    try:
+        df = btc_candles
+        if df is None or len(df) < 80:
+            return "SIDEWAYS"
+        close = float(df["close"].iloc[-1])
+        if close <= 0:
+            return "SIDEWAYS"
+        ema50 = _safe_ema_value(df, 50)
+        ema200 = _safe_ema_value(df, 200) or _safe_ema_value(df, 100)
+        atr_series = atr(df).dropna()
+        atr_val = float(atr_series.iloc[-1]) if len(atr_series) else 0
+        atr_avg = float(atr_series.tail(30).mean()) if len(atr_series) >= 30 else atr_val
+        atr_expanding = bool(atr_avg and atr_val > atr_avg * 1.35)
+        momentum_6 = (close - float(df["close"].iloc[-7])) / float(df["close"].iloc[-7]) if float(df["close"].iloc[-7]) else 0
+        last = df.iloc[-1]
+        last_body = (float(last["open"]) - float(last["close"])) / close if close else 0
+        large_red = float(last["close"]) < float(last["open"]) and last_body > 0.018
+        lower_structure = _lower_highs_lows(df)
+
+        eth_bearish = False
+        if eth_candles is not None and len(eth_candles) >= 80:
+            eth50 = _safe_ema_value(eth_candles, 50)
+            eth200 = _safe_ema_value(eth_candles, 200) or _safe_ema_value(eth_candles, 100)
+            eth_bearish = bool(eth50 and eth200 and eth50 < eth200)
+
+        if large_red or (momentum_6 <= -0.028 and atr_expanding) or (lower_structure and momentum_6 <= -0.018):
+            return "DUMP_RISK"
+        if ema50 and ema200 and ema50 < ema200 and (momentum_6 < -0.006 or lower_structure or eth_bearish):
+            return "BEARISH"
+        if atr_expanding and abs(momentum_6) > 0.02:
+            return "HIGH_VOLATILITY"
+        if ema50 and ema200 and ema50 > ema200 and momentum_6 >= -0.004:
+            return "BULLISH"
+        return "SIDEWAYS"
+    except Exception as e:
+        print(f"detect_market_regime error: {e}")
+        return "SIDEWAYS"
+
+
+def multi_timeframe_quality(symbol, direction, current_interval, current_df):
+    result = {
+        "state": "UNCONFIRMED",
+        "score": 0,
+        "strong_conflict": False,
+        "reason": "insufficient higher timeframe data",
+    }
+    try:
+        frames = {
+            current_interval: current_df,
+            "15m": cached_market_data(symbol, "15m", limit=220),
+            "1h": cached_market_data(symbol, "1h", limit=220),
+            "4h": cached_market_data(symbol, "4h", limit=220),
+        }
+        score = 0
+        conflicts = 0
+        confirmations = 0
+        for tf, frame in frames.items():
+            if frame is None or len(frame) < 60:
+                continue
+            trend = detect_trend(frame)
+            power = trend_strength(frame)
+            smc_state = detect_smc(frame)
+            if direction == "LONG":
+                if trend == "UP" and power != "STRONG_BEAR" and smc_state != "LIQUIDITY_BREAK_DOWN":
+                    confirmations += 1
+                    score += 5 if tf in ["1h", "4h"] else 3
+                elif power == "STRONG_BEAR" or smc_state == "LIQUIDITY_BREAK_DOWN":
+                    conflicts += 1
+            else:
+                if trend == "DOWN" and power != "STRONG_BULL" and smc_state != "LIQUIDITY_BREAK_UP":
+                    confirmations += 1
+                    score += 5 if tf in ["1h", "4h"] else 3
+                elif power == "STRONG_BULL" or smc_state == "LIQUIDITY_BREAK_UP":
+                    conflicts += 1
+
+        result["score"] = min(score, 18)
+        result["strong_conflict"] = conflicts >= 2
+        if confirmations >= 3 and not result["strong_conflict"]:
+            result["state"] = "CONFIRMED"
+            result["reason"] = "5m/15m timing aligns with 1h/4h context"
+        elif confirmations >= 2 and conflicts == 0:
+            result["state"] = "PARTIAL"
+            result["reason"] = "partial multi-timeframe alignment"
+        else:
+            result["reason"] = f"weak MTF alignment confirmations={confirmations} conflicts={conflicts}"
+        return result
+    except Exception as e:
+        result["reason"] = f"multi-timeframe error: {e}"
+        return result
+
+
+def spot_long_confirmation(df, support):
+    try:
+        if df is None or len(df) < 25 or support is None:
+            return False, "missing support confirmation"
+        support = float(support)
+        recent = df.tail(8)
+        close = float(df["close"].iloc[-1])
+        prev_close = float(df["close"].iloc[-2])
+        last_open = float(df["open"].iloc[-1])
+        last_low = float(df["low"].iloc[-1])
+        rsi_series = rsi(df).dropna()
+        vol_ma = df["volume"].rolling(20).mean().iloc[-1]
+        volume_reclaim = pd.notna(vol_ma) and float(df["volume"].iloc[-1]) > float(vol_ma) * 1.08 and close > support
+        support_bounce = recent["low"].min() <= support * 1.004 and close > support * 1.006
+        liquidity_sweep = last_low < support * 0.998 and close > support
+        higher_low = float(df["low"].iloc[-1]) > float(df["low"].iloc[-3]) and close > prev_close
+        bullish_engulfing = close > last_open and close > float(df["open"].iloc[-2]) and last_open <= prev_close
+        rsi_recovery = len(rsi_series) >= 3 and float(rsi_series.iloc[-3]) < 38 and float(rsi_series.iloc[-1]) > float(rsi_series.iloc[-2])
+        confirmations = []
+        if support_bounce:
+            confirmations.append("support bounce")
+        if liquidity_sweep:
+            confirmations.append("liquidity sweep reclaim")
+        if volume_reclaim:
+            confirmations.append("volume reclaim")
+        if higher_low:
+            confirmations.append("higher low")
+        if bullish_engulfing:
+            confirmations.append("bullish engulfing")
+        if rsi_recovery:
+            confirmations.append("RSI recovery")
+        if confirmations:
+            return True, ", ".join(confirmations[:3])
+        return False, "no spot LONG reversal confirmation near support"
+    except Exception as e:
+        return False, f"reversal confirmation error: {e}"
+
+
+def learning_penalty(symbol, direction, setup_type):
+    try:
+        path = os.path.join(os.path.dirname(__file__), "trades.json")
+        if not os.path.exists(path):
+            return 0
+        with open(path, "r", encoding="utf-8") as f:
+            trades = json.load(f)
+        closed = [t for t in trades if str(t.get("status", "")).upper() in ["TP", "SL"]][-80:]
+        if not closed:
+            return 0
+        symbol_losses = sum(1 for t in closed[-25:] if t.get("pair") == symbol and str(t.get("status", "")).upper() == "SL")
+        direction_losses = sum(1 for t in closed[-25:] if t.get("direction") == direction and str(t.get("status", "")).upper() == "SL")
+        setup_losses = sum(1 for t in closed[-40:] if t.get("setup_type") == setup_type and str(t.get("status", "")).upper() == "SL")
+        penalty = min(symbol_losses * 4 + direction_losses * 2 + setup_losses * 3, 18)
+        return int(penalty)
+    except Exception:
+        return 0
+
+
+def build_market_context(symbol, interval, df, direction):
+    btc_1h = cached_market_data("BTCUSDT", "1h", limit=220)
+    eth_1h = cached_market_data("ETHUSDT", "1h", limit=220)
+    regime = detect_market_regime(btc_1h, eth_1h)
+    mtf = multi_timeframe_quality(symbol, direction, interval, df)
+    allowed = True
+    reason = "market context accepted"
+    if direction == "LONG" and regime == "DUMP_RISK":
+        allowed = False
+        reason = "DUMP_RISK blocks spot LONG"
+    elif mtf.get("strong_conflict"):
+        allowed = False
+        reason = mtf.get("reason", "strong multi-timeframe conflict")
+    return {
+        "allowed": allowed,
+        "skip_reason": reason,
+        "market_regime": regime,
+        "multi_timeframe_context": mtf,
+    }
+
+
+def final_signal_score(signal, market_context, sr_targets, mtf_context, reversal_reason):
+    regime = market_context.get("market_regime", "SIDEWAYS")
+    regime_score = {
+        "BULLISH": 18,
+        "SIDEWAYS": 13,
+        "HIGH_VOLATILITY": 9,
+        "BEARISH": 7,
+        "DUMP_RISK": 0,
+    }.get(regime, 10)
+    if signal.get("direction") == "SHORT" and regime in ["BEARISH", "DUMP_RISK", "HIGH_VOLATILITY"]:
+        regime_score = max(regime_score, 13)
+
+    trend_power = signal.get("trend_power", "MIXED")
+    trend_score = 15 if trend_power in ["STRONG_BULL", "STRONG_BEAR"] else 8 if trend_power == "MIXED" else 6
+    sr_score = min(20, int(sr_targets.get("support_strength", 0)) + int(sr_targets.get("resistance_strength", 0)) + 8)
+    rr = float(sr_targets.get("risk_reward", 0) or 0)
+    rr_score = 15 if rr >= 2.0 else 12 if rr >= 1.8 else 8 if rr >= 1.5 else 0
+    volume_score = 10 if signal.get("volume") == "STRONG" else 5
+    volatility_state = signal.get("volatility_state", "NORMAL")
+    volatility_score = 8 if volatility_state in ["NORMAL", "HEALTHY", "MODERATE", "N/A"] else 5
+    mtf_score = int(mtf_context.get("score", 0) or 0)
+    setup_type = sr_targets.get("setup_type", "S/R_CONTINUATION")
+    penalty = learning_penalty(signal.get("pair"), signal.get("direction"), setup_type)
+    final_score = max(0, min(100, regime_score + trend_score + sr_score + rr_score + volume_score + volatility_score + mtf_score - penalty))
+
+    reason = (
+        f"{regime} regime; {mtf_context.get('state', 'UNCONFIRMED')} MTF; "
+        f"S/R strength {sr_targets.get('support_strength')}/{sr_targets.get('resistance_strength')}; "
+        f"RR {rr}; {reversal_reason}; learning penalty {penalty}"
+    )
+    return {
+        "final_score": int(final_score),
+        "market_regime": regime,
+        "multi_timeframe": mtf_context.get("state", signal.get("multi_timeframe", "N/A")),
+        "setup_type": setup_type,
+        "learning_penalty": penalty,
+        "market_regime_score": regime_score,
+        "support_resistance_score": sr_score,
+        "risk_reward_score": rr_score,
+        "final_score_reason": reason,
+        "signal_quality_reason": f"{signal.get('signal_quality_reason', 'S/R validated')} | {reason}",
+    }
+
+
+def skip_signal(symbol, interval, reason):
+    try:
+        key = (symbol, interval, reason)
+        now = time.time()
+        if now - SIGNAL_SKIP_LOG_CACHE.get(key, 0) >= SIGNAL_SKIP_LOG_TTL_SECONDS:
+            SIGNAL_SKIP_LOG_CACHE[key] = now
+            print(f"SIGNAL_SKIPPED symbol={symbol} timeframe={interval} reason={reason}")
+        LAST_DRY_RUN_SKIPS.append({"symbol": symbol, "timeframe": interval, "skip_reason": reason})
+        if len(LAST_DRY_RUN_SKIPS) > 200:
+            del LAST_DRY_RUN_SKIPS[:-200]
+    except Exception:
+        pass
+    return None
+
+
+
 # ================= NEWS FILTER =================
 def news_filter():
     try:
@@ -749,32 +1021,134 @@ def _cluster_price_levels(raw_levels, tolerance_pct=0.0025, limit=8):
     return [item["price"] for item in scored[:limit]]
 
 
+def _cluster_price_level_meta(levels, tolerance_pct=0.0025, limit=8):
+    if not levels:
+        return []
+
+    sorted_levels = sorted(levels, key=lambda item: item[0])
+    clusters = []
+
+    for item in sorted_levels:
+        if len(item) >= 4:
+            price, index, reaction, volume_confirmation = item[:4]
+        elif len(item) >= 3:
+            price, index, reaction = item[:3]
+            volume_confirmation = False
+        else:
+            price, index = item[:2]
+            reaction = 0
+            volume_confirmation = False
+
+        if not clusters:
+            clusters.append({
+                "prices": [float(price)],
+                "indices": [int(index)],
+                "reactions": [float(reaction or 0)],
+                "volume_hits": 1 if volume_confirmation else 0,
+            })
+            continue
+
+        current = clusters[-1]
+        avg_price = sum(current["prices"]) / len(current["prices"])
+        tolerance = max(avg_price * tolerance_pct, 1e-12)
+        if abs(float(price) - avg_price) <= tolerance:
+            current["prices"].append(float(price))
+            current["indices"].append(int(index))
+            current["reactions"].append(float(reaction or 0))
+            if volume_confirmation:
+                current["volume_hits"] += 1
+        else:
+            clusters.append({
+                "prices": [float(price)],
+                "indices": [int(index)],
+                "reactions": [float(reaction or 0)],
+                "volume_hits": 1 if volume_confirmation else 0,
+            })
+
+    scored = []
+    total_len = max(max((max(c["indices"]) for c in clusters), default=1), 1)
+    for cluster in clusters:
+        avg_price = sum(cluster["prices"]) / len(cluster["prices"])
+        touches = len(cluster["prices"])
+        last_seen_index = max(cluster["indices"])
+        age = max(total_len - last_seen_index, 0)
+        reaction_score = sum(1 for value in cluster["reactions"] if value >= 0.004)
+        volume_confirmation = cluster["volume_hits"] > 0
+        recency_score = 2 if age <= 35 else 1 if age <= 80 else 0
+        strength = touches + reaction_score + recency_score + (1 if volume_confirmation else 0)
+        scored.append({
+            "price": avg_price,
+            "touches": touches,
+            "strength": int(strength),
+            "last_seen_index": last_seen_index,
+            "last_index": last_seen_index,
+            "age": age,
+            "volume_confirmation": volume_confirmation,
+            "reaction_score": reaction_score,
+        })
+
+    scored.sort(key=lambda item: (item["strength"], item["touches"], item["last_seen_index"]), reverse=True)
+    return scored[:limit]
+
+
 def calculate_support_resistance(candles):
     try:
-        df = candles.tail(140).reset_index(drop=True)
-        if len(df) < 20:
-            return {"support": [], "resistance": []}
+        df = candles.tail(220).reset_index(drop=True)
+        if len(df) < 50:
+            return {"support": [], "resistance": [], "support_meta": [], "resistance_meta": []}
+
+        df = df.copy()
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.dropna(subset=["high", "low", "close"], inplace=True)
+        df.reset_index(drop=True, inplace=True)
+        if len(df) < 50:
+            return {"support": [], "resistance": [], "support_meta": [], "resistance_meta": []}
 
         supports = []
         resistances = []
         lows = df["low"].astype(float).tolist()
         highs = df["high"].astype(float).tolist()
+        closes = df["close"].astype(float).tolist()
+        volumes = df["volume"].astype(float).fillna(0).tolist()
+        volume_ma = df["volume"].rolling(20).mean().fillna(0).tolist()
+        atr_series = atr(df).fillna(0).tolist()
 
-        for i in range(2, len(df) - 2):
-            low_window = lows[i - 2:i + 3]
-            high_window = highs[i - 2:i + 3]
-            if lows[i] == min(low_window) and low_window.count(lows[i]) <= 2:
-                supports.append((lows[i], i))
-            if highs[i] == max(high_window) and high_window.count(highs[i]) <= 2:
-                resistances.append((highs[i], i))
+        for i in range(3, len(df) - 5):
+            low_window = lows[i - 3:i + 4]
+            high_window = highs[i - 3:i + 4]
+            future_closes = closes[i + 1:i + 6]
+            atr_here = float(atr_series[i] or 0)
+            vol_ok = bool(volume_ma[i] and volumes[i] >= volume_ma[i] * 1.03)
+
+            if lows[i] == min(low_window) and lows[i] < min(lows[i - 1], lows[i + 1]):
+                reaction = 0
+                if lows[i] > 0 and future_closes:
+                    reaction = (max(future_closes) - lows[i]) / lows[i]
+                if atr_here <= 0 or reaction >= max(0.0025, (atr_here / max(lows[i], 1e-12)) * 0.45):
+                    supports.append((lows[i], i, reaction, vol_ok))
+
+            if highs[i] == max(high_window) and highs[i] > max(highs[i - 1], highs[i + 1]):
+                reaction = 0
+                if highs[i] > 0 and future_closes:
+                    reaction = (highs[i] - min(future_closes)) / highs[i]
+                if atr_here <= 0 or reaction >= max(0.0025, (atr_here / max(highs[i], 1e-12)) * 0.45):
+                    resistances.append((highs[i], i, reaction, vol_ok))
+
+        support_meta = _cluster_price_level_meta(supports, tolerance_pct=0.003, limit=10)
+        resistance_meta = _cluster_price_level_meta(resistances, tolerance_pct=0.003, limit=10)
+        strong_support = [item for item in support_meta if item["touches"] >= 2 or item["strength"] >= 4]
+        strong_resistance = [item for item in resistance_meta if item["touches"] >= 2 or item["strength"] >= 4]
 
         return {
-            "support": _cluster_price_levels(supports),
-            "resistance": _cluster_price_levels(resistances),
+            "support": [item["price"] for item in strong_support],
+            "resistance": [item["price"] for item in strong_resistance],
+            "support_meta": strong_support,
+            "resistance_meta": strong_resistance,
         }
     except Exception as e:
         print(f"calculate_support_resistance error: {e}")
-        return {"support": [], "resistance": []}
+        return {"support": [], "resistance": [], "support_meta": [], "resistance_meta": []}
 
 
 def nearest_support(price, levels):
@@ -795,7 +1169,19 @@ def nearest_resistance(price, levels):
         return None
 
 
-def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.5):
+def _level_meta_for_price(price, meta_levels):
+    try:
+        if price is None:
+            return {}
+        price = float(price)
+        if not meta_levels:
+            return {}
+        return min(meta_levels, key=lambda item: abs(float(item.get("price", 0)) - price))
+    except Exception:
+        return {}
+
+
+def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.8):
     try:
         entry = float(entry)
         atr_value = float(atr_value or 0)
@@ -811,45 +1197,71 @@ def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.5):
     if support is None or resistance is None:
         return None
 
-    buffer = max(entry * 0.0015, atr_value * 0.20 if atr_value > 0 else 0)
+    support_meta = _level_meta_for_price(support, levels.get("support_meta", []))
+    resistance_meta = _level_meta_for_price(resistance, levels.get("resistance_meta", []))
+    support_strength = int(support_meta.get("strength", 0) or 0)
+    resistance_strength = int(resistance_meta.get("strength", 0) or 0)
+    if support_strength < 3 or resistance_strength < 3:
+        return None
+
+    min_target_distance = max(entry * 0.007, atr_value * 0.75 if atr_value > 0 else 0)
+    buffer = max(entry * 0.002, atr_value * 0.35 if atr_value > 0 else 0)
+    preferred_rr = max(float(min_rr or 1.8), 1.8)
+    absolute_min_rr = 1.5
 
     if direction == "LONG":
+        if not (support < entry):
+            return None
         sl = support - buffer
         if sl <= 0 or sl >= entry:
             return None
         risk = entry - sl
-        candidates = [level for level in resistances if level > entry]
+        candidates = [level for level in resistances if level > entry + min_target_distance]
         tp = None
         rr = None
+        preferred_found = False
         for level in candidates:
             reward = level - entry
             current_rr = reward / risk if risk > 0 else 0
-            if current_rr >= min_rr:
+            if current_rr >= preferred_rr:
                 tp = level
                 rr = current_rr
+                preferred_found = True
                 break
+            if tp is None and current_rr >= absolute_min_rr:
+                tp = level
+                rr = current_rr
         if tp is None:
             return None
     elif direction == "SHORT":
+        if not (resistance > entry):
+            return None
         sl = resistance + buffer
         if sl <= entry:
             return None
         risk = sl - entry
-        candidates = [level for level in reversed(supports) if level < entry]
+        candidates = [level for level in reversed(supports) if level < entry - min_target_distance]
         tp = None
         rr = None
+        preferred_found = False
         for level in candidates:
             reward = entry - level
             current_rr = reward / risk if risk > 0 else 0
-            if current_rr >= min_rr:
+            if current_rr >= preferred_rr:
                 tp = level
                 rr = current_rr
+                preferred_found = True
                 break
+            if tp is None and current_rr >= absolute_min_rr:
+                tp = level
+                rr = current_rr
         if tp is None:
             return None
     else:
         return None
 
+    setup_type = "S/R_CONTINUATION" if preferred_found else "S/R_MINIMUM_RR"
+    quality = "preferred" if preferred_found else "minimum acceptable"
     return {
         "tp": tp,
         "sl": sl,
@@ -857,8 +1269,15 @@ def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.5):
         "resistance": resistance,
         "nearest_support": support,
         "nearest_resistance": resistance,
+        "support_strength": support_strength,
+        "resistance_strength": resistance_strength,
         "risk_reward": round(rr, 2),
-        "target_basis": "Support/Resistance",
+        "target_basis": "Strong Support/Resistance",
+        "setup_type": setup_type,
+        "signal_quality_reason": (
+            f"Strong S/R validated; support strength {support_strength}, "
+            f"resistance strength {resistance_strength}, {quality} RR {round(rr, 2)}"
+        ),
     }
 
 
@@ -1097,7 +1516,7 @@ def signal_levels_valid(entry, tp, sl, direction):
             return False
 
         rr = reward / risk
-        if rr < 1.7:
+        if rr < 1.8:
             return False
 
         return True
@@ -1213,8 +1632,13 @@ def generate_signal(symbol, interval="5m"):
     else:
         return None
 
+    market_context = build_market_context(symbol, interval, df, direction)
+    if not market_context.get("allowed", True):
+        return skip_signal(symbol, interval, market_context.get("skip_reason", "market context rejected"))
+    mtf_context = market_context.get("multi_timeframe_context", {})
+
     if not strong_signal_filter(df, trend, trend_power, direction):
-        return None
+        return skip_signal(symbol, interval, "local trend/momentum filter rejected setup")
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
@@ -1244,6 +1668,12 @@ def generate_signal(symbol, interval="5m"):
         return None
     tp = sr_targets["tp"]
     sl = sr_targets["sl"]
+    if direction == "LONG":
+        reversal_ok, reversal_reason = spot_long_confirmation(df, sr_targets.get("support"))
+        if not reversal_ok:
+            return skip_signal(symbol, interval, reversal_reason)
+    else:
+        reversal_reason = "short protected by strong resistance"
 
     # ===== Reject dead / tiny targets =====
     tp_distance = abs(tp - entry) / entry
@@ -1289,7 +1719,12 @@ def generate_signal(symbol, interval="5m"):
         "nearest_support": format_price(sr_targets["nearest_support"]),
         "nearest_resistance": format_price(sr_targets["nearest_resistance"]),
         "risk_reward": sr_targets["risk_reward"],
-        "target_basis": sr_targets["target_basis"]
+        "support_strength": sr_targets.get("support_strength"),
+        "resistance_strength": sr_targets.get("resistance_strength"),
+        "target_basis": sr_targets["target_basis"],
+        "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
+        "market_regime": market_context.get("market_regime", "SIDEWAYS"),
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed")
     }
 
     ai_engine_report = build_ai_engine_report(
@@ -1344,6 +1779,12 @@ def generate_signal(symbol, interval="5m"):
         "ema_alignment": ai_engine_report["ema_alignment"],
         "ai_engine": ai_engine_report,
     })
+
+    score_report = final_signal_score(signal, market_context, sr_targets, mtf_context, reversal_reason)
+    required_score = MIN_SPOT_FINAL_SCORE if signal.get("type") == "SPOT" else MIN_FUTURES_FINAL_SCORE
+    if score_report["final_score"] < required_score:
+        return skip_signal(symbol, interval, f"final score {score_report['final_score']} below {required_score}: {score_report['final_score_reason']}")
+    signal.update(score_report)
 
     try:
         if not predict_trade(signal):
@@ -1406,8 +1847,13 @@ def generate_free_signal(symbol, interval="5m"):
     else:
         return None
 
+    market_context = build_market_context(symbol, interval, df, direction)
+    if not market_context.get("allowed", True):
+        return skip_signal(symbol, interval, market_context.get("skip_reason", "market context rejected"))
+    mtf_context = market_context.get("multi_timeframe_context", {})
+
     if not strong_signal_filter(df, trend, trend_power, direction):
-        return None
+        return skip_signal(symbol, interval, "local trend/momentum filter rejected setup")
 
     htf_ok = higher_timeframe_confirmation(symbol, direction, interval)
 
@@ -1439,6 +1885,12 @@ def generate_free_signal(symbol, interval="5m"):
         return None
     tp = sr_targets["tp"]
     sl = sr_targets["sl"]
+    if direction == "LONG":
+        reversal_ok, reversal_reason = spot_long_confirmation(df, sr_targets.get("support"))
+        if not reversal_ok:
+            return skip_signal(symbol, interval, reversal_reason)
+    else:
+        reversal_reason = "short protected by strong resistance"
 
     tp_distance = abs(tp - entry) / entry
     sl_distance = abs(sl - entry) / entry
@@ -1482,7 +1934,12 @@ def generate_free_signal(symbol, interval="5m"):
         "nearest_support": format_price(sr_targets["nearest_support"]),
         "nearest_resistance": format_price(sr_targets["nearest_resistance"]),
         "risk_reward": sr_targets["risk_reward"],
-        "target_basis": sr_targets["target_basis"]
+        "support_strength": sr_targets.get("support_strength"),
+        "resistance_strength": sr_targets.get("resistance_strength"),
+        "target_basis": sr_targets["target_basis"],
+        "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
+        "market_regime": market_context.get("market_regime", "SIDEWAYS"),
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed")
     }
 
     ai_engine_report = build_ai_engine_report(
@@ -1537,6 +1994,12 @@ def generate_free_signal(symbol, interval="5m"):
         "ema_alignment": ai_engine_report["ema_alignment"],
         "ai_engine": ai_engine_report,
     })
+
+    score_report = final_signal_score(signal, market_context, sr_targets, mtf_context, reversal_reason)
+    required_score = MIN_SPOT_FINAL_SCORE if signal.get("type") == "SPOT" else MIN_FUTURES_FINAL_SCORE
+    if score_report["final_score"] < required_score:
+        return skip_signal(symbol, interval, f"final score {score_report['final_score']} below {required_score}: {score_report['final_score_reason']}")
+    signal.update(score_report)
 
     try:
         if not predict_trade(signal):
@@ -1643,3 +2106,92 @@ def get_top_free_signals(limit=2):
 
     print(f"Top signals selected: {best}")
     return best
+
+# ================= DRY RUN / SIGNAL HUNTER VERIFICATION =================
+def _dry_signal_view(signal):
+    """Return a compact, safe representation of a generated signal for dry-run output."""
+    if not signal:
+        return None
+    return {
+        "pair": signal.get("pair"),
+        "timeframe": signal.get("timeframe"),
+        "type": signal.get("type"),
+        "direction": signal.get("direction"),
+        "entry": signal.get("entry"),
+        "tp": signal.get("tp"),
+        "sl": signal.get("sl"),
+        "support": signal.get("support"),
+        "resistance": signal.get("resistance"),
+        "risk_reward": signal.get("risk_reward"),
+        "final_score": signal.get("final_score"),
+        "market_regime": signal.get("market_regime"),
+        "setup_type": signal.get("setup_type"),
+        "quality_reason": signal.get("signal_quality_reason") or signal.get("final_score_reason"),
+    }
+
+
+def dry_run_signal_scan(symbols=None, timeframes=None, max_passed=10, verbose=True):
+    """
+    Dry-run the Signal Hunter without Telegram sends or database writes.
+
+    It scans the conservative whitelist, prints PASSED/SKIPPED reasons, and returns
+    a summary dict. This function is intentionally top-level so it can be imported:
+
+        python -c "from market_analyzer import dry_run_signal_scan; print(dry_run_signal_scan())"
+    """
+    selected_symbols = list(symbols or SYMBOLS)
+    selected_timeframes = list(timeframes or TIMEFRAMES)
+    summary = {
+        "passed_count": 0,
+        "skipped_count": 0,
+        "errors_count": 0,
+        "passed": [],
+        "skipped": [],
+        "errors": [],
+    }
+
+    for symbol in selected_symbols:
+        for tf in selected_timeframes:
+            before_skip_count = len(LAST_DRY_RUN_SKIPS)
+            try:
+                signal = generate_signal(symbol, tf)
+                if signal:
+                    row = _dry_signal_view(signal)
+                    summary["passed_count"] += 1
+                    summary["passed"].append(row)
+                    if verbose:
+                        print(
+                            "PASSED "
+                            f"symbol={row.get('pair')} tf={row.get('timeframe')} "
+                            f"type={row.get('type')} dir={row.get('direction')} "
+                            f"score={row.get('final_score')} rr={row.get('risk_reward')} "
+                            f"regime={row.get('market_regime')} reason={row.get('quality_reason')}"
+                        )
+                    if len(summary["passed"]) >= max_passed:
+                        continue
+                else:
+                    # Prefer the explicit skip reason captured by skip_signal(). If a
+                    # filter returned None without logging, still report a clear generic reason.
+                    reason = "filtered by hunter quality gates"
+                    if len(LAST_DRY_RUN_SKIPS) > before_skip_count:
+                        last = LAST_DRY_RUN_SKIPS[-1]
+                        if last.get("symbol") == symbol and last.get("timeframe") == tf:
+                            reason = last.get("skip_reason") or reason
+                    row = {"symbol": symbol, "timeframe": tf, "reason": reason}
+                    summary["skipped_count"] += 1
+                    summary["skipped"].append(row)
+                    if verbose:
+                        print(f"SKIPPED symbol={symbol} tf={tf} reason={reason}")
+            except Exception as exc:
+                row = {"symbol": symbol, "timeframe": tf, "error": str(exc)}
+                summary["errors_count"] += 1
+                summary["errors"].append(row)
+                if verbose:
+                    print(f"ERROR symbol={symbol} tf={tf} error={exc}")
+
+    if verbose:
+        print(
+            "DRY_RUN_SUMMARY "
+            f"passed={summary['passed_count']} skipped={summary['skipped_count']} errors={summary['errors_count']}"
+        )
+    return summary

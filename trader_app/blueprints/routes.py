@@ -1104,6 +1104,111 @@ def _subscription_admin_summary(rows):
     return summary
 
 
+def ensure_telegram_link_token_table(c):
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_link_tokens (
+            token TEXT PRIMARY KEY,
+            user_email TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            used_at TIMESTAMP NULL
+        )
+    """)
+
+
+def create_telegram_link_token(c, user_email):
+    ensure_telegram_link_token_table(c)
+    token = secrets.token_urlsafe(32)
+    c.execute("""
+        INSERT INTO telegram_link_tokens (token, user_email)
+        VALUES (%s, %s)
+    """, (token, str(user_email or "").strip().lower()))
+    return token
+
+
+def telegram_link_is_expired(created_at, minutes=30):
+    try:
+        if not created_at:
+            return True
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00")).replace(tzinfo=None)
+        return datetime.now() - created_at > timedelta(minutes=minutes)
+    except Exception:
+        return True
+
+
+def handle_telegram_link_token(c, conn, chat_id, token):
+    ensure_telegram_link_token_table(c)
+    token = str(token or "").strip()
+    if not token:
+        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        return True
+
+    c.execute("""
+        SELECT token, user_email, created_at, used_at
+        FROM telegram_link_tokens
+        WHERE token = %s
+        LIMIT 1
+    """, (token,))
+    link_row = c.fetchone()
+    if not link_row:
+        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        return True
+
+    user_email = str(link_row[1] or "").strip().lower()
+    created_at = link_row[2]
+    used_at = link_row[3]
+    if used_at or telegram_link_is_expired(created_at):
+        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        return True
+
+    c.execute("""
+        SELECT id, email, chat_id
+        FROM users
+        WHERE LOWER(email) = %s
+        LIMIT 1
+    """, (user_email,))
+    target_user = c.fetchone()
+    if not target_user:
+        send(chat_id, "Nexora account not found. Please register on the website first.")
+        return True
+
+    target_user_id = target_user[0]
+    target_email = target_user[1]
+    current_chat_id = str(target_user[2] or "").strip()
+
+    if current_chat_id and current_chat_id != str(chat_id):
+        send(chat_id, "This Nexora account is already linked to another Telegram. Login on the website to manage linking safely.")
+        return True
+
+    c.execute("""
+        SELECT id, email
+        FROM users
+        WHERE chat_id = %s AND id <> %s
+        LIMIT 1
+    """, (str(chat_id), target_user_id))
+    existing_chat_owner = c.fetchone()
+    if existing_chat_owner:
+        login_link = f"{current_base_url()}/login?chat_id={chat_id}"
+        send(chat_id, "This Telegram is already linked to another Nexora account. Login with your password to move the Telegram link safely:\n" + login_link)
+        return True
+
+    c.execute("""
+        UPDATE users
+        SET chat_id = %s,
+            bot_active = 1
+        WHERE id = %s
+    """, (str(chat_id), target_user_id))
+    c.execute("""
+        UPDATE telegram_link_tokens
+        SET used_at = CURRENT_TIMESTAMP
+        WHERE token = %s
+    """, (token,))
+    conn.commit()
+    log(f"TELEGRAM_LINK_TOKEN_SUCCESS email={target_email} chat_id={chat_id}")
+    send(chat_id, "Telegram linked successfully to your Nexora account.")
+    return True
+
+
 # ================= DASHBOARD =================
 @dashboard_bp.route("/dashboard")
 def dashboard():
@@ -1229,6 +1334,9 @@ def dashboard():
             except Exception as stats_error:
                 log(f"spot_futures stats unavailable: {stats_error}")
 
+        telegram_link_token = create_telegram_link_token(c, user.get("email"))
+        telegram_connect_link = f"{current_bot_link()}?start=link_{telegram_link_token}"
+        conn.commit()
         conn.close()
 
         is_linked = True if user.get("chat_id") else False
@@ -1343,7 +1451,9 @@ def dashboard():
             dashboard_subtitle=dashboard_subtitle,
             dashboard_widgets=dashboard_widgets,
             notifications=notifications,
-            recent_activity=recent_activity
+            recent_activity=recent_activity,
+            bot_link=current_bot_link(),
+            telegram_connect_link=telegram_connect_link
         )
 
     except Exception as e:
@@ -2692,11 +2802,28 @@ def webhook():
             start_ref = None
             parts = text.split()
 
-            if len(parts) > 1 and parts[1].startswith("ref_"):
+            link_token = None
+            if len(parts) > 1 and parts[1].startswith("link_"):
+                link_token = parts[1].replace("link_", "", 1).strip()
+            elif len(parts) > 1 and parts[1].startswith("ref_"):
                 start_ref = parts[1].replace("ref_", "").strip()
 
             conn = db()
             c = conn.cursor()
+
+            if link_token:
+                try:
+                    handle_telegram_link_token(c, conn, chat_id, link_token)
+                except Exception as link_err:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    log(f"TELEGRAM_LINK_TOKEN_ERROR chat_id={chat_id} error={link_err}")
+                    send(chat_id, "Telegram link failed. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+                finally:
+                    conn.close()
+                return "ok", 200
 
             if start_ref:
                 try:
