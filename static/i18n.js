@@ -1,4 +1,17 @@
 (() => {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem("nexora-theme");
+  root.setAttribute("data-theme", savedTheme || "dark");
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".theme-toggle");
+    if (!button) return;
+    const current = root.getAttribute("data-theme") || "dark";
+    const next = current === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem("nexora-theme", next);
+  });
+
   const lang = window.NEXORA_LANG || document.documentElement.lang || "en";
   const pairs = [
     ["الرئيسية", "Home"],
@@ -15,40 +28,16 @@
     ["ابدأ التجربة", "Start Trial"],
     ["شاهد الديمو", "View Demo"],
     ["شاهد النتائج", "View Results"],
-    ["بوت إشارات كريبتو ذكي للمتداول الجاد", "AI crypto signal platform for serious traders"],
-    ["حوّل فوضى السوق إلى", "Turn market noise into"],
-    ["قرارات أوضح", "clearer decisions"],
-    ["قبل الدخول.", "before entry."],
-    ["إشارات حسب نوع التداول", "Signals by trading type"],
-    ["رفض الفرص الضعيفة", "Weak opportunities are filtered out"],
-    ["تشغيل تلقائي اختياري", "Optional automated execution"],
-    ["تجربة واضحة قبل الاشتراك", "A clear preview before subscribing"],
-    ["كل ما يحتاجه المستخدم ليثق قبل الاشتراك", "Everything users need before subscribing"],
+    ["منصة إشارات كريبتو ذكية للمتداول الجاد", "AI crypto signal platform for serious traders"],
     ["إشارات منتقاة", "Curated Signals"],
     ["لوحة تحكم كاملة", "Complete Dashboard"],
     ["ربط تيليجرام", "Telegram Linking"],
     ["دفع يدوي وأوتوماتيك", "Manual and Automatic Payments"],
     ["تجربة مجانية", "Free Trial"],
-    ["طبقة ذكاء اصطناعي فوق التحليل الفني", "An AI layer above technical analysis"],
     ["كيف يفكر النظام؟", "How the system thinks"],
     ["اختبر النظام", "Try the System"],
     ["خطط واضحة بدون تعقيد", "Clear plans without friction"],
-    ["ابدأ Starter", "Start Starter"],
-    ["ابدأ Pro", "Start Pro"],
-    ["ابدأ Elite", "Start Elite"],
-    ["إثباتات وتجارب من داخل النظام", "Proof and real platform experience"],
-    ["وضوح الإشارة", "Clear Signals"],
-    ["نتائج قابلة للمراجعة", "Reviewable Results"],
-    ["ثقة قبل الدفع", "Trust Before Payment"],
     ["افتح صفحة الإثباتات", "Open Proof Page"],
-    ["نظام إحالات يساعد المشروع يكبر", "Affiliate system built for growth"],
-    ["مصمم للنمو", "Built for Growth"],
-    ["ابدأ وشارك رابطك", "Start and Share Your Link"],
-    ["الأمان جزء من المنتج، وليس إضافة جانبية", "Security is part of the product"],
-    ["حماية للفورمات المهمة داخل الموقع.", "Protection for important site forms."],
-    ["كوكيز آمنة و HttpOnly و SameSite.", "Secure HttpOnly SameSite cookies."],
-    ["تسجيل أحداث حساسة لمراجعة الإدارة.", "Sensitive events are logged for admin review."],
-    ["صفحة رسمية للتأكد من رابط البوت قبل الربط.", "Official page to verify the bot before linking."],
     ["أسئلة شائعة قبل الاشتراك", "Frequently asked questions"],
     ["هل يضمن البوت الربح؟", "Does the bot guarantee profit?"],
     ["هل أحتاج خبرة؟", "Do I need experience?"],
@@ -56,11 +45,8 @@
     ["كيف أتأكد من البوت؟", "How do I verify the bot?"],
     ["هل يوجد دفع يدوي؟", "Is manual payment available?"],
     ["ماذا يحدث بعد التسجيل؟", "What happens after registration?"],
-    ["ابدأ الآن وشاهد النظام بنفسك", "Start now and see the system yourself"],
-    ["منصة إشارات كريبتو ذكية تساعد المستخدم على تقليل العشوائية واتخاذ قرارات أوضح.", "A smart crypto signal platform that helps users reduce noise and make clearer decisions."],
     ["روابط مهمة", "Important Links"],
     ["الأقسام", "Sections"],
-    ["جميع الحقوق محفوظة. التداول يحتوي على مخاطرة.", "All rights reserved. Trading involves risk."],
     ["البريد الإلكتروني", "Email Address"],
     ["كلمة المرور", "Password"],
     ["الاسم الكامل", "Full Name"],
@@ -108,8 +94,8 @@
   const arToEn = new Map(pairs);
   const enToAr = new Map(pairs.map(([ar, en]) => [en, ar]));
   const map = lang === "ar" ? enToAr : arToEn;
-
   const ignored = new Set(["SCRIPT", "STYLE", "TEXTAREA", "CODE", "PRE"]);
+
   const translateString = (value) => {
     if (!value || !value.trim()) return value;
     let output = value;

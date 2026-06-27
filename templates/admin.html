@@ -648,6 +648,7 @@ tbody tr:hover {
 
 <body>
 <div class="language-switcher" aria-label="Language switcher">
+<button class="theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
     <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
 </div>
