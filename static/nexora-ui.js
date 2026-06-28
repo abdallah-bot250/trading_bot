@@ -247,3 +247,173 @@
     document.documentElement.style.setProperty("--nx-parallax-y", `${y}px`);
   }, { passive: true });
 })();
+
+// Nexora V5 dashboard/admin signal hunter layout
+(() => {
+  const body = document.body;
+  if (!body || body.dataset.nexoraV5 === "1") return;
+  const isDashboard = body.classList.contains("nx-dashboard") || document.querySelector(".plan-dashboard");
+  const isAdmin = body.classList.contains("nx-admin") || document.querySelector(".admin-shell");
+  if (!isDashboard && !isAdmin) return;
+  body.dataset.nexoraV5 = "1";
+  body.classList.add("nx-pro-app");
+
+  const path = window.location.pathname || "/";
+  const isRtl = document.documentElement.dir === "rtl";
+  const active = (href) => {
+    try {
+      const url = new URL(href, window.location.origin);
+      return url.pathname === path ? " is-active" : "";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const sidebarItems = isAdmin
+    ? [
+        ["Dashboard", "/admin", "⌂"],
+        ["Users", "/admin#users", "◎"],
+        ["Subscriptions", "/admin#subscriptions", "▣"],
+        ["Payments", "/admin#payments", "▤"],
+        ["Repair Pro 2Y", "/admin#repair-pro-2y", "⚒"],
+        ["System Health", "/admin/system-health", "✧"],
+        ["Landing", "/", "↗"],
+        ["Logout", "/logout", "⇥"]
+      ]
+    : [
+        ["Dashboard", "/dashboard", "⌂"],
+        ["My Plan", "#pricing", "▣"],
+        ["Signals", "/bot-check", "◈"],
+        ["Auto Trading", "#vip-settings", "◌"],
+        ["Referrals", "#referrals", "◎"],
+        ["Payments", "/manual-payment/basic", "▤"],
+        ["Invoices", "/invoice-history", "□"],
+        ["Profile", "#profile", "☉"],
+        ["Logout", "/logout", "⇥"]
+      ];
+
+  if (!document.querySelector(".nx-pro-sidebar")) {
+    const sidebar = document.createElement("aside");
+    sidebar.className = "nx-pro-sidebar";
+    sidebar.innerHTML = `
+      <div class="nx-pro-brand">
+        <div class="nx-pro-brand-mark">N</div>
+        <div><strong>Nexora</strong><span>AI Signal Hunter</span></div>
+      </div>
+      <nav class="nx-pro-nav" aria-label="${isAdmin ? "Admin navigation" : "Dashboard navigation"}">
+        ${sidebarItems.map(([label, href, icon]) => `<a class="${active(href)}" href="${href}"><span>${icon}</span>${label}</a>`).join("")}
+      </nav>`;
+    document.body.prepend(sidebar);
+  }
+
+  const marketSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"];
+  const symbolIcon = { BTCUSDT: "₿", ETHUSDT: "Ξ", SOLUSDT: "S", BNBUSDT: "B" };
+  const fallback = {
+    BTCUSDT: { price: 68542.10, change: 1.82 },
+    ETHUSDT: { price: 3728.45, change: 2.45 },
+    SOLUSDT: { price: 162.85, change: 3.21 },
+    BNBUSDT: { price: 601.75, change: -0.35 }
+  };
+
+  if (!document.querySelector(".nx-pro-toolbar")) {
+    const toolbar = document.createElement("section");
+    toolbar.className = "nx-pro-toolbar";
+    toolbar.innerHTML = `
+      <div class="nx-pro-market-strip" aria-label="Live crypto prices">
+        ${marketSymbols.map((symbol) => `<article class="nx-pro-coin" data-symbol="${symbol}">
+          <span class="nx-pro-coin-icon">${symbolIcon[symbol]}</span>
+          <strong>${symbol.replace("USDT", " / USDT")}</strong>
+          <b class="nx-pro-price">--</b>
+          <span class="nx-pro-change">--</span>
+        </article>`).join("")}
+      </div>
+      <div class="nx-pro-user">
+        <div>
+          <strong>${isAdmin ? "Admin" : "Nexora Trader"}</strong>
+          <small>${isAdmin ? "Super Admin" : "Live Account"}</small>
+        </div>
+        <div class="nx-pro-avatar" aria-hidden="true"></div>
+      </div>`;
+    const target = document.querySelector(".page-wrap,.admin-shell,.topbar") || document.body.firstElementChild;
+    document.body.insertBefore(toolbar, target);
+  }
+
+  const applyRows = (rows) => {
+    document.querySelectorAll(".nx-pro-coin, .nx-market-card").forEach((card) => {
+      const symbol = card.dataset.symbol;
+      const row = rows[symbol] || fallback[symbol];
+      if (!row) return;
+      const price = Number(row.price);
+      const change = Number(row.change);
+      const priceNode = card.querySelector(".nx-pro-price, .nx-market-price");
+      const changeNode = card.querySelector(".nx-pro-change, .nx-market-change");
+      if (priceNode) {
+        priceNode.textContent = price.toLocaleString(undefined, { maximumFractionDigits: price > 100 ? 2 : 4 });
+      }
+      if (changeNode) {
+        changeNode.textContent = `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`;
+      }
+      card.classList.toggle("is-down", change < 0);
+      card.classList.remove("nx-skeleton");
+    });
+  };
+
+  let cache = { ...fallback };
+  const refresh = async () => {
+    try {
+      const res = await fetch("https://api.binance.us/api/v3/ticker/24hr", { cache: "no-store" });
+      if (!res.ok) throw new Error("market unavailable");
+      const data = await res.json();
+      const wanted = new Set(marketSymbols);
+      const next = {};
+      data.forEach((row) => {
+        if (!wanted.has(row.symbol)) return;
+        next[row.symbol] = {
+          price: Number(row.lastPrice || 0),
+          change: Number(row.priceChangePercent || 0)
+        };
+      });
+      if (Object.keys(next).length) cache = { ...cache, ...next };
+    } catch (_) {
+      // Keep current values.
+    }
+    applyRows(cache);
+  };
+  refresh();
+  window.setInterval(refresh, 15000);
+
+  if (isDashboard && !document.querySelector(".nx-pro-dashboard-grid")) {
+    const anchor = document.querySelector(".nx-health-strip") || document.querySelector(".nx-market-panel") || document.querySelector(".premium-status-grid");
+    if (anchor && anchor.parentNode) {
+      const grid = document.createElement("section");
+      grid.className = "nx-pro-dashboard-grid";
+      grid.innerHTML = `
+        <article class="nx-pro-card">
+          <h3>Account Health</h3>
+          <div class="nx-health-ring"><div><strong>95%</strong><span>Excellent</span></div></div>
+          <div class="nx-health-list">
+            <div><i class="nx-check">✓</i>Account Verified</div>
+            <div><i class="nx-check">✓</i>Telegram Connected</div>
+            <div><i class="nx-check">✓</i>Payment Method Verified</div>
+            <div><i class="nx-check">✓</i>Active Subscription</div>
+          </div>
+        </article>
+        <article class="nx-pro-card">
+          <h3>Recent Signals</h3>
+          <div class="nx-recent-row"><strong>BTC/USDT</strong><span class="nx-long-badge">LONG</span><span>Entry 68,100</span><span>TP 69,200</span><span>2m</span></div>
+          <div class="nx-recent-row"><strong>ETH/USDT</strong><span class="nx-long-badge">LONG</span><span>Entry 3,700</span><span>TP 3,820</span><span>5m</span></div>
+          <div class="nx-recent-row"><strong>SOL/USDT</strong><span class="nx-long-badge">LONG</span><span>Entry 160.50</span><span>TP 166.80</span><span>12m</span></div>
+        </article>
+        <article class="nx-pro-card">
+          <h3>Quick Actions</h3>
+          <div class="nx-quick-grid">
+            <a href="/bot-check"><span class="nx-quick-icon">◈</span>Get New Signals</a>
+            <a href="#vip-settings"><span class="nx-quick-icon">◌</span>Auto Trading</a>
+            <a href="/manual-payment/basic"><span class="nx-quick-icon">▤</span>Payment / Upgrade</a>
+            <a href="#referrals"><span class="nx-quick-icon">◎</span>Invite & Earn</a>
+          </div>
+        </article>`;
+      anchor.insertAdjacentElement("afterend", grid);
+    }
+  }
+})();
