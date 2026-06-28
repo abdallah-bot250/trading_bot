@@ -46,6 +46,8 @@ def add_trade(signal):
             "status": "OPEN",
             "pnl": 0,
             "sent_result": False,
+            "max_favorable_r": 0,
+            "breakeven_armed": False,
             "created_at": datetime.utcnow().isoformat()
         }
 
@@ -90,6 +92,47 @@ def update_trades(get_price_func):
 
             if not price:
                 continue
+
+            try:
+                entry = float(trade.get("entry", 0))
+                tp = float(trade.get("tp", 0))
+                sl = float(trade.get("sl", 0))
+                direction = trade.get("direction")
+                risk = abs(entry - sl)
+                favorable = 0
+                if risk > 0 and entry > 0:
+                    if direction == "LONG":
+                        favorable = (float(price) - entry) / risk
+                    elif direction == "SHORT":
+                        favorable = (entry - float(price)) / risk
+                trade["max_favorable_r"] = max(float(trade.get("max_favorable_r", 0) or 0), round(float(favorable), 3))
+                if trade["max_favorable_r"] >= 0.6:
+                    trade["breakeven_armed"] = True
+                if trade.get("breakeven_armed") and risk > 0:
+                    if direction == "LONG" and float(price) <= entry:
+                        trade["status"] = "BE"
+                        trade["close_reason"] = "Breakeven Protection"
+                        trade["closed_at"] = datetime.utcnow().isoformat()
+                        trade["pnl"] = 0.0
+                        updated = True
+                        if not trade.get("sent_result"):
+                            from auto_sender import notify_trade_result
+                            notify_trade_result(trade)
+                            trade["sent_result"] = True
+                        continue
+                    if direction == "SHORT" and float(price) >= entry:
+                        trade["status"] = "BE"
+                        trade["close_reason"] = "Breakeven Protection"
+                        trade["closed_at"] = datetime.utcnow().isoformat()
+                        trade["pnl"] = 0.0
+                        updated = True
+                        if not trade.get("sent_result"):
+                            from auto_sender import notify_trade_result
+                            notify_trade_result(trade)
+                            trade["sent_result"] = True
+                        continue
+            except Exception:
+                pass
 
             # ================= LONG =================
             if trade["direction"] == "LONG":
@@ -153,8 +196,9 @@ def get_stats():
 
     wins = [t for t in trades if t["status"] == "TP"]
     losses = [t for t in trades if t["status"] == "SL"]
+    breakeven = [t for t in trades if t.get("status") == "BE"]
 
-    total_closed = len(wins) + len(losses)
+    total_closed = len(wins) + len(losses) + len(breakeven)
 
     total_pnl = sum(t.get("pnl", 0) for t in trades)
 

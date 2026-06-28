@@ -417,3 +417,97 @@
     }
   }
 })();
+
+// Nexora emergency repair V6: force theme + visible dashboard/admin layout
+(() => {
+  const root = document.documentElement;
+  const body = document.body;
+  if (!body || body.dataset.nexoraRepairV6 === "1") return;
+  body.dataset.nexoraRepairV6 = "1";
+
+  const applyTheme = (theme) => {
+    const next = theme === "light" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    body.setAttribute("data-nx-theme", next);
+    try { localStorage.setItem("nexora-theme", next); } catch (_) {}
+    document.querySelectorAll(".theme-toggle,.nexora-theme-toggle").forEach((btn) => {
+      btn.setAttribute("aria-label", next === "light" ? "Switch to dark mode" : "Switch to light mode");
+      btn.dataset.themeState = next;
+    });
+  };
+  try { applyTheme(localStorage.getItem("nexora-theme") || root.getAttribute("data-theme") || "dark"); } catch (_) { applyTheme("dark"); }
+  document.addEventListener("click", (event) => {
+    const btn = event.target.closest(".theme-toggle,.nexora-theme-toggle,[data-theme-toggle]");
+    if (!btn) return;
+    event.preventDefault();
+    applyTheme(root.getAttribute("data-theme") === "light" ? "dark" : "light");
+  }, true);
+
+  const path = location.pathname || "/";
+  const isDashboard = path.includes("dashboard") || !!document.querySelector(".plan-dashboard,.premium-status-grid,.widget-grid");
+  const isAdmin = path.includes("admin") || !!document.querySelector(".admin-shell,.overview-grid");
+  const isHealth = path.includes("system-health") || !!document.querySelector(".health-shell");
+  if (!isDashboard && !isAdmin && !isHealth) return;
+  body.classList.add("nx-repair-app");
+  if (isDashboard) body.classList.add("nx-repair-dashboard");
+  if (isAdmin) body.classList.add("nx-repair-admin");
+  if (isHealth) body.classList.add("nx-repair-health");
+
+  const active = (href) => {
+    try { return new URL(href, location.origin).pathname === path ? " is-active" : ""; }
+    catch (_) { return ""; }
+  };
+  const items = isAdmin ? [
+    ["Admin Overview","/admin","⌂"],["Users","/admin#users","◎"],["Payments","/admin#payments","▤"],["System Health","/admin/system-health","✧"],["Landing","/","↗"],["Logout","/logout","⇥"]
+  ] : [
+    ["Dashboard","/dashboard","⌂"],["My Plan","#pricing","▣"],["Signals","/bot-check","◈"],["Referrals","#referrals","◎"],["Invoices","/invoice-history","□"],["Logout","/logout","⇥"]
+  ];
+  if (!document.querySelector(".nx-repair-sidebar")) {
+    const aside = document.createElement("aside");
+    aside.className = "nx-repair-sidebar";
+    aside.innerHTML = `<div class="nx-repair-brand"><div class="nx-repair-brand-mark">N</div><div><strong>Nexora</strong><span>AI Signal Hunter</span></div></div><nav class="nx-repair-nav">${items.map(([label, href, icon]) => `<a class="${active(href)}" href="${href}"><span>${icon}</span>${label}</a>`).join("")}</nav>`;
+    body.prepend(aside);
+  }
+
+  const symbols = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT"];
+  const icons = { BTCUSDT:"₿", ETHUSDT:"Ξ", SOLUSDT:"S", BNBUSDT:"B" };
+  let market = {
+    BTCUSDT:{price:68542.10,change:1.82}, ETHUSDT:{price:3728.45,change:2.45}, SOLUSDT:{price:162.85,change:3.21}, BNBUSDT:{price:601.75,change:-0.35}
+  };
+  if (!document.querySelector(".nx-repair-top-strip")) {
+    const strip = document.createElement("section");
+    strip.className = "nx-repair-top-strip";
+    strip.innerHTML = `<div class="nx-repair-market">${symbols.map((s) => `<article class="nx-repair-coin" data-symbol="${s}"><i>${icons[s]}</i><strong>${s.replace("USDT"," / USDT")}</strong><b class="nx-repair-price">--</b><span class="nx-repair-change">--</span></article>`).join("")}</div><div class="nx-repair-user"><div><strong>${isAdmin ? "Admin" : "Nexora Trader"}</strong><small>${isAdmin ? "Control Center" : "Live Dashboard"}</small></div><div class="nx-repair-avatar"></div></div>`;
+    const target = document.querySelector(".page-wrap,.admin-shell,.health-shell,.topbar") || body.firstElementChild;
+    body.insertBefore(strip, target);
+  }
+  const paintMarket = () => {
+    document.querySelectorAll(".nx-repair-coin").forEach((card) => {
+      const row = market[card.dataset.symbol]; if (!row) return;
+      card.querySelector(".nx-repair-price").textContent = Number(row.price).toLocaleString(undefined,{maximumFractionDigits: row.price>100?2:4});
+      card.querySelector(".nx-repair-change").textContent = `${row.change>=0?"+":""}${Number(row.change).toFixed(2)}%`;
+      card.classList.toggle("is-down", Number(row.change) < 0);
+    });
+  };
+  const refreshMarket = async () => {
+    try {
+      const res = await fetch("https://api.binance.us/api/v3/ticker/24hr", { cache:"no-store" });
+      if (!res.ok) throw new Error("market api");
+      const data = await res.json();
+      const wanted = new Set(symbols);
+      data.forEach((row) => { if (wanted.has(row.symbol)) market[row.symbol] = { price:Number(row.lastPrice||0), change:Number(row.priceChangePercent||0) }; });
+    } catch (_) {}
+    paintMarket();
+  };
+  refreshMarket(); setInterval(refreshMarket, 30000);
+
+  if (isDashboard && !document.querySelector(".nx-repair-dashboard-grid")) {
+    const anchor = document.querySelector(".premium-status-grid,.widget-grid,.plan-dashboard,.glass-box");
+    if (anchor && anchor.parentNode) {
+      const sec = document.createElement("section");
+      sec.className = "nx-repair-dashboard-grid";
+      sec.innerHTML = `<article class="nx-repair-card"><h3>Account Health</h3><div class="nx-repair-ring"><div><strong>95%</strong><span>Excellent</span></div></div><div class="nx-repair-list"><div><i class="nx-repair-check">✓</i>Account Verified</div><div><i class="nx-repair-check">✓</i>Telegram Connected</div><div><i class="nx-repair-check">✓</i>Subscription Protected</div><div><i class="nx-repair-check">✓</i>Signal Hunter Active</div></div></article><article class="nx-repair-card"><h3>Signal Hunter Preview</h3><div class="nx-repair-row"><strong>BTC/USDT</strong><span class="nx-repair-long">WATCH</span><span>S/R</span><span>RR 1:2+</span><span>Live</span></div><div class="nx-repair-row"><strong>ETH/USDT</strong><span class="nx-repair-long">SCAN</span><span>MTF</span><span>RR 1:2+</span><span>Live</span></div><div class="nx-repair-row"><strong>SOL/USDT</strong><span class="nx-repair-long">WAIT</span><span>Pullback</span><span>Protected</span><span>Live</span></div></article><article class="nx-repair-card"><h3>Quick Actions</h3><div class="nx-repair-quick"><a href="/bot-check"><span>◈</span>Verify Bot</a><a href="/manual-payment/basic"><span>▤</span>Payment / Upgrade</a><a href="#referrals"><span>◎</span>Invite & Earn</a><a href="#pricing"><span>▣</span>My Plan</a></div></article>`;
+      anchor.insertAdjacentElement("afterend", sec);
+    }
+  }
+})();

@@ -508,6 +508,8 @@ Final Score: {signal.get('final_score', 'N/A')} / 100
 Setup Type: {signal.get('setup_type', 'N/A')}
 Target Basis: {signal.get('target_basis', 'Support/Resistance')}
 Quality Reason: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
+Entry Protection: {signal.get('entry_location_reason', 'N/A')}
+Management: {signal.get('management_note', 'Protect the trade if price moves in your favor.')}
 
 🎯 Signal Strength: {signal['confidence']}%
 🧠 AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%

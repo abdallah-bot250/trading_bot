@@ -29,8 +29,8 @@ MARKET_CONTEXT_TTL_SECONDS = 180
 SIGNAL_SKIP_LOG_CACHE = {}
 SIGNAL_SKIP_LOG_TTL_SECONDS = 600
 LAST_DRY_RUN_SKIPS = []
-MIN_SPOT_FINAL_SCORE = 80
-MIN_FUTURES_FINAL_SCORE = 85
+MIN_SPOT_FINAL_SCORE = 88
+MIN_FUTURES_FINAL_SCORE = 90
 
 
 def log_market_source_once(source, symbol, timeframe):
@@ -805,9 +805,12 @@ def build_market_context(symbol, interval, df, direction):
     mtf = multi_timeframe_quality(symbol, direction, interval, df)
     allowed = True
     reason = "market context accepted"
-    if direction == "LONG" and regime == "DUMP_RISK":
+    if direction == "LONG" and regime in ["DUMP_RISK", "BEARISH", "HIGH_VOLATILITY"]:
         allowed = False
-        reason = "DUMP_RISK blocks spot LONG"
+        reason = f"{regime} blocks LONG entries"
+    elif direction == "SHORT" and regime == "BULLISH":
+        allowed = False
+        reason = "BULLISH regime blocks SHORT entries"
     elif mtf.get("strong_conflict"):
         allowed = False
         reason = mtf.get("reason", "strong multi-timeframe conflict")
@@ -1281,6 +1284,99 @@ def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.8):
     }
 
 
+def _recent_extension_pct(df, direction, lookback=5):
+    try:
+        if df is None or len(df) < lookback + 2:
+            return 0.0
+        entry = float(df["close"].iloc[-1])
+        ref = float(df["close"].iloc[-lookback-1])
+        if entry <= 0 or ref <= 0:
+            return 0.0
+        if direction == "LONG":
+            return (entry - ref) / ref
+        return (ref - entry) / ref
+    except Exception:
+        return 0.0
+
+
+def _wick_reversal_warning(df, direction):
+    try:
+        if df is None or len(df) < 4:
+            return False
+        recent = df.tail(3)
+        warnings = 0
+        for _, candle in recent.iterrows():
+            high = float(candle["high"])
+            low = float(candle["low"])
+            open_ = float(candle["open"])
+            close = float(candle["close"])
+            rng = max(high - low, 1e-12)
+            upper = high - max(open_, close)
+            lower = min(open_, close) - low
+            body = abs(close - open_)
+            if direction == "LONG" and upper / rng > 0.42 and body / rng < 0.48:
+                warnings += 1
+            if direction == "SHORT" and lower / rng > 0.42 and body / rng < 0.48:
+                warnings += 1
+        return warnings >= 2
+    except Exception:
+        return False
+
+
+def _entry_location_filter(df, direction, sr_targets, atr_value, interval="5m"):
+    """Reject entries that are late in the move or too close to the next opposing level."""
+    try:
+        entry = float(df["close"].iloc[-1])
+        support = float(sr_targets.get("support") or sr_targets.get("nearest_support"))
+        resistance = float(sr_targets.get("resistance") or sr_targets.get("nearest_resistance"))
+        if entry <= 0 or support <= 0 or resistance <= 0 or resistance <= support:
+            return False, "invalid support/resistance range"
+        rng = resistance - support
+        pos = (entry - support) / rng
+        atr_value = float(atr_value) if atr_value is not None and not pd.isna(atr_value) else 0.0
+        atr_ratio = atr_value / entry if entry else 0.0
+        extension_limit = {"5m": 0.0085, "15m": 0.014, "1h": 0.022}.get(interval, 0.012)
+        extension = _recent_extension_pct(df, direction, lookback=5)
+
+        if direction == "LONG":
+            # The bot must buy near a confirmed support/reclaim, not after the move is almost finished.
+            if pos > 0.44:
+                return False, f"late LONG entry: price already {round(pos*100, 1)}% through S/R range"
+            if (resistance - entry) / entry < max(0.009, atr_ratio * 1.15):
+                return False, "LONG entry too close to resistance"
+            if extension > extension_limit:
+                return False, f"late LONG pump extension {round(extension*100, 2)}%"
+            if _wick_reversal_warning(df, direction):
+                return False, "LONG rejected by upper-wick exhaustion"
+        else:
+            # The bot must short near resistance, not after most of the dump has already happened.
+            if pos < 0.56:
+                return False, f"late SHORT entry: price already near support ({round(pos*100, 1)}% range position)"
+            if (entry - support) / entry < max(0.009, atr_ratio * 1.15):
+                return False, "SHORT entry too close to support"
+            if extension > extension_limit:
+                return False, f"late SHORT dump extension {round(extension*100, 2)}%"
+            if _wick_reversal_warning(df, direction):
+                return False, "SHORT rejected by lower-wick exhaustion"
+
+        return True, "entry location protected against reversal"
+    except Exception as e:
+        return False, f"entry location filter error: {e}"
+
+
+def _market_direction_guard(direction, market_context, mtf_context):
+    """Hard guard: do not fight BTC/ETH regime or unclear MTF."""
+    regime = market_context.get("market_regime", "SIDEWAYS")
+    mtf_state = mtf_context.get("state", "UNCONFIRMED")
+    if mtf_state != "CONFIRMED":
+        return False, f"MTF not confirmed: {mtf_state}"
+    if direction == "LONG" and regime in ["DUMP_RISK", "BEARISH", "HIGH_VOLATILITY"]:
+        return False, f"{regime} blocks LONG entries"
+    if direction == "SHORT" and regime == "BULLISH":
+        return False, "BULLISH regime blocks SHORT entries"
+    return True, "market direction confirmed"
+
+
 # ================= TP / SL =================
 def dynamic_targets(entry, direction, atr_value, trend_power="MIXED", volume="WEAK", timeframe="5m", structure="MID_RANGE"):
     try:
@@ -1636,6 +1732,9 @@ def generate_signal(symbol, interval="5m"):
     if not market_context.get("allowed", True):
         return skip_signal(symbol, interval, market_context.get("skip_reason", "market context rejected"))
     mtf_context = market_context.get("multi_timeframe_context", {})
+    market_ok, market_reason = _market_direction_guard(direction, market_context, mtf_context)
+    if not market_ok:
+        return skip_signal(symbol, interval, market_reason)
 
     if not strong_signal_filter(df, trend, trend_power, direction):
         return skip_signal(symbol, interval, "local trend/momentum filter rejected setup")
@@ -1668,6 +1767,9 @@ def generate_signal(symbol, interval="5m"):
         return None
     tp = sr_targets["tp"]
     sl = sr_targets["sl"]
+    location_ok, location_reason = _entry_location_filter(df, direction, sr_targets, atr_val, interval)
+    if not location_ok:
+        return skip_signal(symbol, interval, location_reason)
     if direction == "LONG":
         reversal_ok, reversal_reason = spot_long_confirmation(df, sr_targets.get("support"))
         if not reversal_ok:
@@ -1724,7 +1826,10 @@ def generate_signal(symbol, interval="5m"):
         "target_basis": sr_targets["target_basis"],
         "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
         "market_regime": market_context.get("market_regime", "SIDEWAYS"),
-        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed")
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed"),
+        "entry_location_reason": location_reason,
+        "management_note": "If price reaches +0.6R then protect the trade: move SL to breakeven or take partial profit.",
+        "breakeven_trigger_r": 0.6
     }
 
     ai_engine_report = build_ai_engine_report(
@@ -1851,6 +1956,9 @@ def generate_free_signal(symbol, interval="5m"):
     if not market_context.get("allowed", True):
         return skip_signal(symbol, interval, market_context.get("skip_reason", "market context rejected"))
     mtf_context = market_context.get("multi_timeframe_context", {})
+    market_ok, market_reason = _market_direction_guard(direction, market_context, mtf_context)
+    if not market_ok:
+        return skip_signal(symbol, interval, market_reason)
 
     if not strong_signal_filter(df, trend, trend_power, direction):
         return skip_signal(symbol, interval, "local trend/momentum filter rejected setup")
@@ -1885,6 +1993,9 @@ def generate_free_signal(symbol, interval="5m"):
         return None
     tp = sr_targets["tp"]
     sl = sr_targets["sl"]
+    location_ok, location_reason = _entry_location_filter(df, direction, sr_targets, atr_val, interval)
+    if not location_ok:
+        return skip_signal(symbol, interval, location_reason)
     if direction == "LONG":
         reversal_ok, reversal_reason = spot_long_confirmation(df, sr_targets.get("support"))
         if not reversal_ok:
@@ -1939,7 +2050,10 @@ def generate_free_signal(symbol, interval="5m"):
         "target_basis": sr_targets["target_basis"],
         "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
         "market_regime": market_context.get("market_regime", "SIDEWAYS"),
-        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed")
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed"),
+        "entry_location_reason": location_reason,
+        "management_note": "If price reaches +0.6R then protect the trade: move SL to breakeven or take partial profit.",
+        "breakeven_trigger_r": 0.6
     }
 
     ai_engine_report = build_ai_engine_report(
