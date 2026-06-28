@@ -511,3 +511,104 @@
     }
   }
 })();
+
+// Nexora final reference match layer
+(() => {
+  const root = document.documentElement;
+  const body = document.body;
+  if (!body || body.dataset.nexoraFinalMatch === "1") return;
+  body.dataset.nexoraFinalMatch = "1";
+
+  const applyTheme = (theme) => {
+    const next = theme === "light" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("nexora-theme", next); } catch (_) {}
+  };
+  try { applyTheme(localStorage.getItem("nexora-theme") || "dark"); } catch (_) { root.setAttribute("data-theme", "dark"); }
+
+  if (!document.querySelector(".theme-toggle,.nexora-theme-toggle")) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "nexora-theme-toggle theme-toggle";
+    toggle.setAttribute("aria-label", "Toggle theme");
+    toggle.innerHTML = '<span class="dark-icon">Moon</span><span class="light-icon">Sun</span>';
+    document.body.prepend(toggle);
+  }
+
+  const dashboardOrAdmin = body.classList.contains("nx-pro-app") || document.querySelector(".plan-dashboard,.admin-shell");
+  if (!dashboardOrAdmin) return;
+
+  const toolbar = document.querySelector(".nx-pro-toolbar");
+  const user = document.querySelector(".nx-pro-user");
+  if (toolbar && user && !document.querySelector(".nx-pro-controls")) {
+    const controls = document.createElement("div");
+    controls.className = "nx-pro-controls";
+    const themeButton = document.createElement("button");
+    themeButton.type = "button";
+    themeButton.className = "nx-pro-control-btn theme-toggle";
+    themeButton.setAttribute("aria-label", "Toggle theme");
+    themeButton.innerHTML = '<span class="dark-icon">Moon</span><span class="light-icon">Sun</span>';
+    const notify = document.createElement("button");
+    notify.type = "button";
+    notify.className = "nx-pro-control-btn";
+    notify.setAttribute("aria-label", "Notifications");
+    notify.textContent = "!";
+    user.parentNode.insertBefore(controls, user);
+    controls.appendChild(themeButton);
+    controls.appendChild(notify);
+    controls.appendChild(user);
+  }
+
+  const setLastUpdated = () => {
+    let node = document.querySelector(".nx-market-updated");
+    if (!node) {
+      const toolbarInner = document.querySelector(".nx-pro-controls");
+      if (!toolbarInner) return;
+      node = document.createElement("span");
+      node.className = "nx-market-updated";
+      node.style.color = "var(--hunter-muted)";
+      node.style.fontSize = ".82rem";
+      node.style.fontWeight = "800";
+      toolbarInner.prepend(node);
+    }
+    const now = new Date();
+    node.textContent = `Last update: ${now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+  };
+  setLastUpdated();
+  window.setInterval(setLastUpdated, 15000);
+
+  document.querySelectorAll(".nx-pro-sidebar a[href], .premium-floating-nav a[href], .navbar a[href]").forEach((link) => {
+    try {
+      const url = new URL(link.getAttribute("href"), window.location.origin);
+      if (url.pathname === window.location.pathname) link.classList.add("is-active");
+    } catch (_) {}
+  });
+})();
+
+// Nexora final live coin cards polish
+(() => {
+  const iconSvg = {
+    BTCUSDT: '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M19.7 6.3c2.6.7 4.1 2.2 3.8 4.5-.2 1.7-1.2 2.8-2.9 3.3 2.2.7 3.3 2.2 3 4.4-.4 3-2.9 4.6-6.7 4.4l-.4 3h-1.8l.4-3h-1.5l-.4 3h-1.8l.4-3H8l.4-2.1h1.7L12 9.5h-1.7l.4-2.1h3.8l.4-3h1.8l-.4 3h1.5l.4-3H20l-.3 1.9Zm-5.8 13.9h2.7c1.9 0 3-.7 3.2-2.1.2-1.3-.8-2-2.8-2h-2.5l-.6 4.1Zm.9-6.4h2.3c1.7 0 2.7-.7 2.9-2 .2-1.2-.7-1.8-2.4-1.8h-2.3l-.5 3.8Z"/></svg>',
+    ETHUSDT: '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M16 3 8 16.2 16 21l8-4.8L16 3Zm0 26 8-11.3-8 4.8-8-4.8L16 29Z"/></svg>',
+    SOLUSDT: '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M8 9.5c.3-.4.8-.7 1.4-.7h15c.7 0 1 .8.6 1.3l-2.2 2.4c-.3.4-.8.6-1.4.6h-15c-.7 0-1-.8-.6-1.3L8 9.5Zm0 9.4c.3-.4.8-.6 1.4-.6h15c.7 0 1 .8.6 1.3L22.8 22c-.3.4-.8.6-1.4.6h-15c-.7 0-1-.8-.6-1.3L8 18.9Zm16-4.7c-.3-.4-.8-.6-1.4-.6h-15c-.7 0-1 .8-.6 1.3l2.2 2.4c.3.4.8.6 1.4.6h15c.7 0 1-.8.6-1.3L24 14.2Z"/></svg>',
+    BNBUSDT: '<svg viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="m16 4 4.2 4.2L16 12.4l-4.2-4.2L16 4Zm-7.2 7.2 4.2 4.2-4.2 4.2-4.2-4.2 4.2-4.2Zm14.4 0 4.2 4.2-4.2 4.2-4.2-4.2 4.2-4.2ZM16 18.6l4.2 4.2L16 27l-4.2-4.2 4.2-4.2Zm0-4.8 2.2 2.2-2.2 2.2-2.2-2.2 2.2-2.2Z"/></svg>'
+  };
+
+  const decorate = () => {
+    document.querySelectorAll(".nx-pro-coin").forEach((card) => {
+      const symbol = card.dataset.symbol || "";
+      if (!symbol || card.querySelector(".nx-coin-logo")) return;
+      const oldIcon = card.querySelector(".nx-pro-coin-icon");
+      const logo = document.createElement("span");
+      logo.className = "nx-coin-logo";
+      logo.dataset.symbol = symbol;
+      logo.innerHTML = iconSvg[symbol] || '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="9" fill="currentColor"/></svg>';
+      if (oldIcon) oldIcon.replaceWith(logo);
+      else card.prepend(logo);
+    });
+  };
+
+  decorate();
+  window.addEventListener("load", decorate, { once: true });
+  window.setInterval(decorate, 3000);
+})();

@@ -3166,3 +3166,445 @@ html[data-theme="light"] .nx-repair-ring { background:radial-gradient(circle,#ff
   .nx-repair-market, body.nx-repair-dashboard .premium-status-grid, body.nx-repair-dashboard .widget-grid, body.nx-repair-admin .stats, body.nx-repair-admin .overview-grid { grid-template-columns:1fr !important; }
   .nx-repair-row { grid-template-columns:1fr auto; }
 }
+
+/* Nexora final reference match layer */
+html,
+body {
+    max-width: 100%;
+    overflow-x: hidden !important;
+}
+
+body.nexora-shell,
+body.nexora-v4,
+body:has(.login-box),
+body:has(.register-box),
+body:has(.verify-box),
+body:has(.success-box),
+body:has(.payment-shell),
+body:has(.manual-shell),
+body:has(.invoice-shell),
+body:has(.proof-grid),
+body:has(.check-grid),
+body:has(.health-shell),
+body:has(.page-wrap),
+body:has(.admin-shell) {
+    background-color: #030812 !important;
+    background-image:
+        linear-gradient(90deg, rgba(3, 8, 18, .96), rgba(3, 8, 18, .74), rgba(3, 8, 18, .96)),
+        radial-gradient(circle at 72% 0%, rgba(56, 189, 248, .18), transparent 34rem),
+        radial-gradient(circle at 16% 22%, rgba(47, 225, 121, .15), transparent 30rem),
+        url("/static/nexora-global-bg.png") !important;
+    background-size: cover, auto, auto, cover !important;
+    background-position: center top !important;
+    background-attachment: fixed !important;
+}
+
+html[data-theme="light"] body.nexora-shell,
+html[data-theme="light"] body.nexora-v4,
+html[data-theme="light"] body:has(.login-box),
+html[data-theme="light"] body:has(.register-box),
+html[data-theme="light"] body:has(.verify-box),
+html[data-theme="light"] body:has(.success-box),
+html[data-theme="light"] body:has(.payment-shell),
+html[data-theme="light"] body:has(.manual-shell),
+html[data-theme="light"] body:has(.invoice-shell),
+html[data-theme="light"] body:has(.proof-grid),
+html[data-theme="light"] body:has(.check-grid),
+html[data-theme="light"] body:has(.health-shell),
+html[data-theme="light"] body:has(.page-wrap),
+html[data-theme="light"] body:has(.admin-shell) {
+    background-color: #f7fbff !important;
+    background-image:
+        linear-gradient(90deg, rgba(247, 251, 255, .95), rgba(247, 251, 255, .78), rgba(247, 251, 255, .96)),
+        radial-gradient(circle at 72% 0%, rgba(56, 189, 248, .10), transparent 34rem),
+        radial-gradient(circle at 16% 22%, rgba(47, 225, 121, .10), transparent 30rem),
+        url("/static/nexora-global-bg.png") !important;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.014) 1px, transparent 1px);
+    background-size: 54px 54px;
+    mask-image: linear-gradient(to bottom, rgba(0,0,0,.86), transparent 88%);
+}
+
+html[data-theme="light"] body::before {
+    background:
+        linear-gradient(rgba(5,30,48,.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(5,30,48,.028) 1px, transparent 1px);
+}
+
+body.nx-pro-app .nx-pro-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 880;
+    padding-top: 18px;
+    padding-bottom: 12px;
+    background: linear-gradient(180deg, rgba(3, 8, 18, .94), rgba(3, 8, 18, .70), transparent);
+    backdrop-filter: blur(16px);
+}
+
+html[data-theme="light"] body.nx-pro-app .nx-pro-toolbar {
+    background: linear-gradient(180deg, rgba(247, 251, 255, .94), rgba(247, 251, 255, .74), transparent);
+}
+
+.nx-pro-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.nx-pro-control-btn {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--hunter-line);
+    background: rgba(8, 18, 32, .78);
+    color: var(--hunter-text);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 16px 44px rgba(0,0,0,.20);
+    cursor: pointer;
+}
+
+html[data-theme="light"] .nx-pro-control-btn {
+    background: rgba(255,255,255,.82);
+}
+
+.nx-pro-control-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(47,225,121,.34);
+}
+
+.nx-pro-user {
+    min-height: 42px;
+    padding: 4px 10px;
+    border-radius: 14px;
+    border: 1px solid transparent;
+}
+
+.nx-pro-user:hover {
+    border-color: var(--hunter-line);
+    background: rgba(255,255,255,.04);
+}
+
+body.nx-dashboard .hero {
+    display: block !important;
+}
+
+body.nx-dashboard .status-strip {
+    justify-content: flex-start !important;
+}
+
+body.nx-dashboard .premium-status-grid {
+    margin-top: 16px !important;
+}
+
+body.nx-dashboard .premium-status-card {
+    min-height: 112px;
+}
+
+body.nx-dashboard .premium-status-card:nth-child(3)::after,
+body.nx-dashboard .premium-status-card:nth-child(5)::after {
+    content: "";
+    position: absolute;
+    inset-inline-end: 20px;
+    bottom: 20px;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(56,189,248,.90), rgba(56,189,248,.18));
+    box-shadow: 0 0 22px rgba(56,189,248,.34);
+}
+
+body.nx-dashboard .nx-pro-dashboard-grid {
+    grid-template-columns: minmax(260px, .95fr) minmax(360px, 1.1fr) minmax(300px, .95fr);
+}
+
+body.nx-dashboard .nx-pro-card,
+body.nx-admin .section,
+body.nx-admin .hero-main,
+body.nx-admin .health-panel,
+body.nx-admin .metric-card,
+body.nx-admin .overview-card,
+body.nx-admin .quick-card,
+body.nx-admin .ops-panel {
+    backdrop-filter: blur(22px) saturate(155%) !important;
+}
+
+body.nx-admin .hero {
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr) !important;
+}
+
+body.nx-admin .hero-main h2,
+body.nx-admin .brand h1 {
+    color: var(--hunter-text) !important;
+}
+
+body.nx-admin .stats,
+body.nx-admin .overview-grid {
+    gap: 14px !important;
+}
+
+body.nx-admin .metric-card,
+body.nx-admin .quick-card,
+body.nx-admin .overview-card {
+    min-height: 112px;
+}
+
+body.nx-admin .table-wrap {
+    border-radius: 0 0 12px 12px !important;
+}
+
+body.nx-admin tbody tr:hover,
+body.nx-dashboard .nx-recent-row:hover {
+    background: rgba(56, 189, 248, .06) !important;
+}
+
+body.nx-auth .login-box,
+body.nx-auth .register-box,
+body:has(.forgot-box) .box,
+body:has(.reset-box) .box,
+body:has(.verify-box) .verify-box,
+body:has(.success-box) .success-box {
+    border-radius: 18px !important;
+    box-shadow: 0 34px 120px rgba(0,0,0,.34) !important;
+}
+
+body.nx-auth .login-box input,
+body.nx-auth .register-box input,
+body.nx-auth .login-box button,
+body.nx-auth .register-box button {
+    border-radius: 12px !important;
+}
+
+body:has(.payment-shell) .payment-shell,
+body:has(.manual-shell) .manual-shell,
+body:has(.invoice-shell) .invoice-shell,
+body:has(.proof-grid) .proof-card,
+body:has(.check-grid) .check-card,
+body:has(.health-shell) .card,
+body:has(.box) .box {
+    border-radius: 16px !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    background: linear-gradient(180deg, rgba(13,27,48,.84), rgba(7,17,31,.74)) !important;
+    box-shadow: 0 24px 90px rgba(0,0,0,.28) !important;
+    backdrop-filter: blur(20px) saturate(145%) !important;
+}
+
+html[data-theme="light"] body:has(.payment-shell) .payment-shell,
+html[data-theme="light"] body:has(.manual-shell) .manual-shell,
+html[data-theme="light"] body:has(.invoice-shell) .invoice-shell,
+html[data-theme="light"] body:has(.proof-grid) .proof-card,
+html[data-theme="light"] body:has(.check-grid) .check-card,
+html[data-theme="light"] body:has(.health-shell) .card,
+html[data-theme="light"] body:has(.box) .box {
+    background: rgba(255,255,255,.88) !important;
+    box-shadow: 0 24px 80px rgba(4,28,48,.12) !important;
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 0 !important;
+    box-shadow: 0 0 0 4px rgba(47,225,121,.20), 0 12px 34px rgba(0,0,0,.20) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 1ms !important;
+    }
+}
+
+@media (max-width: 1024px) {
+    body.nx-dashboard .nx-pro-dashboard-grid,
+    body.nx-admin .hero {
+        grid-template-columns: 1fr !important;
+    }
+
+    .nx-pro-controls {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 390px) {
+    .nx-pro-nav {
+        grid-template-columns: 1fr;
+    }
+
+    .nx-pro-coin {
+        min-width: 0;
+    }
+
+    .nx-pro-coin b,
+    .nx-pro-coin span {
+        font-size: .82rem;
+    }
+}
+
+/* Nexora final live coin cards polish */
+.nx-pro-market-strip,
+.nx-market-grid,
+.premium-market-strip {
+    align-items: stretch !important;
+}
+
+.nx-pro-coin,
+.nx-market-card,
+.premium-market-pill {
+    isolation: isolate;
+    border-radius: 14px !important;
+    border: 1px solid rgba(148, 163, 184, .18) !important;
+    background:
+        linear-gradient(145deg, rgba(255,255,255,.070), rgba(255,255,255,.025)),
+        rgba(7, 17, 31, .84) !important;
+    box-shadow: 0 18px 54px rgba(0,0,0,.22) !important;
+    backdrop-filter: blur(18px) saturate(145%) !important;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease !important;
+}
+
+html[data-theme="light"] .nx-pro-coin,
+html[data-theme="light"] .nx-market-card,
+html[data-theme="light"] .premium-market-pill {
+    background:
+        linear-gradient(145deg, rgba(255,255,255,.96), rgba(247,251,255,.78)) !important;
+    box-shadow: 0 18px 46px rgba(4,28,48,.11) !important;
+}
+
+.nx-pro-coin:hover,
+.nx-market-card:hover,
+.premium-market-pill:hover {
+    transform: translateY(-3px);
+    border-color: rgba(47, 225, 121, .36) !important;
+    box-shadow: 0 24px 72px rgba(0,0,0,.28) !important;
+}
+
+.nx-pro-coin {
+    min-height: 62px !important;
+    grid-template-columns: auto minmax(90px, 1fr) auto auto;
+    display: grid !important;
+    align-items: center !important;
+    gap: 12px !important;
+}
+
+.nx-coin-logo,
+.nx-pro-coin-icon {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 999px !important;
+    overflow: hidden;
+    color: #fff !important;
+    box-shadow: 0 0 24px rgba(47,225,121,.18);
+}
+
+.nx-coin-logo svg {
+    width: 23px;
+    height: 23px;
+    display: block;
+}
+
+.nx-coin-logo[data-symbol="BTCUSDT"] {
+    background: linear-gradient(135deg, #f7931a, #ffbd4a) !important;
+}
+
+.nx-coin-logo[data-symbol="ETHUSDT"] {
+    background: linear-gradient(135deg, #627eea, #9aaeff) !important;
+}
+
+.nx-coin-logo[data-symbol="SOLUSDT"] {
+    background: linear-gradient(135deg, #14f195, #9945ff) !important;
+}
+
+.nx-coin-logo[data-symbol="BNBUSDT"] {
+    background: linear-gradient(135deg, #f3ba2f, #f8d66d) !important;
+}
+
+.nx-pro-coin strong,
+.nx-market-symbol,
+.premium-market-pill strong {
+    color: var(--hunter-text, var(--premium-text)) !important;
+    font-size: .88rem !important;
+    font-weight: 950 !important;
+    letter-spacing: 0 !important;
+}
+
+.nx-pro-coin b,
+.nx-market-price {
+    color: var(--hunter-text, var(--premium-text)) !important;
+    font-size: 1.03rem !important;
+    font-weight: 950 !important;
+    direction: ltr;
+}
+
+.nx-pro-change,
+.nx-market-change,
+.premium-market-pill span {
+    justify-self: end;
+    min-width: 62px;
+    min-height: 25px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(47,225,121,.12);
+    color: #35e681 !important;
+    font-size: .78rem !important;
+    font-weight: 950 !important;
+}
+
+.nx-pro-coin.is-down .nx-pro-change,
+.nx-market-card.is-down .nx-market-change {
+    background: rgba(255,93,104,.12);
+    color: #ff6875 !important;
+}
+
+.nx-pro-coin::after,
+.nx-market-card::after {
+    inset-inline: 58px 14px !important;
+    bottom: 8px !important;
+    height: 14px !important;
+    opacity: .26 !important;
+}
+
+.nx-market-updated {
+    white-space: nowrap;
+}
+
+body.nexora-shell,
+body.nexora-v4,
+body.nx-pro-app {
+    background-size: cover, auto, auto, cover !important;
+    background-repeat: no-repeat !important;
+    background-position: center top !important;
+    background-attachment: fixed !important;
+}
+
+@media (max-width: 760px) {
+    .nx-pro-coin {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .nx-pro-coin .nx-pro-change {
+        grid-column: 2 / 4;
+        justify-self: start;
+    }
+}
