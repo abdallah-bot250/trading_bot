@@ -757,3 +757,487 @@ html[data-theme="light"] textarea {
         grid-template-columns: 1fr;
     }
 }
+
+/* =========================================================
+   Nexora V2 UI final polish - UI only, no route/form changes
+   Applies landing design language to dashboard/admin/health.
+   ========================================================= */
+:root {
+  --nexora-radius-sm: 10px;
+  --nexora-radius: 18px;
+  --nexora-radius-lg: 26px;
+  --nexora-card-bg: rgba(12, 18, 31, 0.74);
+  --nexora-card-bg-strong: rgba(13, 23, 39, 0.92);
+  --nexora-border: rgba(226, 232, 240, 0.12);
+  --nexora-border-bright: rgba(32, 214, 138, 0.32);
+  --nexora-glow: 0 24px 90px rgba(0, 0, 0, 0.34);
+  --nexora-soft-glow: 0 18px 54px rgba(32, 214, 138, 0.10);
+}
+html[data-theme="light"] {
+  --nexora-card-bg: rgba(255, 255, 255, 0.80);
+  --nexora-card-bg-strong: rgba(255, 255, 255, 0.94);
+  --nexora-border: rgba(15, 23, 42, 0.09);
+  --nexora-border-bright: rgba(8, 166, 98, 0.24);
+  --nexora-glow: 0 22px 74px rgba(15, 23, 42, 0.10);
+  --nexora-soft-glow: 0 18px 54px rgba(8, 166, 98, 0.08);
+}
+
+/* page backgrounds */
+body:has(.page-wrap),
+body:has(.admin-shell),
+body:has(.wrap) {
+  background-color: var(--premium-bg) !important;
+  background-image:
+    radial-gradient(circle at 8% 0%, rgba(32, 214, 138, 0.18), transparent 28rem),
+    radial-gradient(circle at 92% 5%, rgba(52, 211, 255, 0.12), transparent 30rem),
+    radial-gradient(circle at 50% 100%, rgba(244, 191, 95, 0.06), transparent 34rem),
+    linear-gradient(180deg, #05070d 0%, #09111f 46%, #05070d 100%) !important;
+  color: var(--premium-text) !important;
+}
+html[data-theme="light"] body:has(.page-wrap),
+html[data-theme="light"] body:has(.admin-shell),
+html[data-theme="light"] body:has(.wrap) {
+  background-image:
+    radial-gradient(circle at 8% 0%, rgba(32, 214, 138, 0.13), transparent 28rem),
+    radial-gradient(circle at 92% 5%, rgba(52, 211, 255, 0.10), transparent 30rem),
+    linear-gradient(180deg, #f7fbf8 0%, #ffffff 46%, #eef8f2 100%) !important;
+}
+html[data-theme="light"] body::before {
+  background: linear-gradient(rgba(247, 251, 248, 0.72), rgba(247, 251, 248, 0.90)) !important;
+}
+body:has(.page-wrap)::after,
+body:has(.admin-shell)::after,
+body:has(.wrap)::after {
+  z-index: -1;
+  opacity: 0.82;
+}
+
+/* dashboard shell */
+.page-wrap,
+.admin-shell,
+.wrap {
+  width: min(1440px, calc(100% - 28px)) !important;
+  margin-inline: auto !important;
+}
+.page-wrap {
+  padding: 22px 0 48px !important;
+}
+.page-wrap > .hero,
+.admin-shell > .hero,
+.wrap .top {
+  border: 1px solid var(--nexora-border) !important;
+  border-radius: var(--nexora-radius-lg) !important;
+  background:
+    linear-gradient(135deg, rgba(32, 214, 138, 0.13), transparent 36%),
+    linear-gradient(225deg, rgba(52, 211, 255, 0.10), transparent 42%),
+    var(--nexora-card-bg) !important;
+  box-shadow: var(--nexora-glow) !important;
+  backdrop-filter: blur(20px) saturate(145%) !important;
+}
+.page-wrap > .hero {
+  padding: clamp(26px, 4vw, 46px) !important;
+  text-align: start !important;
+  margin-top: 18px !important;
+}
+.page-wrap > .hero h1,
+.admin-shell .hero h1,
+.wrap .top h1 {
+  color: var(--premium-text) !important;
+  font-size: clamp(2rem, 4vw, 3.65rem) !important;
+  line-height: 1.05 !important;
+  letter-spacing: -0.04em !important;
+  text-shadow: none !important;
+}
+.page-wrap > .hero h1::after,
+.admin-shell .hero h1::after,
+.wrap .top h1::after {
+  content: "";
+  display: block;
+  width: 84px;
+  height: 4px;
+  margin-top: 16px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--premium-green), var(--premium-cyan));
+  box-shadow: 0 0 28px rgba(32, 214, 138, 0.44);
+}
+.page-wrap > .hero p,
+.admin-shell .hero p,
+.wrap .meta {
+  color: var(--premium-muted) !important;
+}
+
+/* shared cards */
+.glass-box,
+.box,
+.card,
+.widget,
+.dashboard-panel,
+.premium-status-card,
+.premium-upgrade-box,
+.plan-dashboard,
+.status-pill,
+.quick-card,
+.metric-card,
+.overview-card,
+.ops-panel,
+.health-panel,
+.table-card,
+.wrap .card,
+.notice-box {
+  border: 1px solid var(--nexora-border) !important;
+  border-radius: var(--nexora-radius) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--nexora-card-bg-strong) 82%, transparent), color-mix(in srgb, var(--nexora-card-bg) 92%, transparent)) !important;
+  box-shadow: var(--nexora-glow) !important;
+  backdrop-filter: blur(20px) saturate(145%) !important;
+  color: var(--premium-text) !important;
+}
+.glass-box:hover,
+.box:hover,
+.card:hover,
+.widget:hover,
+.dashboard-panel:hover,
+.premium-status-card:hover,
+.quick-card:hover,
+.metric-card:hover,
+.overview-card:hover,
+.ops-panel:hover,
+.wrap .card:hover {
+  border-color: var(--nexora-border-bright) !important;
+  transform: translateY(-2px);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  box-shadow: var(--nexora-glow), var(--nexora-soft-glow) !important;
+}
+
+/* dashboard metrics */
+.status-strip,
+.premium-status-grid,
+.widget-grid,
+.plans,
+.stats,
+.quick-grid,
+.overview-grid,
+.ops-grid,
+.grid {
+  gap: 16px !important;
+}
+.status-pill {
+  min-height: 54px;
+  padding: 12px 18px !important;
+}
+.status-on,
+.status-plan,
+.premium-status-card strong,
+.metric-card strong,
+.overview-card .value,
+.wrap .card strong {
+  color: var(--premium-green) !important;
+}
+.status-off,
+.badge-danger,
+.badge-failed {
+  color: var(--premium-red) !important;
+}
+.status-expiry,
+.metric-card.warn strong,
+.badge-warning {
+  color: var(--premium-gold) !important;
+}
+.widget h3,
+.premium-status-card span,
+.overview-card .label,
+.ops-row span,
+.wrap .card span {
+  color: var(--premium-muted) !important;
+}
+.widget strong,
+.widget .value,
+.dashboard-title h2,
+.panel-title,
+.section-title,
+.box h2,
+.card h3,
+.ops-panel h3,
+.table-card h3 {
+  color: var(--premium-text) !important;
+}
+
+/* dashboard layout polish */
+.plan-dashboard {
+  padding: clamp(20px, 3vw, 30px) !important;
+  margin-top: 24px !important;
+}
+.dashboard-top,
+.topbar-inner,
+.top-actions,
+.tier-actions,
+.quick-actions {
+  gap: 12px !important;
+}
+.dashboard-lower {
+  gap: 16px !important;
+}
+#chart,
+canvas {
+  filter: drop-shadow(0 18px 36px rgba(32, 214, 138, 0.08));
+}
+.premium-upgrade-box {
+  align-items: center !important;
+}
+.helper-text,
+.notification-row,
+.activity-row,
+.card p,
+.box p,
+.notice-box,
+.sub,
+.meta {
+  color: var(--premium-muted) !important;
+}
+
+/* buttons and controls */
+.btn,
+button,
+.pay,
+.manual,
+.primary-tier,
+.quick-actions a,
+.quick-actions button,
+.premium-upgrade-box a,
+.theme-toggle,
+input[type="submit"] {
+  border-radius: 12px !important;
+  border: 1px solid var(--nexora-border) !important;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease !important;
+}
+.btn:hover,
+button:hover,
+.pay:hover,
+.manual:hover,
+.primary-tier:hover,
+.quick-actions a:hover,
+.quick-actions button:hover,
+.premium-upgrade-box a:hover,
+.theme-toggle:hover,
+input[type="submit"]:hover {
+  transform: translateY(-1px);
+  border-color: var(--nexora-border-bright) !important;
+}
+.primary-tier,
+.pay,
+.btn.paid,
+.btn.primary,
+.premium-upgrade-box a,
+.quick-actions a:first-child {
+  background: linear-gradient(135deg, var(--premium-green), #10b981) !important;
+  color: #02110b !important;
+  box-shadow: 0 18px 44px rgba(32, 214, 138, 0.22) !important;
+}
+.manual,
+.btn.secondary,
+.top-actions .btn.secondary,
+.quick-actions a,
+.quick-actions button {
+  background: color-mix(in srgb, var(--nexora-card-bg) 88%, transparent) !important;
+  color: var(--premium-text) !important;
+}
+input,
+select,
+textarea,
+.search,
+.filter {
+  border-radius: 12px !important;
+  border: 1px solid var(--nexora-border) !important;
+  background: color-mix(in srgb, var(--nexora-card-bg-strong) 84%, transparent) !important;
+  color: var(--premium-text) !important;
+  outline: none !important;
+}
+input:focus,
+select:focus,
+textarea:focus,
+.search:focus,
+.filter:focus {
+  border-color: var(--premium-green) !important;
+  box-shadow: 0 0 0 4px rgba(32, 214, 138, 0.12) !important;
+}
+
+/* admin */
+.topbar {
+  background: color-mix(in srgb, var(--nexora-card-bg-strong) 86%, transparent) !important;
+  border-bottom: 1px solid var(--nexora-border) !important;
+  box-shadow: 0 14px 44px rgba(0,0,0,.20) !important;
+}
+.brand-mark {
+  background: linear-gradient(135deg, var(--premium-green), var(--premium-cyan)) !important;
+  color: #02110b !important;
+  box-shadow: 0 14px 34px rgba(32, 214, 138, 0.24) !important;
+}
+.metric-card,
+.overview-card,
+.ops-panel,
+.health-panel {
+  min-height: 130px;
+}
+.ops-row,
+.health-row {
+  border-color: var(--nexora-border) !important;
+}
+.table-wrap,
+.table-card,
+.table-responsive {
+  overflow-x: auto !important;
+}
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 8px !important;
+  width: 100% !important;
+}
+th,
+td {
+  border-color: var(--nexora-border) !important;
+}
+thead th {
+  background: color-mix(in srgb, var(--premium-green) 10%, transparent) !important;
+  color: var(--premium-text) !important;
+  font-weight: 900 !important;
+}
+tbody tr {
+  background: color-mix(in srgb, var(--nexora-card-bg) 72%, transparent) !important;
+  box-shadow: 0 12px 32px rgba(0,0,0,.12);
+}
+tbody td:first-child { border-start-start-radius: 12px; border-end-start-radius: 12px; }
+tbody td:last-child { border-start-end-radius: 12px; border-end-end-radius: 12px; }
+.badge,
+.current-badge,
+.kicker {
+  border-radius: 999px !important;
+  border: 1px solid var(--nexora-border) !important;
+  background: color-mix(in srgb, var(--premium-green) 13%, transparent) !important;
+  color: var(--premium-green) !important;
+  font-weight: 900 !important;
+}
+.badge-pending,
+.badge-warning,
+.metric-card.warn .label {
+  background: rgba(244, 191, 95, 0.12) !important;
+  color: var(--premium-gold) !important;
+  border-color: rgba(244, 191, 95, 0.28) !important;
+}
+.badge-done,
+.badge-paid,
+.metric-card.accent .label {
+  background: rgba(32, 214, 138, 0.13) !important;
+  color: var(--premium-green) !important;
+  border-color: rgba(32, 214, 138, 0.28) !important;
+}
+
+/* system health */
+body:has(.wrap) .top {
+  padding: clamp(22px, 3vw, 34px) !important;
+}
+.wrap .grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)) !important;
+}
+.wrap .card {
+  min-height: 150px;
+}
+.wrap .footer-note {
+  border-radius: var(--nexora-radius) !important;
+  border: 1px solid rgba(244, 191, 95, 0.28) !important;
+  background: rgba(244, 191, 95, 0.10) !important;
+  color: color-mix(in srgb, var(--premium-gold) 72%, var(--premium-text)) !important;
+}
+.wrap .top a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--premium-green), #10b981);
+  color: #02110b !important;
+  font-weight: 900;
+}
+
+/* language/theme switcher */
+.language-switcher {
+  background: color-mix(in srgb, var(--nexora-card-bg-strong) 84%, transparent) !important;
+  border: 1px solid var(--nexora-border) !important;
+  box-shadow: var(--nexora-glow) !important;
+  backdrop-filter: blur(18px) saturate(150%) !important;
+}
+.language-switcher a.active {
+  background: linear-gradient(135deg, var(--premium-green), #10b981) !important;
+  color: #02110b !important;
+}
+
+/* light mode fixes for legacy inline CSS */
+html[data-theme="light"] .glass-box,
+html[data-theme="light"] .box,
+html[data-theme="light"] .card,
+html[data-theme="light"] .widget,
+html[data-theme="light"] .dashboard-panel,
+html[data-theme="light"] .premium-status-card,
+html[data-theme="light"] .premium-upgrade-box,
+html[data-theme="light"] .plan-dashboard,
+html[data-theme="light"] .status-pill,
+html[data-theme="light"] .quick-card,
+html[data-theme="light"] .metric-card,
+html[data-theme="light"] .overview-card,
+html[data-theme="light"] .ops-panel,
+html[data-theme="light"] .health-panel,
+html[data-theme="light"] .table-card,
+html[data-theme="light"] .wrap .card,
+html[data-theme="light"] .notice-box {
+  color: var(--premium-text) !important;
+}
+html[data-theme="light"] tbody tr {
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-theme="light"] .status-pill,
+html[data-theme="light"] .helper-text,
+html[data-theme="light"] .notification-row,
+html[data-theme="light"] .activity-row,
+html[data-theme="light"] .card p,
+html[data-theme="light"] .box p,
+html[data-theme="light"] .sub,
+html[data-theme="light"] .meta {
+  color: var(--premium-muted) !important;
+}
+
+@media (max-width: 980px) {
+  .page-wrap,
+  .admin-shell,
+  .wrap { width: min(100% - 20px, 1440px) !important; }
+  .dashboard-lower,
+  .hero,
+  .stats,
+  .overview-grid,
+  .ops-grid { grid-template-columns: 1fr !important; }
+  .topbar-inner,
+  .dashboard-top,
+  .wrap .top { align-items: stretch !important; flex-direction: column !important; }
+  .top-actions,
+  .tier-actions,
+  .quick-actions { width: 100% !important; }
+}
+@media (max-width: 640px) {
+  .page-wrap > .hero,
+  .admin-shell > .hero,
+  .wrap .top { padding: 22px !important; }
+  .status-strip,
+  .premium-status-grid,
+  .widget-grid,
+  .plans,
+  .stats,
+  .quick-grid,
+  .overview-grid,
+  .ops-grid { grid-template-columns: 1fr !important; }
+  .quick-actions a,
+  .quick-actions button,
+  .top-actions .btn,
+  .tier-actions a,
+  .premium-upgrade-box a { width: 100% !important; }
+  table { min-width: 760px; }
+}

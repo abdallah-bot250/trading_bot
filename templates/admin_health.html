@@ -7,6 +7,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:radial-gradient(circle at top left,rgba(32,214,138,.14),transparent 30rem),linear-gradient(180deg,#06110f,#07111f);color:#e5eefb}.wrap{max-width:1180px;margin:0 auto;padding:34px 18px}a{color:#38bdf8;text-decoration:none}.top{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:24px}.top h1{margin:0 0 8px;font-size:clamp(2rem,4vw,3.4rem)}.meta{color:#94a3b8;line-height:1.7;word-break:break-word}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.card{background:rgba(15,27,45,.86);border:1px solid rgba(148,163,184,.22);border-radius:8px;padding:18px;box-shadow:0 18px 55px rgba(0,0,0,.24)}.card span{display:block;color:#94a3b8;font-size:13px;margin-bottom:7px}.card strong{display:block;font-size:25px;margin-bottom:8px;word-break:break-word;text-transform:capitalize}.online,.configured{color:#22c55e}.missing,.missing_key,.offline,.degraded{color:#f59e0b}.footer-note{margin-top:22px;border:1px solid rgba(245,158,11,.26);background:rgba(245,158,11,.09);color:#fde68a;border-radius:8px;padding:15px;line-height:1.75}@media(max-width:680px){.top{align-items:flex-start;flex-direction:column}.top a{width:100%;padding:11px;border:1px solid rgba(148,163,184,.22);border-radius:8px;text-align:center}}
 </style>
+<link rel="stylesheet" href="/static/premium.css">
 <!-- TikTok Pixel Code Start -->
 <script>
 !function (w, d, t) {
@@ -50,6 +51,7 @@
 <!-- TikTok Pixel Code End -->
 </head>
 <body>
+<div class="language-switcher" aria-label="Theme switcher"><button class="theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button></div>
 <main class="wrap">
   <div class="top">
     <div>
@@ -71,5 +73,6 @@
   </section>
   <div class="footer-note">Operational reminder: this screen is read-only. Use it before paid ads to confirm Telegram, database, scheduler, market data, signal engine, and payment readiness.</div>
 </main>
+<script src="/static/i18n.js"></script>
 </body>
 </html>
