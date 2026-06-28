@@ -155,9 +155,19 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
 }(window, document, "ttq");
 </script>
 <!-- TikTok Pixel Code End -->
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem("nexora-theme") || "dark";
+    document.documentElement.setAttribute("data-theme", saved);
+  } catch(e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 </head>
-<body>
-<main class="page-shell">
+<body class="nexora-shell">
+<main class="page-shell payment-shell nexora-shell">
     <header class="topbar">
         <a class="brand" href="/">
             <img src="/static/brand/nexora-logo.svg" alt="Nexora AI Trader">
@@ -167,6 +177,7 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
             <a href="/dashboard">{% if current_lang == 'ar' %}الداشبورد{% else %}Dashboard{% endif %}</a>
             <a href="/bot-check">{% if current_lang == 'ar' %}فحص البوت{% else %}Bot Check{% endif %}</a>
             <div class="language-switcher" aria-label="Language switcher">
+<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
                 <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
                 <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
             </div>
@@ -320,5 +331,6 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
 </script>
 <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
 <script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js"></script>
 </body>
 </html>

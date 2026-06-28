@@ -182,9 +182,20 @@ h1 { font-size: 48px; line-height: 1.25; margin: 0 0 18px; }
 }(window, document, "ttq");
 </script>
 <!-- TikTok Pixel Code End -->
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem("nexora-theme") || "dark";
+    document.documentElement.setAttribute("data-theme", saved);
+  } catch(e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 </head>
-<body>
+<body class="nexora-shell">
 <div class="language-switcher" aria-label="Language switcher">
+<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
     <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
 </div>
@@ -251,5 +262,6 @@ window.NEXORA_LANG = "{{ current_lang }}";
 </script>
 <script src="/static/i18n.js"></script>
 
+<script src="/static/nexora-ui.js"></script>
 </body>
 </html>

@@ -50,9 +50,20 @@
 <!-- TikTok Pixel Code End -->
 <link rel="stylesheet" href="/static/premium.css">
 <meta name="theme-color" content="#20D68A">
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem("nexora-theme") || "dark";
+    document.documentElement.setAttribute("data-theme", saved);
+  } catch(e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 </head>
-<body>
-<main class="wrap">
+<body class="nexora-shell">
+<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
+<main class="wrap health-shell nexora-shell">
   <div class="top">
     <div>
       <h1>System Health</h1>
@@ -75,5 +86,6 @@
 </main>
 <script>window.NEXORA_LANG = "{{ current_lang|default('en') }}";</script>
 <script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js"></script>
 </body>
 </html>

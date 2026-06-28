@@ -568,8 +568,18 @@ main > .section:nth-of-type(2) {
 }(window, document, "ttq");
 </script>
 <!-- TikTok Pixel Code End -->
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem("nexora-theme") || "dark";
+    document.documentElement.setAttribute("data-theme", saved);
+  } catch(e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 </head>
-<body>
+<body class="nexora-shell">
 {% set referral_code = referral_code|default('') %}
 {% set register_href = '/register' ~ ('?ref=' ~ referral_code if referral_code else '') %}
 <header class="navbar">
@@ -727,5 +737,6 @@ main > .section:nth-of-type(2) {
 </script>
 <script>window.NEXORA_LANG = "{{ current_lang|default('en') }}";</script>
 <script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js"></script>
 </body>
 </html>
