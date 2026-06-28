@@ -174,6 +174,17 @@
 }(window, document, "ttq");
 </script>
 <!-- TikTok Pixel Code End -->
+
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem("nexora-theme") || "dark";
+    document.documentElement.setAttribute("data-theme", saved);
+  } catch(e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
 </head>
 <body>
 <div class="language-switcher" aria-label="Language switcher">
@@ -213,5 +224,6 @@ window.NEXORA_LANG = "{{ current_lang }}";
 </script>
 <script src="/static/i18n.js"></script>
 
+<script src="/static/nexora-ui.js"></script>
 </body>
 </html>
