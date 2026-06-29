@@ -844,7 +844,7 @@ input, select {
     {% if (plan or "trial") == "trial" %}
     <section class="premium-upgrade-box">
         <p><strong>Ready for more signals?</strong><br>Upgrade when you are ready. Payment routes and plan IDs are unchanged.</p>
-        <a href="#pricing">View Plans</a>
+        <a href="/payments">View Plans</a>
     </section>
     {% endif %}
 
@@ -884,7 +884,7 @@ input, select {
 
             <div class="tier-actions">
                 {% if dashboard_tier == "starter" %}
-                    <a class="primary-tier" href="#pricing">Upgrade to Pro</a>
+                    <a class="primary-tier" href="/payments">Upgrade to Pro</a>
                     <a href="/bot-check">Verify Bot</a>
                 {% elif dashboard_tier == "pro" %}
                     <a class="primary-tier" href="/create-payment?plan=vip">Upgrade to Elite</a>

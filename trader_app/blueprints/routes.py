@@ -1498,6 +1498,228 @@ def manual_payment(plan):
     )
 
 
+
+
+# Nexora sale-ready safe dashboard pages
+def _safe_current_user_snapshot():
+    if not session.get("user"):
+        return None
+    snapshot = {
+        "email": session.get("user"),
+        "plan": "trial",
+        "plan_label": PLAN_LABELS.get("trial", "Free Trial"),
+        "expiry": None,
+        "chat_id": None,
+        "bot_active": 0,
+        "trades": 0,
+        "profit": 0,
+        "is_paid": 0,
+    }
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT email, plan, expiry, chat_id, bot_active, trades, profit, is_paid,
+                   referral_code, affiliate_balance, total_referrals,
+                   COALESCE(spot_enabled, 1) AS spot_enabled,
+                   COALESCE(futures_enabled, 1) AS futures_enabled,
+                   COALESCE(spot_auto_trade_enabled, 0) AS spot_auto_trade_enabled,
+                   COALESCE(futures_auto_trade_enabled, 0) AS futures_auto_trade_enabled
+            FROM users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+        """, (session["user"].lower(),))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            snapshot.update(dict(row))
+            plan = str(snapshot.get("plan") or "trial").strip().lower()
+            snapshot["plan"] = plan
+            snapshot["plan_label"] = PLAN_LABELS.get(plan, plan.title())
+    except Exception as e:
+        log(f"safe current user snapshot unavailable: {e}")
+    return snapshot
+
+
+def _dashboard_section(section_key):
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+
+    sections = {
+        "my-plan": {
+            "title": "My Plan",
+            "eyebrow": "Subscription",
+            "summary": "Review your current plan, expiry, signal access, and upgrade options.",
+            "cards": [
+                ("Current Plan", user.get("plan_label", "Free Trial")),
+                ("Expiry", user.get("expiry") or "Free Trial"),
+                ("Premium", "Enabled" if int(user.get("is_paid") or 0) == 1 else "Disabled"),
+                ("Free Signals", f"{min(int(user.get('trades') or 0), 2)}/2" if user.get("plan") == "trial" else "Premium access"),
+            ],
+            "actions": [("Upgrade Plan", "/payments"), ("Invoice History", "/invoice-history")],
+        },
+        "signals": {
+            "title": "Signals",
+            "eyebrow": "Trading Intelligence",
+            "summary": "Signals are delivered through Telegram when market quality passes the engine filters.",
+            "cards": [
+                ("Telegram", "Connected" if user.get("chat_id") else "Not connected"),
+                ("Bot", "Running" if int(user.get("bot_active") or 0) == 1 else "Stopped"),
+                ("Spot", "Enabled" if int(user.get("spot_enabled") or 1) == 1 else "Disabled"),
+                ("Futures", "Enabled" if int(user.get("futures_enabled") or 1) == 1 else "Disabled"),
+            ],
+            "actions": [("Connect Telegram", "/bot-check"), ("Open Dashboard", "/dashboard")],
+        },
+        "auto-trading": {
+            "title": "Auto Trading",
+            "eyebrow": "Elite Tools",
+            "summary": "Auto trading is available only for eligible plans and requires saved exchange API keys.",
+            "cards": [
+                ("Eligible Plans", "Elite / Pro 2 Years"),
+                ("Spot Auto", "Enabled" if int(user.get("spot_auto_trade_enabled") or 0) == 1 else "Disabled"),
+                ("Futures Auto", "Enabled" if int(user.get("futures_auto_trade_enabled") or 0) == 1 else "Disabled"),
+                ("Safety", "Stop loss required"),
+            ],
+            "actions": [("Configure In Dashboard", "/dashboard"), ("Read Risk Disclaimer", "/risk-disclaimer")],
+        },
+        "referrals": {
+            "title": "Referrals",
+            "eyebrow": "Affiliate",
+            "summary": "Share your website referral link and track referral growth from the dashboard.",
+            "cards": [
+                ("Referral Code", user.get("referral_code") or "Create from dashboard"),
+                ("Total Referrals", user.get("total_referrals") or 0),
+                ("Balance", f"${round(float(user.get('affiliate_balance') or 0), 2)}"),
+                ("Website Flow", "Landing -> Bot -> Dashboard"),
+            ],
+            "actions": [("Open Dashboard", "/dashboard"), ("Invite From Bot", "/bot-check")],
+        },
+        "payments": {
+            "title": "Payments",
+            "eyebrow": "Billing",
+            "summary": "Choose automatic crypto checkout or manual payment without changing plan IDs.",
+            "cards": [
+                ("Basic", f"${PLAN_PRICES.get('basic')}"),
+                ("Pro", f"${PLAN_PRICES.get('pro')}"),
+                ("Elite", f"${PLAN_PRICES.get('vip')}"),
+                ("Pro 2 Years", f"${PLAN_PRICES.get('pro_2y')}"),
+            ],
+            "actions": [("Pay Basic", "/create-payment?plan=basic"), ("Manual Payment", "/manual-payment/basic"), ("Invoices", "/invoice-history")],
+        },
+        "profile": {
+            "title": "Profile",
+            "eyebrow": "Account",
+            "summary": "Your account identity and Telegram linking status.",
+            "cards": [
+                ("Email", user.get("email")),
+                ("Telegram Chat", user.get("chat_id") or "Not linked"),
+                ("Plan", user.get("plan_label")),
+                ("Profit", f"${round(float(user.get('profit') or 0), 2)}"),
+            ],
+            "actions": [("Connect Telegram", "/bot-check"), ("Dashboard", "/dashboard")],
+        },
+        "settings": {
+            "title": "Settings",
+            "eyebrow": "Preferences",
+            "summary": "Manage signal preferences from the dashboard using existing safe forms.",
+            "cards": [
+                ("Spot Signals", "Enabled" if int(user.get("spot_enabled") or 1) == 1 else "Disabled"),
+                ("Futures Signals", "Enabled" if int(user.get("futures_enabled") or 1) == 1 else "Disabled"),
+                ("Theme", "Saved in browser"),
+                ("Security", "CSRF protected forms"),
+            ],
+            "actions": [("Open Dashboard Settings", "/dashboard"), ("Logout", "/logout")],
+        },
+    }
+    page = sections.get(section_key)
+    if not page:
+        return redirect("/dashboard")
+    return render_template("dashboard_section.html", page=page, user=user)
+
+
+@dashboard_bp.route("/my-plan")
+def my_plan_page():
+    return _dashboard_section("my-plan")
+
+
+@dashboard_bp.route("/signals")
+def signals_page():
+    return _dashboard_section("signals")
+
+
+@dashboard_bp.route("/auto-trading")
+def auto_trading_page():
+    return _dashboard_section("auto-trading")
+
+
+@dashboard_bp.route("/referrals")
+def referrals_page():
+    return _dashboard_section("referrals")
+
+
+@dashboard_bp.route("/payments")
+@dashboard_bp.route("/payment")
+def payments_page():
+    return _dashboard_section("payments")
+
+
+@dashboard_bp.route("/profile")
+def profile_page():
+    return _dashboard_section("profile")
+
+
+@dashboard_bp.route("/settings")
+def settings_page():
+    return _dashboard_section("settings")
+
+
+def _admin_section(section_key):
+    if not admin_required():
+        return "Forbidden", 403
+    sections = {
+        "users": ("Users", "Search, review, and manage user records from the main admin table.", "/admin#users"),
+        "subscriptions": ("Subscriptions", "Review plan distribution, active subscriptions, expiring users, and Pro 2 Years readiness.", "/admin#subscriptions"),
+        "payments": ("Payments", "Monitor automatic invoices, coupons, processed payments, and revenue status.", "/admin#payments"),
+        "manual-payments": ("Manual Payments", "Review manual payment and withdrawal operations from the admin center.", "/admin#manual-payments"),
+        "repair-pro-2y": ("Repair Pro 2Y", "Run the POST-only maintenance action from the protected admin panel.", "/admin#repair-pro-2y"),
+        "settings": ("Admin Settings", "Operational settings and safe admin shortcuts.", "/admin#settings"),
+    }
+    title, summary, back_href = sections.get(section_key, sections["users"])
+    back_href = "/admin"
+    return render_template("admin_section.html", title=title, summary=summary, back_href=back_href)
+
+
+@admin_bp.route("/admin/users")
+def admin_users_page():
+    return _admin_section("users")
+
+
+@admin_bp.route("/admin/subscriptions")
+def admin_subscriptions_page():
+    return _admin_section("subscriptions")
+
+
+@admin_bp.route("/admin/payments")
+def admin_payments_page():
+    return _admin_section("payments")
+
+
+@admin_bp.route("/admin/manual-payments")
+def admin_manual_payments_page():
+    return _admin_section("manual-payments")
+
+
+@admin_bp.route("/admin/repair-pro-2y")
+def admin_repair_pro_2y_page():
+    return _admin_section("repair-pro-2y")
+
+
+@admin_bp.route("/admin/settings")
+def admin_settings_page():
+    return _admin_section("settings")
+
+
 # ================= SIMPLE DATA API =================
 @dashboard_bp.route("/api/data")
 def api_data():

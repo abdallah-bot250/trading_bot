@@ -489,42 +489,85 @@ def logical_signal(signal):
     except:
         return False
 
+
+
+def _signal_target_ladder(signal):
+    try:
+        entry = float(signal.get("entry"))
+        tp = float(signal.get("tp"))
+        direction = str(signal.get("direction") or "").upper()
+        if entry <= 0 or tp <= 0 or direction not in ["LONG", "SHORT"]:
+            return signal.get("tp"), signal.get("tp"), signal.get("tp")
+        if direction == "LONG":
+            distance = tp - entry
+            if distance <= 0:
+                return signal.get("tp"), signal.get("tp"), signal.get("tp")
+            return (
+                clean_number(entry + distance * 0.50, 6),
+                clean_number(entry + distance * 0.78, 6),
+                clean_number(tp, 6),
+            )
+        distance = entry - tp
+        if distance <= 0:
+            return signal.get("tp"), signal.get("tp"), signal.get("tp")
+        return (
+            clean_number(entry - distance * 0.50, 6),
+            clean_number(entry - distance * 0.78, 6),
+            clean_number(tp, 6),
+        )
+    except Exception:
+        return signal.get("tp"), signal.get("tp"), signal.get("tp")
+
+def _plan_signal_profile(plan):
+    plan = str(plan or "trial").lower()
+    if plan == "trial":
+        return "Free Trial: 2 preview signals only. Premium analysis unlocks with a paid plan."
+    if plan == "basic":
+        return "Basic: more signals with clear Entry, TP and SL."
+    if plan == "pro":
+        return "Pro: advanced confidence, support/resistance and market context."
+    if plan == "vip":
+        return "Elite: full signal quality plus automation tools when configured."
+    if plan == "pro_2y":
+        return "Pro 2 Years: highest access tier with all signal and automation tools."
+    return "Nexora signal access"
+
 # ================= FORMAT =================
-def format_signal(signal):
-    return f"""🔥 {signal['pair']}
+def format_signal(signal, plan=None):
+    tp1, tp2, tp3 = _signal_target_ladder(signal)
+    return f"""NEXORA AI TRADER SIGNAL
 
-📊 Mode: {signal.get('type', 'FUTURES')}
-📈 Direction: {signal['direction']}
-🌍 Market Regime: {signal.get('market_regime', 'N/A')}
+Pair: {signal['pair']}
+Mode: {signal.get('type', 'FUTURES')}
+Direction: {signal['direction']}
+Timeframe: {signal.get('timeframe', 'N/A')}
 
-💰 Entry: {signal['entry']}
-🎯 TP: {signal['tp']}
-🛑 SL: {signal['sl']}
+Entry: {signal['entry']}
+TP1: {tp1}
+TP2: {tp2}
+TP3: {tp3}
+SL: {signal['sl']}
 
 Support: {signal.get('nearest_support', signal.get('support', 'N/A'))}
 Resistance: {signal.get('nearest_resistance', signal.get('resistance', 'N/A'))}
 Risk/Reward: {signal.get('risk_reward', 'N/A')}
+Confidence: {signal.get('confidence', 'N/A')}%
+AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%
 Final Score: {signal.get('final_score', 'N/A')} / 100
-Setup Type: {signal.get('setup_type', 'N/A')}
+
+Trend: {signal.get('trend', 'N/A')}
+EMA Alignment: {signal.get('ema_alignment', 'N/A')}
+RSI/Momentum: {signal.get('structure', signal.get('market_structure', 'N/A'))}
+Volume: {signal.get('volume', signal.get('volume_state', 'N/A'))}
+Market Regime: {signal.get('market_regime', 'N/A')}
+
+Reason: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
 Target Basis: {signal.get('target_basis', 'Support/Resistance')}
-Quality Reason: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
-Entry Protection: {signal.get('entry_location_reason', 'N/A')}
-Management: {signal.get('management_note', 'Protect the trade if price moves in your favor.')}
+Plan Access: {_plan_signal_profile(plan)}
 
-🎯 Signal Strength: {signal['confidence']}%
-🧠 AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%
-🛡 Risk Score: {signal.get('risk_score', 'N/A')} / 100 ({signal.get('risk_level', 'N/A')})
-⏱ Timeframe: {signal.get('timeframe', 'N/A')}
-🔭 Multi-Timeframe: {signal.get('multi_timeframe', 'N/A')}
-📉 Trend: {signal.get('trend', 'N/A')}
-📦 Volume: {signal.get('volume', 'N/A')}
-🌊 Volatility: {signal.get('volatility_state', 'N/A')}
-🧱 Structure: {signal.get('market_structure', signal.get('structure', 'N/A'))}
-⚖️ Spot/Futures Score: {signal.get('spot_score', 'N/A')} / {signal.get('futures_score', 'N/A')}
-🧠 SMC: {signal.get('smc', 'N/A')}
-
-⚠️ Risk-managed signal. Wait for proper entry.
+Risk Warning: Crypto trading is risky. This is not financial advice. Use proper position size and never trade money you cannot afford to lose.
 """
+
 # ================= ACCESS HELPERS =================
 def is_trial_allowed(trades):
     return (trades or 0) < 2
@@ -561,35 +604,46 @@ def signal_allowed_for_plan(plan, signal):
 
         if plan == "trial":
             return (
-                confidence >= 68
-                and engine_confidence >= 65
+                confidence >= 75
+                and confidence <= 82
+                and engine_confidence >= 70
                 and score >= 5
                 and timeframe in ["5m", "15m"]
+                and risk_score <= 64
             )
 
         if plan == "basic":
             return (
-                confidence >= 72
-                and engine_confidence >= 68
+                confidence >= 74
+                and engine_confidence >= 70
                 and score >= 5
                 and volume == "STRONG"
+                and risk_score <= 66
             )
 
         if plan == "pro":
             return (
-                confidence >= 76
-                and engine_confidence >= 72
-                and risk_score <= 62
+                confidence >= 78
+                and engine_confidence >= 74
+                and risk_score <= 60
                 and score >= 6
                 and volume == "STRONG"
                 and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
             )
 
-        if plan in ["vip", "pro_2y"]:
+        if plan == "vip":
             return (
-                confidence >= 78
-                and engine_confidence >= 75
+                confidence >= 80
+                and engine_confidence >= 76
                 and risk_score <= 58
+                and score >= 6
+            )
+
+        if plan == "pro_2y":
+            return (
+                confidence >= 82
+                and engine_confidence >= 78
+                and risk_score <= 56
                 and score >= 6
             )
 
@@ -1421,7 +1475,7 @@ def run():
                         log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
 
                     # ===== SEND SIGNAL =====
-                    msg = format_signal(signal)
+                    msg = format_signal(signal, plan)
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:

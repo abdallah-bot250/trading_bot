@@ -45,8 +45,8 @@
   }
   cleanLegacyVisualLayers();
 
-  const dashboardLinks=[["Dashboard","/dashboard"],["My Plan","#pricing"],["Signals","#signals"],["Auto Trading","#auto-trading"],["Referrals","#referrals"],["Payments","/payment"],["Invoices","/invoice-history"],["Profile","#profile"],["Settings","#settings"],["Logout","/logout"]];
-  const adminLinks=[["Admin Overview","/admin#overview"],["Users","/admin#users"],["Subscriptions","/admin#subscriptions"],["Payments","/admin#payments"],["Manual Payments","/admin#manual-payments"],["Repair Pro 2Y","/admin#repair-pro-2y"],["System Health","/admin/system-health"],["Settings","/admin#settings"],["Logout","/logout"]];
+  const dashboardLinks=[["Dashboard","/dashboard"],["My Plan","/my-plan"],["Signals","/signals"],["Auto Trading","/auto-trading"],["Referrals","/referrals"],["Payments","/payments"],["Invoices","/invoice-history"],["Profile","/profile"],["Settings","/settings"],["Logout","/logout"]];
+  const adminLinks=[["Admin Overview","/admin"],["Users","/admin/users"],["Subscriptions","/admin/subscriptions"],["Payments","/admin/payments"],["Manual Payments","/admin/manual-payments"],["Repair Pro 2Y","/admin/repair-pro-2y"],["System Health","/admin/system-health"],["Settings","/admin/settings"],["Logout","/logout"]];
 
   function buildSidebar(kind){
     if(!(isDashboard||isAdmin))return;

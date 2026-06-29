@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ page.title }} | Nexora AI Trader</title>
+<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-simple-dashboard-page">
+<main class="nx-section-shell">
+  <a class="nx-back-link" href="/dashboard">Back to Dashboard</a>
+  <section class="nx-section-hero">
+    <span>{{ page.eyebrow }}</span>
+    <h1>{{ page.title }}</h1>
+    <p>{{ page.summary }}</p>
+  </section>
+  <section class="nx-section-card-grid">
+    {% for label, value in page.cards %}
+    <article class="nx-section-card">
+      <span>{{ label }}</span>
+      <strong>{{ value }}</strong>
+    </article>
+    {% endfor %}
+  </section>
+  <section class="nx-section-actions">
+    {% for label, href in page.actions %}
+    <a href="{{ href }}">{{ label }}</a>
+    {% endfor %}
+  </section>
+</main>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+</body>
+</html>

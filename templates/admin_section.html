@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} | Nexora Admin</title>
+<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-simple-admin-page">
+<main class="nx-section-shell">
+  <a class="nx-back-link" href="{{ back_href }}">Back to Admin Overview</a>
+  <section class="nx-section-hero">
+    <span>Admin Control Center</span>
+    <h1>{{ title }}</h1>
+    <p>{{ summary }}</p>
+  </section>
+  <section class="nx-section-card-grid">
+    <article class="nx-section-card"><span>Status</span><strong>Protected</strong></article>
+    <article class="nx-section-card"><span>Access</span><strong>Admin Only</strong></article>
+    <article class="nx-section-card"><span>Mode</span><strong>Read Safe</strong></article>
+    <article class="nx-section-card"><span>Navigation</span><strong>Linked</strong></article>
+  </section>
+  <section class="nx-section-actions">
+    <a href="/admin">Open Full Admin</a>
+    <a href="/admin/system-health">System Health</a>
+    <a href="/dashboard">Dashboard</a>
+  </section>
+</main>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+</body>
+</html>
