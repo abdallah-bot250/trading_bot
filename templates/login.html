@@ -4,320 +4,89 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>تسجيل الدخول | Nexora AI Trader</title>
-
-<style>
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    font-family: "Cairo", Arial, sans-serif;
-}
-
-body {
-    background:
-        radial-gradient(circle at top right, rgba(34,197,94,0.12), transparent 24%),
-        radial-gradient(circle at top left, rgba(56,189,248,0.10), transparent 28%),
-        linear-gradient(135deg, #0b1020, #111827, #0f172a);
-    color: #fff;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-
-.login-box {
-    width: 100%;
-    max-width: 460px;
-    background: rgba(17, 24, 39, 0.94);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 26px;
-    padding: 34px 26px;
-    box-shadow: 0 24px 70px rgba(0,0,0,0.38);
-    backdrop-filter: blur(12px);
-}
-
-.logo {
-    text-align: center;
-    margin-bottom: 14px;
-    font-size: 28px;
-    font-weight: 800;
-}
-
-.logo span {
-    color: #00d084;
-}
-
-.subtitle {
-    text-align: center;
-    color: #cbd5e1;
-    margin-bottom: 24px;
-    font-size: 14px;
-    line-height: 1.9;
-}
-
-/* 🔥 FLASH */
-.flash {
-    padding: 12px 14px;
-    border-radius: 14px;
-    margin-bottom: 18px;
-    font-size: 14px;
-    text-align: center;
-    line-height: 1.8;
-}
-
-.flash.error {
-    background: rgba(239, 68, 68, 0.15);
-    color: #fecaca;
-    border: 1px solid rgba(239, 68, 68, 0.25);
-}
-
-.flash.success {
-    background: rgba(34, 197, 94, 0.15);
-    color: #bbf7d0;
-    border: 1px solid rgba(34, 197, 94, 0.25);
-}
-
-/* 🤖 TELEGRAM NOTE */
-.telegram-note {
-    background: linear-gradient(135deg, rgba(56,189,248,0.12), rgba(34,197,94,0.08));
-    border: 1px solid rgba(56,189,248,0.20);
-    border-radius: 16px;
-    padding: 16px;
-    margin-bottom: 22px;
-    font-size: 14px;
-    line-height: 1.9;
-    color: #dbeafe;
-    text-align: center;
-}
-
-.telegram-note a {
-    display: inline-block;
-    margin-top: 10px;
-    background: #38bdf8;
-    color: white;
-    padding: 10px 16px;
-    border-radius: 10px;
-    text-decoration: none;
-    font-weight: bold;
-}
-
-.telegram-note a:hover {
-    opacity: 0.9;
-}
-
-.form-group {
-    margin-bottom: 18px;
-}
-
-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 14px;
-    color: #e5e7eb;
-}
-
-input {
-    width: 100%;
-    padding: 14px 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.04);
-    color: white;
-    outline: none;
-    font-size: 15px;
-    transition: 0.2s;
-}
-
-input:focus {
-    border-color: #00d084;
-    box-shadow: 0 0 0 3px rgba(0,208,132,0.15);
-}
-
-.btn {
-    width: 100%;
-    padding: 14px;
-    border: none;
-    border-radius: 14px;
-    background: linear-gradient(135deg, #00d084, #00a86b);
-    color: #08111f;
-    font-size: 16px;
-    font-weight: 800;
-    cursor: pointer;
-    transition: 0.2s;
-    margin-top: 10px;
-}
-
-.btn:hover {
-    transform: translateY(-1px);
-    opacity: 0.95;
-}
-
-.links {
-    text-align: center;
-    margin-top: 20px;
-    font-size: 14px;
-    color: #cbd5e1;
-}
-
-.links a {
-    color: #00d084;
-    text-decoration: none;
-    font-weight: 700;
-}
-
-.links a:hover {
-    text-decoration: underline;
-}
-
-.note {
-    margin-top: 20px;
-    text-align: center;
-    font-size: 12px;
-    color: #94a3b8;
-    line-height: 1.9;
-}
-</style>
-<link rel="stylesheet" href="/static/premium.css?v=final-sale-2">
+<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
 <meta name="theme-color" content="#20D68A">
+<script>
+(function(){try{document.documentElement.setAttribute('data-theme',localStorage.getItem('nexora-theme')||'dark')}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();
+</script>
 <!-- TikTok Pixel Code Start -->
 <script>
-!function (w, d, t) {
-  w.TiktokAnalyticsObject=t;
-  var ttq=w[t]=w[t]||[];
-  ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];
-  ttq.setAndDefer=function(t,e){
-      t[e]=function(){
-          t.push([e].concat(Array.prototype.slice.call(arguments,0)))
-      }
-  };
-  for(var i=0;i<ttq.methods.length;i++){
-      ttq.setAndDefer(ttq,ttq.methods[i]);
-  }
-  ttq.instance=function(t){
-      for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++){
-          ttq.setAndDefer(e,ttq.methods[n]);
-      }
-      return e;
-  };
-  ttq.load=function(e,n){
-      var r="https://analytics.tiktok.com/i18n/pixel/events.js";
-      ttq._i=ttq._i||{};
-      ttq._i[e]=[];
-      ttq._i[e]._u=r;
-      ttq._t=ttq._t||{};
-      ttq._o=ttq._o||{};
-      ttq._o[e]=n||{};
-      n=document.createElement("script");
-      n.type="text/javascript";
-      n.async=true;
-      n.src=r+"?sdkid="+e+"&lib="+t;
-      e=document.getElementsByTagName("script")[0];
-      e.parentNode.insertBefore(n,e);
-  };
-
-  ttq.load("D8VH7OJC77UCME2CL23G");
-  ttq.page();
-}(window, document, "ttq");
+!function (w, d, t) {w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++){ttq.setAndDefer(ttq,ttq.methods[i]);}ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++){ttq.setAndDefer(e,ttq.methods[n]);}return e;};ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=r;ttq._t=ttq._t||{};ttq._o=ttq._o||{};ttq._o[e]=n||{};n=document.createElement("script");n.type="text/javascript";n.async=true;n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e);};ttq.load("D8VH7OJC77UCME2CL23G");ttq.page();}(window, document, "ttq");
 </script>
 <!-- TikTok Pixel Code End -->
-<script>
-(function(){
-  try {
-    var saved = localStorage.getItem("nexora-theme") || "dark";
-    document.documentElement.setAttribute("data-theme", saved);
-  } catch(e) {
-    document.documentElement.setAttribute("data-theme", "dark");
-  }
-})();
-</script>
 </head>
+<body class="nx-auth-final">
+  <a class="nx-auth-brand" href="/" aria-label="Nexora home">
+    <img src="/static/brand/favicon.svg" alt="Nexora">
+    <span><strong>NEXORA</strong><span>AI SIGNAL HUNTER</span></span>
+  </a>
 
-<body class="nexora-shell">
-<div class="language-switcher" aria-label="Language switcher">
-<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
+  <div class="language-switcher" aria-label="Language switcher">
+    <button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
     <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
-</div>
+  </div>
 
-<nav class="premium-floating-nav" aria-label="Quick navigation"><a href="/">الرئيسية</a><a href="/proof">الإثباتات</a><a href="/bot-check">فحص البوت</a><a href="/dashboard">الداشبورد</a></nav>
-
-<div class="login-box nexora-auth-card">
-
-<div class="logo">🔐 <span>Nexora AI Trader</span></div>
-
-<div class="subtitle">
-سجّل دخولك للتحكم في حسابك، تفعيل الاشتراك، وربط البوت بسهولة.
-</div>
-
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <div class="flash {{ category }}">
-        {{ message }}
+  <main class="nx-auth-page">
+    <section class="nx-auth-copy" aria-label="Nexora intro">
+      <h1>Welcome back to <em>Nexora AI Trader</em></h1>
+      <p>Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.</p>
+      <div class="nx-auth-badges">
+        <span>AI Analysis</span><span>Risk Managed</span><span>Telegram Delivery</span>
       </div>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
+      <div class="nx-auth-stats">
+        <div class="nx-auth-stat"><strong>90%+</strong><span>Accuracy Rate</span></div>
+        <div class="nx-auth-stat"><strong>24/7</strong><span>Monitoring</span></div>
+        <div class="nx-auth-stat"><strong>1000+</strong><span>Active Traders</span></div>
+        <div class="nx-auth-stat"><strong>Fast</strong><span>Signals</span></div>
+      </div>
+    </section>
 
-<div class="telegram-note">
-⚠️ لو الإشارات مش بتوصلك:
-<br>
-افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد الحساب.
+    <section class="nx-auth-card-final" aria-label="Login form">
+      <h2 class="nx-auth-title">تسجيل الدخول</h2>
+      <p class="nx-auth-subtitle">مرحبًا بعودتك، ادخل لحسابك وربط البوت بسهولة.</p>
 
-<br>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
 
-<a href="{{ bot_link }}" target="_blank">
-فتح البوت
-</a>
-<br>
-<a href="/bot-check">
-تأكد من البوت الرسمي
-</a>
-</div>
+      <div class="telegram-note">
+        <strong>⚠️ مش بتوصلك Signals؟</strong><br>
+        افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد الحساب.<br>
+        <a href="{{ bot_link }}" target="_blank">Open Bot</a>
+        <a href="/bot-check">Verify Bot الرسمي</a>
+      </div>
 
-<form method="POST" action="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">
-{{ csrf_field() }}
-<input type="hidden" name="chat_id" value="{{ chat_id }}">
+      <form method="POST" action="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">
+        {{ csrf_field() }}
+        <input type="hidden" name="chat_id" value="{{ chat_id }}">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" placeholder="Enter your email" required autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn">Sign In / تسجيل الدخول</button>
+      </form>
 
-<div class="form-group">
-<label for="email">البريد الإلكتروني</label>
-<input type="email" id="email" name="email" placeholder="example@email.com" required>
-</div>
+      <div class="nx-auth-links">
+        <a href="/forgot-password">Forgot Password? / نسيت كلمة المرور؟</a><br>
+        Do not have an account? <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">Create Account</a>
+      </div>
+      <p class="nx-auth-small">بعد الدخول يمكنك تفعيل الخطة، مراجعة الفواتير، وربط تيليجرام بأمان.</p>
+    </section>
+  </main>
 
-<div class="form-group">
-<label for="password">كلمة المرور</label>
-<input type="password" id="password" name="password" placeholder="••••••••" required>
-</div>
-
-<button type="submit" class="btn">تسجيل الدخول</button>
-
-</form>
-
-<div class="links">
-<a href="/forgot-password">نسيت كلمة المرور؟</a>
-</div>
-
-<div class="links">
-ليس لديك حساب؟ <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">إنشاء حساب</a>
-</div>
-
-<div class="note">
-بعد تسجيل الدخول:
-<br>
-يمكنك تفعيل الخطة وربط حساب التداول والتحكم الكامل في البوت.
-</div>
-
-</div>
-
-
-<script>
-window.NEXORA_LANG = "{{ current_lang }}";
-</script>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
 <script src="/static/i18n.js"></script>
-
-<script src="/static/nexora-ui.js?v=final-sale-2"></script>
+<script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>
 </html>
