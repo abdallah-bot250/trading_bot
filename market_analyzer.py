@@ -28,6 +28,8 @@ MARKET_CONTEXT_CACHE = {}
 MARKET_CONTEXT_TTL_SECONDS = 180
 SIGNAL_SKIP_LOG_CACHE = {}
 SIGNAL_SKIP_LOG_TTL_SECONDS = 600
+SIGNAL_BUILD_COOLDOWN_CACHE = {}
+SIGNAL_BUILD_COOLDOWN_SECONDS = int(os.environ.get("SIGNAL_BUILD_COOLDOWN_SECONDS", "3600"))
 LAST_DRY_RUN_SKIPS = []
 MIN_SPOT_FINAL_SCORE = 88
 MIN_FUTURES_FINAL_SCORE = 90
@@ -1003,10 +1005,42 @@ def learning_penalty(symbol, direction, setup_type):
         return 0
 
 
-def build_market_context(symbol, interval, df, direction):
+def current_market_regime():
     btc_1h = cached_market_data("BTCUSDT", "1h", limit=220)
     eth_1h = cached_market_data("ETHUSDT", "1h", limit=220)
-    regime = detect_market_regime(btc_1h, eth_1h)
+    return detect_market_regime(btc_1h, eth_1h)
+
+
+def choose_signal_direction(symbol, interval, df, score, trend, trend_power, threshold):
+    regime = current_market_regime()
+    short_mtf = multi_timeframe_quality(symbol, "SHORT", interval, df)
+    long_mtf = multi_timeframe_quality(symbol, "LONG", interval, df)
+    local_bearish = trend == "DOWN" or trend_power == "STRONG_BEAR"
+    local_bullish = trend == "UP" or trend_power == "STRONG_BULL"
+
+    if regime in ["BEARISH", "DUMP_RISK"] and short_mtf.get("state") == "CONFIRMED" and local_bearish:
+        return "SHORT", regime, short_mtf, "bearish market and MTF confirmed"
+
+    if regime == "BULLISH" and score >= threshold and long_mtf.get("state") == "CONFIRMED" and local_bullish:
+        return "LONG", regime, long_mtf, "bullish market and MTF confirmed"
+
+    if regime in ["SIDEWAYS", "HIGH_VOLATILITY"]:
+        return None, regime, {"state": "UNCONFIRMED", "reason": "sideways or high volatility"}, "SIDEWAYS_OR_UNCONFIRMED"
+
+    if long_mtf.get("state") != "CONFIRMED" and short_mtf.get("state") != "CONFIRMED":
+        return None, regime, {"state": "UNCONFIRMED", "reason": "MTF not confirmed"}, "SIDEWAYS_OR_UNCONFIRMED"
+
+    if score <= -threshold and short_mtf.get("state") == "CONFIRMED" and local_bearish:
+        return "SHORT", regime, short_mtf, "bearish score and MTF confirmed"
+
+    if score >= threshold and long_mtf.get("state") == "CONFIRMED" and local_bullish:
+        return "LONG", regime, long_mtf, "bullish score and MTF confirmed"
+
+    return None, regime, {"state": "UNCONFIRMED", "reason": "direction not aligned with market"}, "SIDEWAYS_OR_UNCONFIRMED"
+
+
+def build_market_context(symbol, interval, df, direction):
+    regime = current_market_regime()
     mtf = multi_timeframe_quality(symbol, direction, interval, df)
     allowed = True
     reason = "market context accepted"
@@ -1085,6 +1119,44 @@ def skip_signal(symbol, interval, reason):
         pass
     return None
 
+
+
+def _signal_build_key(symbol, interval):
+    return (str(symbol or "").upper(), str(interval or "").lower())
+
+
+def _signal_in_build_cooldown(symbol, interval):
+    try:
+        key = _signal_build_key(symbol, interval)
+        last_seen = SIGNAL_BUILD_COOLDOWN_CACHE.get(key, 0)
+        return time.time() - last_seen < SIGNAL_BUILD_COOLDOWN_SECONDS
+    except Exception:
+        return False
+
+
+def _mark_signal_built(signal):
+    try:
+        key = _signal_build_key(signal.get("pair"), signal.get("timeframe"))
+        SIGNAL_BUILD_COOLDOWN_CACHE[key] = time.time()
+        print(
+            f"SIGNAL_BUILT direction={signal.get('direction')} "
+            f"symbol={signal.get('pair')} timeframe={signal.get('timeframe')}"
+        )
+    except Exception:
+        pass
+
+
+def _selected_signal_summary(signals):
+    return [
+        {
+            "symbol": s.get("pair"),
+            "timeframe": s.get("timeframe"),
+            "direction": s.get("direction"),
+            "confidence": s.get("confidence"),
+            "rr": s.get("risk_reward"),
+        }
+        for s in (signals or [])
+    ]
 
 
 # ================= NEWS FILTER =================
@@ -1661,15 +1733,17 @@ def _entry_location_filter(df, direction, sr_targets, atr_value, interval="5m"):
 
 
 def _market_direction_guard(direction, market_context, mtf_context):
-    """Hard guard: do not fight BTC/ETH regime or unclear MTF."""
+    """Hard guard: only trade with a clear confirmed market regime."""
     regime = market_context.get("market_regime", "SIDEWAYS")
     mtf_state = mtf_context.get("state", "UNCONFIRMED")
     if mtf_state != "CONFIRMED":
-        return False, f"MTF not confirmed: {mtf_state}"
-    if direction == "LONG" and regime in ["DUMP_RISK", "BEARISH", "HIGH_VOLATILITY"]:
+        return False, "SIDEWAYS_OR_UNCONFIRMED"
+    if regime in ["SIDEWAYS", "HIGH_VOLATILITY"]:
+        return False, "SIDEWAYS_OR_UNCONFIRMED"
+    if direction == "LONG" and regime != "BULLISH":
         return False, f"{regime} blocks LONG entries"
-    if direction == "SHORT" and regime == "BULLISH":
-        return False, "BULLISH regime blocks SHORT entries"
+    if direction == "SHORT" and regime not in ["BEARISH", "DUMP_RISK"]:
+        return False, f"{regime} blocks SHORT entries"
     return True, "market direction confirmed"
 
 
@@ -2017,12 +2091,14 @@ def generate_signal(symbol, interval="5m"):
         return None
 
     # صارم لكن عملي
-    if score >= MIN_SCORE_TO_TRADE:
-        direction = "LONG"
-    elif score <= -MIN_SCORE_TO_TRADE:
-        direction = "SHORT"
-    else:
-        return None
+    direction, regime, selected_mtf, direction_reason = choose_signal_direction(
+        symbol, interval, df, score, trend, trend_power, MIN_SCORE_TO_TRADE
+    )
+    if not direction:
+        return skip_signal(symbol, interval, direction_reason)
+
+    if _signal_in_build_cooldown(symbol, interval):
+        return skip_signal(symbol, interval, "duplicate symbol/timeframe cooldown")
 
     market_context = build_market_context(symbol, interval, df, direction)
     if not market_context.get("allowed", True):
@@ -2122,7 +2198,7 @@ def generate_signal(symbol, interval="5m"):
         "target_basis": sr_targets["target_basis"],
         "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
         "market_regime": market_context.get("market_regime", "SIDEWAYS"),
-        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed"),
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed") + f" | Direction: {direction_reason}",
         "entry_location_reason": location_reason,
         "management_note": "If price reaches +0.6R then protect the trade: move SL to breakeven or take partial profit.",
         "breakeven_trigger_r": 0.6
@@ -2194,6 +2270,7 @@ def generate_signal(symbol, interval="5m"):
         print(f"AI model error in generate_signal {symbol} {interval}: {e}")
         return None
 
+    _mark_signal_built(signal)
     return signal
 
 
@@ -2241,12 +2318,14 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
-    if score >= 5:
-        direction = "LONG"
-    elif score <= -5:
-        direction = "SHORT"
-    else:
-        return None
+    direction, regime, selected_mtf, direction_reason = choose_signal_direction(
+        symbol, interval, df, score, trend, trend_power, 5
+    )
+    if not direction:
+        return skip_signal(symbol, interval, direction_reason)
+
+    if _signal_in_build_cooldown(symbol, interval):
+        return skip_signal(symbol, interval, "duplicate symbol/timeframe cooldown")
 
     market_context = build_market_context(symbol, interval, df, direction)
     if not market_context.get("allowed", True):
@@ -2346,7 +2425,7 @@ def generate_free_signal(symbol, interval="5m"):
         "target_basis": sr_targets["target_basis"],
         "setup_type": sr_targets.get("setup_type", "S/R_CONTINUATION"),
         "market_regime": market_context.get("market_regime", "SIDEWAYS"),
-        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed"),
+        "signal_quality_reason": sr_targets.get("signal_quality_reason", "Strong support/resistance validation passed") + f" | Direction: {direction_reason}",
         "entry_location_reason": location_reason,
         "management_note": "If price reaches +0.6R then protect the trade: move SL to breakeven or take partial profit.",
         "breakeven_trigger_r": 0.6
@@ -2418,12 +2497,17 @@ def generate_free_signal(symbol, interval="5m"):
         print(f"AI model error in generate_free_signal {symbol} {interval}: {e}")
         return None
 
+    _mark_signal_built(signal)
     return signal
 
 
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     global LAST_USED_PAIRS
+    try:
+        limit = max(1, min(int(limit), 3))
+    except Exception:
+        limit = 2
 
     candidates = []
 
@@ -2515,7 +2599,7 @@ def get_top_free_signals(limit=2):
             if len(best) >= limit:
                 break
 
-    print(f"Top signals selected: {best}")
+    print(f"Top signals selected: {_selected_signal_summary(best)}")
     return best
 
 # ================= DRY RUN / SIGNAL HUNTER VERIFICATION =================
