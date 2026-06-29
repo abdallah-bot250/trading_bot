@@ -215,9 +215,10 @@ def send_security_email(to_email, subject, body):
     smtp_password = os.environ.get("SMTP_PASSWORD", "").strip()
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     from_email = os.environ.get("SECURITY_EMAIL_FROM", smtp_username or "no-reply@example.com").strip()
+    smtp_use_ssl = os.environ.get("SMTP_USE_SSL", "").strip().lower() in {"1", "true", "yes"} or smtp_port == 465
 
     if not smtp_host or not smtp_username or not smtp_password:
-        logger.info("Security email not sent because SMTP is not configured | to=%s subject=%s body=%s", to_email, subject, body)
+        logger.warning("Security email not sent because SMTP is not configured | to=%s subject=%s", to_email, subject)
         return False
 
     msg = EmailMessage()
@@ -226,12 +227,23 @@ def send_security_email(to_email, subject, body):
     msg["Subject"] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
-        smtp.starttls()
-        smtp.login(smtp_username, smtp_password)
-        smtp.send_message(msg)
-
-    return True
+    try:
+        if smtp_use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as smtp:
+                smtp.login(smtp_username, smtp_password)
+                smtp.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+                smtp.ehlo()
+                smtp.starttls()
+                smtp.ehlo()
+                smtp.login(smtp_username, smtp_password)
+                smtp.send_message(msg)
+        logger.info("Security email sent | to=%s subject=%s", to_email, subject)
+        return True
+    except Exception as e:
+        logger.error("Security email failed | to=%s subject=%s error=%s", to_email, subject, e)
+        return False
 
 
 def build_absolute_url(path):

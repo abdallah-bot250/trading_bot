@@ -39,6 +39,17 @@
   }
   ensureThemeToggle();
 
+  function ensureDashboardReturn(){
+    if(isDashboard || document.querySelector(".nx-dashboard-return"))return;
+    const link=document.createElement("a");
+    link.className="nx-dashboard-return";
+    link.href="/dashboard";
+    link.setAttribute("aria-label","Back to dashboard");
+    link.innerHTML='<span>Dashboard</span>';
+    document.body.appendChild(link);
+  }
+  ensureDashboardReturn();
+
   function cleanLegacyVisualLayers(){
     const selectors=[".nx-repair-sidebar",".nx-repair-top-strip",".nx-repair-dashboard-grid",".nx-pro-dashboard-grid",".nx-market-panel",".nx-health-strip",".nx-pro-market-strip",".nx-premium-sidebar",".nx-premium-topbar",".nx-legacy-marketbar",".nx-duplicate-marketbar",".nx-dashboard-sidebar",".nx-admin-sidebar"];
     document.querySelectorAll(selectors.join(",")).forEach((node)=>node.remove());

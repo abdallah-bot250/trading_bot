@@ -37,6 +37,11 @@ def landing():
     return render_template("landing.html")
 
 
+@public_bp.route("/how-signals-work")
+def how_signals_work():
+    return render_template("signal_methodology.html")
+
+
 @public_bp.route("/r/<referral_code>")
 @public_bp.route("/ref/<referral_code>")
 def referral_landing(referral_code):
@@ -833,18 +838,28 @@ def resend_verification():
 def forgot_password():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
+        reset_sent = False
+        reset_link = None
         if email:
             try:
                 token = create_password_reset_token(email)
                 if token:
-                    sent, link = send_password_reset_email(email, token)
-                    if not sent:
-                        flash(f"Reset link: {link}", "success")
-                audit_log("password_reset_requested", email)
+                    reset_sent, reset_link = send_password_reset_email(email, token)
+                    if not reset_sent:
+                        log(f"PASSWORD_RESET_EMAIL_FAILED email={email}")
+                audit_log("password_reset_requested", email, f"sent={reset_sent}")
             except Exception as e:
                 log(f"forgot_password error: {e}")
-        flash("If this email exists, password reset instructions were sent.", "success")
-        return redirect("/login")
+
+        if reset_sent:
+            flash("Password reset email sent. Please check your inbox and spam folder.", "success")
+        else:
+            show_local_link = os.environ.get("SHOW_SECURITY_EMAIL_LINKS", "").strip().lower() in {"1", "true", "yes"}
+            if reset_link and show_local_link:
+                flash(f"Email delivery is not configured. Temporary reset link: {reset_link}", "success")
+            else:
+                flash("If this email exists, reset instructions were created. If you do not receive the email, contact support or check SMTP settings.", "success")
+        return render_template("forgot_password.html", submitted=True)
 
     return render_template("forgot_password.html")
 
@@ -3315,6 +3330,14 @@ def webhook():
 
 
 # ================= PAYMENT WEBHOOK =================
+def get_nowpayments_ipn_secret():
+    for env_name in ("NOWPAYMENTS_IPN_SECRET", "NOWPAYMENTS_IPN_CALLBACK_SECRET", "IPN_SECRET"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            return value, env_name
+    return "", None
+
+
 @payments_bp.route("/payment-webhook", methods=["POST"])
 def payment_webhook():
     data = request.get_json(silent=True) or {}
@@ -3322,11 +3345,17 @@ def payment_webhook():
 
     try:
         signature = request.headers.get("x-nowpayments-sig", "").strip()
-        ipn_secret = os.environ.get("NOWPAYMENTS_IPN_SECRET", "").strip()
+        ipn_secret, ipn_env_name = get_nowpayments_ipn_secret()
+        log(f"NOWPAYMENTS_IPN_CHECK signature_present={bool(signature)} ipn_secret_configured={bool(ipn_secret)} env={ipn_env_name or 'missing'}")
         valid_signature, generated_sig = validate_nowpayments_signature(data, signature, ipn_secret)
 
         if not valid_signature:
-            log("❌ Missing NOWPayments signature or IPN secret")
+            if not signature:
+                log("NOWPAYMENTS_IPN_REJECTED reason=missing_signature ipn_secret_configured=%s" % bool(ipn_secret))
+            elif not ipn_secret:
+                log("NOWPAYMENTS_IPN_REJECTED reason=missing_ipn_secret supported_env=NOWPAYMENTS_IPN_SECRET,NOWPAYMENTS_IPN_CALLBACK_SECRET,IPN_SECRET")
+            else:
+                log("NOWPAYMENTS_IPN_REJECTED reason=invalid_signature ipn_secret_configured=True")
             try:
                 conn = db()
                 c = conn.cursor()
@@ -3346,7 +3375,7 @@ def payment_webhook():
                 conn.close()
             except Exception as audit_err:
                 log(f"payment signature audit error: {audit_err}")
-            log(f"❌ Invalid NOWPayments signature | recv={signature} | gen={generated_sig}")
+            log("NOWPAYMENTS_IPN_REJECTED stored_failed_payment reason=invalid_signature")
             return "invalid signature", 403
 
         payment_status = str(data.get("payment_status") or "").strip().lower()

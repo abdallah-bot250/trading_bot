@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Nexora Signals Work</title>
+<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<meta name="theme-color" content="#20D68A">
+<script>
+(function(){
+  try{document.documentElement.setAttribute("data-theme", localStorage.getItem("nexora-theme") || "dark");}
+  catch(e){document.documentElement.setAttribute("data-theme","dark");}
+})();
+</script>
+<style>
+body{margin:0;min-height:100vh;font-family:Segoe UI,Arial,sans-serif;color:#f8fafc;background:#06110f;}
+.method-page{min-height:100vh;padding:26px;background:
+  radial-gradient(circle at 15% 5%, rgba(32,214,138,.22), transparent 32rem),
+  radial-gradient(circle at 85% 15%, rgba(56,189,248,.18), transparent 28rem),
+  linear-gradient(135deg, rgba(2,6,23,.92), rgba(4,18,25,.96));}
+.method-wrap{width:min(1160px,calc(100% - 24px));margin:0 auto;}
+.method-nav{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:28px;}
+.brand{display:flex;align-items:center;gap:12px;color:#fff;text-decoration:none;font-weight:900;letter-spacing:.02em;}
+.brand img{width:42px;height:42px;filter:drop-shadow(0 0 18px rgba(32,214,138,.35));}
+.nav-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(226,232,240,.14);border-radius:12px;padding:11px 16px;text-decoration:none;color:#f8fafc;background:rgba(15,23,42,.58);backdrop-filter:blur(16px);font-weight:800;}
+.btn.primary{background:linear-gradient(135deg,#20d68a,#38bdf8);color:#03110d;border-color:transparent;}
+.hero-card,.grid-card,.risk-box{border:1px solid rgba(226,232,240,.12);background:rgba(8,15,28,.72);box-shadow:0 26px 80px rgba(0,0,0,.34);backdrop-filter:blur(18px);border-radius:18px;}
+.hero-card{padding:34px;display:grid;grid-template-columns:1.1fr .9fr;gap:22px;align-items:center;}
+.eyebrow{display:inline-flex;padding:8px 12px;border-radius:999px;background:rgba(32,214,138,.12);border:1px solid rgba(32,214,138,.24);color:#86efac;font-weight:900;font-size:12px;text-transform:uppercase;}
+h1{font-size:clamp(34px,5vw,68px);line-height:1;margin:18px 0 16px;letter-spacing:-.03em;}
+.lead{color:#cbd5e1;font-size:18px;line-height:1.8;max-width:680px;}
+.signal-preview{padding:22px;border-radius:16px;background:linear-gradient(180deg,rgba(15,23,42,.92),rgba(2,6,23,.82));border:1px solid rgba(226,232,240,.12);}
+.signal-preview h2{margin:0 0 16px;}
+.signal-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid rgba(226,232,240,.09);color:#cbd5e1;}
+.signal-row strong{color:#f8fafc;}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px;}
+.grid-card{padding:22px;}
+.grid-card span{display:grid;place-items:center;width:42px;height:42px;border-radius:14px;margin-bottom:14px;background:rgba(32,214,138,.12);color:#86efac;font-weight:900;}
+.grid-card h3{margin:0 0 10px;font-size:20px;}
+.grid-card p{margin:0;color:#aab7c5;line-height:1.7;}
+.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:18px;}
+.step{padding:18px;border-radius:16px;background:rgba(15,23,42,.58);border:1px solid rgba(226,232,240,.1);}
+.step b{display:block;color:#20d68a;margin-bottom:8px;}
+.risk-box{margin-top:18px;padding:22px;color:#fde68a;line-height:1.8;}
+html[data-theme="light"] body{color:#0f172a;background:#f8fafc;}
+html[data-theme="light"] .method-page{background:linear-gradient(135deg,rgba(248,250,252,.94),rgba(236,253,245,.86));}
+html[data-theme="light"] .hero-card,html[data-theme="light"] .grid-card,html[data-theme="light"] .risk-box{background:rgba(255,255,255,.82);color:#0f172a;box-shadow:0 20px 60px rgba(15,23,42,.12);}
+html[data-theme="light"] .lead,html[data-theme="light"] .grid-card p,html[data-theme="light"] .signal-row{color:#475569;}
+html[data-theme="light"] .signal-preview{background:rgba(255,255,255,.76);}
+html[data-theme="light"] .signal-row strong{color:#0f172a;}
+@media(max-width:900px){.hero-card{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.flow{grid-template-columns:1fr 1fr}.method-nav{align-items:flex-start;flex-direction:column}}
+@media(max-width:620px){.grid,.flow{grid-template-columns:1fr}.hero-card{padding:22px}.method-page{padding:18px 0}}
+</style>
+</head>
+<body class="nexora-shell">
+<main class="method-page">
+  <div class="method-wrap">
+    <nav class="method-nav">
+      <a class="brand" href="/"><img src="/static/brand/favicon.svg" alt="">Nexora AI Trader</a>
+      <div class="nav-actions">
+        <a class="btn" href="/dashboard">Dashboard</a>
+        <a class="btn" href="/proof">Proof</a>
+        <a class="btn primary" href="/bot-check">Verify Bot</a>
+      </div>
+    </nav>
+
+    <section class="hero-card">
+      <div>
+        <span class="eyebrow">Signal methodology</span>
+        <h1>Signals are filtered, not guessed.</h1>
+        <p class="lead">Nexora scans liquid crypto markets and waits for structured setups. A signal is considered only when trend, support and resistance, momentum, volume, and risk/reward agree enough to justify an alert.</p>
+        <div class="nav-actions">
+          <a class="btn primary" href="/dashboard">Back to Dashboard</a>
+          <a class="btn" href="/payments">Upgrade Plan</a>
+        </div>
+      </div>
+      <aside class="signal-preview">
+        <h2>What a valid signal contains</h2>
+        <div class="signal-row"><span>Pair</span><strong>BTC/USDT</strong></div>
+        <div class="signal-row"><span>Direction</span><strong>LONG or SHORT</strong></div>
+        <div class="signal-row"><span>Entry</span><strong>Near current structure</strong></div>
+        <div class="signal-row"><span>Targets</span><strong>TP1 / TP2 / TP3</strong></div>
+        <div class="signal-row"><span>Protection</span><strong>Stop Loss</strong></div>
+        <div class="signal-row"><span>Quality</span><strong>Confidence + Risk/Reward</strong></div>
+      </aside>
+    </section>
+
+    <section class="grid">
+      <article class="grid-card"><span>1</span><h3>Trend Direction</h3><p>The engine checks EMA structure and recent price action so it does not buy blindly into weak downtrends or short blindly into strong rebounds.</p></article>
+      <article class="grid-card"><span>2</span><h3>Support & Resistance</h3><p>Recent swing highs and lows are clustered into levels. Stronger levels need repeated touches and recent reactions before they influence targets.</p></article>
+      <article class="grid-card"><span>3</span><h3>Momentum</h3><p>RSI and candle behavior help confirm whether price is reacting from a level or already exhausted after a late move.</p></article>
+      <article class="grid-card"><span>4</span><h3>Volume Confirmation</h3><p>Signals are stronger when the move has enough market participation. Weak or thin pairs are filtered before scanning.</p></article>
+      <article class="grid-card"><span>5</span><h3>Risk / Reward</h3><p>Targets are based around the next meaningful support or resistance area. Weak setups with poor upside are skipped.</p></article>
+      <article class="grid-card"><span>6</span><h3>No Duplicate Noise</h3><p>The bot avoids repeating the same pair too often and logs why a signal passed or was skipped.</p></article>
+    </section>
+
+    <section class="hero-card" style="margin-top:18px;">
+      <div>
+        <span class="eyebrow">Decision flow</span>
+        <h1 style="font-size:clamp(28px,4vw,46px);">From market scan to Telegram alert.</h1>
+        <p class="lead">The platform does not promise profit. It gives a structured decision-support alert with clear entry, targets, stop loss, confidence, and risk warning.</p>
+      </div>
+      <div class="flow">
+        <div class="step"><b>Scan</b>Liquid Spot/Futures symbols.</div>
+        <div class="step"><b>Filter</b>Trend, RSI, EMA and volume.</div>
+        <div class="step"><b>Map</b>Support and resistance.</div>
+        <div class="step"><b>Validate</b>Risk/reward and confidence.</div>
+        <div class="step"><b>Send</b>Only if quality is acceptable.</div>
+      </div>
+    </section>
+
+    <div class="risk-box"><strong>Risk notice:</strong> Crypto trading is risky. Nexora AI Trader is analysis and alert software, not a guarantee of profit or financial advice. Users should manage capital carefully and make the final decision themselves.</div>
+  </div>
+</main>
+<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+</body>
+</html>

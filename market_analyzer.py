@@ -35,11 +35,24 @@ MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
+SYMBOL_FILTER_LOG_CACHE = {}
+SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
+ALLOWED_DYNAMIC_BASE_ASSETS = {
+    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "TON", "LINK",
+    "AVAX", "DOT", "LTC", "BCH", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ",
+    "RUNE", "FET", "HBAR", "XLM", "ICP", "ETC", "FIL", "AAVE", "UNI", "SUI",
+}
 EXCLUDED_BASE_ASSETS = {
-    "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
+    "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
 }
+EXCLUDED_BASE_KEYWORDS = {
+    "USD", "USDC", "FDUSD", "TUSD", "BUSD", "USDP", "DAI", "EUR", "TRY",
+    "REKT", "MOG", "TROLL", "NOBODY", "MEME", "PEPE", "DOGS", "SHIB", "BONK",
+    "UP", "DOWN", "BULL", "BEAR",
+}
 EXCLUDED_SYMBOL_PARTS = ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")
+SHORT_BASE_ALLOWLIST = {"BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "TRX", "TON", "DOT", "LTC", "BCH", "APT", "ARB", "FET", "SUI", "OP"}
 
 
 def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
@@ -52,20 +65,52 @@ def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
         return None, str(e)
 
 
+def _log_symbol_filtered(symbol, reason):
+    try:
+        now = time.time()
+        key = (str(symbol or "").upper(), str(reason or "unknown"))
+        last_seen = SYMBOL_FILTER_LOG_CACHE.get(key, 0)
+        if now - last_seen >= SYMBOL_FILTER_LOG_TTL_SECONDS:
+            SYMBOL_FILTER_LOG_CACHE[key] = now
+            print(f"SYMBOL_FILTERED symbol={key[0]} reason={key[1]}")
+    except Exception:
+        pass
+
+
+def _symbol_filter_reason(symbol):
+    symbol = str(symbol or "").upper().strip()
+    if not symbol.endswith("USDT"):
+        return "not_usdt_pair"
+    if any(part in symbol for part in EXCLUDED_SYMBOL_PARTS):
+        return "leveraged_token_suffix"
+    base = symbol[:-4]
+    if not base:
+        return "empty_base"
+    if base.startswith("1000"):
+        return "starts_with_1000"
+    if base in EXCLUDED_BASE_ASSETS:
+        return "stable_or_fiat_base"
+    if any(ch in base for ch in ["_", "-", "/"]):
+        return "invalid_base_characters"
+    for keyword in EXCLUDED_BASE_KEYWORDS:
+        if base == keyword or keyword in base:
+            return f"excluded_keyword_{keyword}"
+    if len(base) <= 1 and base not in SHORT_BASE_ALLOWLIST:
+        return "base_too_short"
+    if base not in ALLOWED_DYNAMIC_BASE_ASSETS:
+        return "not_in_large_cap_allowlist"
+    return None
+
+
 def _is_tradeable_usdt_symbol(symbol):
     try:
-        symbol = str(symbol or "").upper().strip()
-        if not symbol.endswith("USDT"):
-            return False
-        if any(part in symbol for part in EXCLUDED_SYMBOL_PARTS):
-            return False
-        base = symbol[:-4]
-        if not base or base in EXCLUDED_BASE_ASSETS:
-            return False
-        if any(ch in base for ch in ["_", "-", "/"]):
+        reason = _symbol_filter_reason(symbol)
+        if reason:
+            _log_symbol_filtered(symbol, reason)
             return False
         return True
-    except Exception:
+    except Exception as e:
+        _log_symbol_filtered(symbol, f"filter_error_{type(e).__name__}")
         return False
 
 
@@ -186,7 +231,7 @@ def get_scan_symbols(force_refresh=False):
     DYNAMIC_SYMBOL_CACHE["time"] = now
     DYNAMIC_SYMBOL_CACHE["symbols"] = selected
     symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
-    print(f"DYNAMIC_SYMBOL_UNIVERSE loaded={len(selected)} max={symbol_limit} failures={'; '.join(failures[:4])}")
+    print(f"DYNAMIC_SYMBOLS_SELECTED count={len(selected)} max={symbol_limit} failures={'; '.join(failures[:4])}")
     return list(selected)
 
 

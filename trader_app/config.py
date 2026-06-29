@@ -31,7 +31,7 @@ class Config:
     DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
 
     NOWPAYMENTS_API_KEY = os.environ.get("NOWPAYMENTS_API_KEY", "").strip()
-    NOWPAYMENTS_IPN_SECRET = os.environ.get("NOWPAYMENTS_IPN_SECRET", "").strip()
+    NOWPAYMENTS_IPN_SECRET = (os.environ.get("NOWPAYMENTS_IPN_SECRET") or os.environ.get("NOWPAYMENTS_IPN_CALLBACK_SECRET") or os.environ.get("IPN_SECRET") or "").strip()
 
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
     STRICT_HTTPS = os.environ.get("STRICT_HTTPS", "true").lower() in ["1", "true", "yes"]
