@@ -1,7 +1,7 @@
 import time
 import requests
 from datetime import datetime, timedelta
-from market_analyzer import get_top_free_signals, generate_signal, SYMBOLS
+from market_analyzer import get_top_free_signals, generate_signal, get_scan_symbols
 from ai_model import predict_trade
 from spot_futures_engine import record_trade_type, type_allowed_for_user
 import ccxt
@@ -1257,9 +1257,9 @@ def get_monster_signals():
             fallback_candidates = []
 
             try:
-                from market_analyzer import SYMBOLS, TIMEFRAMES
+                from market_analyzer import TIMEFRAMES
 
-                for symbol in SYMBOLS:
+                for symbol in get_scan_symbols():
                     for tf in TIMEFRAMES:
                         try:
                             s = generate_signal(symbol, tf)

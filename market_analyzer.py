@@ -31,6 +31,163 @@ SIGNAL_SKIP_LOG_TTL_SECONDS = 600
 LAST_DRY_RUN_SKIPS = []
 MIN_SPOT_FINAL_SCORE = 88
 MIN_FUTURES_FINAL_SCORE = 90
+MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
+MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
+DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
+DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
+EXCLUDED_BASE_ASSETS = {
+    "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
+    "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
+}
+EXCLUDED_SYMBOL_PARTS = ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")
+
+
+def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
+    try:
+        response = requests.get(url, timeout=timeout)
+        if response.status_code != 200:
+            return None, response.status_code
+        return response.json(), 200
+    except Exception as e:
+        return None, str(e)
+
+
+def _is_tradeable_usdt_symbol(symbol):
+    try:
+        symbol = str(symbol or "").upper().strip()
+        if not symbol.endswith("USDT"):
+            return False
+        if any(part in symbol for part in EXCLUDED_SYMBOL_PARTS):
+            return False
+        base = symbol[:-4]
+        if not base or base in EXCLUDED_BASE_ASSETS:
+            return False
+        if any(ch in base for ch in ["_", "-", "/"]):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _ticker_volume_map(url):
+    data, status = _safe_market_json(url)
+    volumes = {}
+    if not isinstance(data, list):
+        return volumes, status
+    for row in data:
+        try:
+            symbol = str(row.get("symbol") or "").upper()
+            if not _is_tradeable_usdt_symbol(symbol):
+                continue
+            quote_volume = float(row.get("quoteVolume") or 0)
+            if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
+                volumes[symbol] = max(volumes.get(symbol, 0), quote_volume)
+        except Exception:
+            continue
+    return volumes, status
+
+
+def _exchange_symbols(url, market_type):
+    data, status = _safe_market_json(url)
+    symbols = set()
+    if not isinstance(data, dict):
+        return symbols, status
+    for row in data.get("symbols", []):
+        try:
+            symbol = str(row.get("symbol") or "").upper()
+            if not _is_tradeable_usdt_symbol(symbol):
+                continue
+            if market_type == "spot":
+                if row.get("status") != "TRADING":
+                    continue
+                permissions = row.get("permissions") or []
+                if permissions and "SPOT" not in permissions and "TRADING" not in permissions:
+                    continue
+            else:
+                if row.get("status") != "TRADING":
+                    continue
+                if row.get("contractType") not in (None, "PERPETUAL"):
+                    continue
+            symbols.add(symbol)
+        except Exception:
+            continue
+    return symbols, status
+
+
+def _rank_symbol_universe(symbols, volume_maps):
+    ranked = []
+    for symbol in symbols:
+        volume = max([volume_map.get(symbol, 0) for volume_map in volume_maps] or [0])
+        if volume >= MIN_DYNAMIC_QUOTE_VOLUME:
+            ranked.append((symbol, volume))
+    if not ranked:
+        ranked = [(symbol, 0) for symbol in symbols]
+    ranked.sort(key=lambda item: item[1], reverse=True)
+
+    pinned = [symbol for symbol in SYMBOLS if symbol in {item[0] for item in ranked}]
+    ordered = []
+    seen = set()
+    for symbol in pinned + [item[0] for item in ranked]:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        ordered.append(symbol)
+        if MAX_DYNAMIC_SYMBOLS > 0 and len(ordered) >= MAX_DYNAMIC_SYMBOLS:
+            break
+    return ordered
+
+
+def get_scan_symbols(force_refresh=False):
+    """Load a broad Binance Spot/Futures USDT universe, then scan only liquid symbols.
+
+    This keeps the bot from being locked to a tiny fixed list without choking the
+    worker by scanning hundreds of weak pairs every cycle.
+    """
+    now = time.time()
+    cached = DYNAMIC_SYMBOL_CACHE.get("symbols")
+    if cached and not force_refresh and now - DYNAMIC_SYMBOL_CACHE.get("time", 0) < DYNAMIC_SYMBOLS_TTL_SECONDS:
+        return list(cached)
+
+    all_symbols = set()
+    volume_maps = []
+    failures = []
+
+    for url, market_type, label in [
+        ("https://api.binance.com/api/v3/exchangeInfo", "spot", "BINANCE_SPOT"),
+        ("https://api.binance.us/api/v3/exchangeInfo", "spot", "BINANCE_US_SPOT"),
+        ("https://fapi.binance.com/fapi/v1/exchangeInfo", "futures", "BINANCE_FUTURES"),
+    ]:
+        symbols, status = _exchange_symbols(url, market_type)
+        if symbols:
+            all_symbols.update(symbols)
+        else:
+            failures.append(f"{label}={status}")
+
+    for url, label in [
+        ("https://api.binance.com/api/v3/ticker/24hr", "BINANCE_SPOT_TICKER"),
+        ("https://api.binance.us/api/v3/ticker/24hr", "BINANCE_US_TICKER"),
+        ("https://fapi.binance.com/fapi/v1/ticker/24hr", "BINANCE_FUTURES_TICKER"),
+    ]:
+        volume_map, status = _ticker_volume_map(url)
+        if volume_map:
+            volume_maps.append(volume_map)
+            all_symbols.update(volume_map.keys())
+        else:
+            failures.append(f"{label}={status}")
+
+    if all_symbols:
+        selected = _rank_symbol_universe(all_symbols, volume_maps)
+    else:
+        selected = list(SYMBOLS)
+
+    if not selected:
+        selected = list(SYMBOLS)
+
+    DYNAMIC_SYMBOL_CACHE["time"] = now
+    DYNAMIC_SYMBOL_CACHE["symbols"] = selected
+    symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
+    print(f"DYNAMIC_SYMBOL_UNIVERSE loaded={len(selected)} max={symbol_limit} failures={'; '.join(failures[:4])}")
+    return list(selected)
 
 
 def log_market_source_once(source, symbol, timeframe):
@@ -158,6 +315,7 @@ def get_market_data(symbol, interval="5m", limit=250):
 
     endpoints = [
         ("BINANCE", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
+        ("BINANCE_FUTURES", f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"),
         ("BINANCE_US", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}")
     ]
 
@@ -191,6 +349,8 @@ def get_market_data(symbol, interval="5m", limit=250):
             if df is not None and not df.empty:
                 if source_name == "BINANCE_US" and binance_global_451:
                     log_market_source_once("BINANCE_US", symbol, interval)
+                elif source_name == "BINANCE_FUTURES":
+                    log_market_source_once("BINANCE_FUTURES", symbol, interval)
                 return df
 
             failures.append(f"{source_name}=empty")
@@ -1140,8 +1300,15 @@ def calculate_support_resistance(candles):
 
         support_meta = _cluster_price_level_meta(supports, tolerance_pct=0.003, limit=10)
         resistance_meta = _cluster_price_level_meta(resistances, tolerance_pct=0.003, limit=10)
-        strong_support = [item for item in support_meta if item["touches"] >= 2 or item["strength"] >= 4]
-        strong_resistance = [item for item in resistance_meta if item["touches"] >= 2 or item["strength"] >= 4]
+        # Sale-ready filter: prefer levels that were touched more than once and reacted recently.
+        strong_support = [
+            item for item in support_meta
+            if item["touches"] >= 2 and item["strength"] >= 4 and item.get("age", 999) <= 150
+        ]
+        strong_resistance = [
+            item for item in resistance_meta
+            if item["touches"] >= 2 and item["strength"] >= 4 and item.get("age", 999) <= 150
+        ]
 
         return {
             "support": [item["price"] for item in strong_support],
@@ -1184,7 +1351,7 @@ def _level_meta_for_price(price, meta_levels):
         return {}
 
 
-def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.8):
+def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=2.0):
     try:
         entry = float(entry)
         atr_value = float(atr_value or 0)
@@ -1204,13 +1371,18 @@ def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.8):
     resistance_meta = _level_meta_for_price(resistance, levels.get("resistance_meta", []))
     support_strength = int(support_meta.get("strength", 0) or 0)
     resistance_strength = int(resistance_meta.get("strength", 0) or 0)
-    if support_strength < 3 or resistance_strength < 3:
+    if (
+        support_strength < 4
+        or resistance_strength < 4
+        or int(support_meta.get("touches", 0) or 0) < 2
+        or int(resistance_meta.get("touches", 0) or 0) < 2
+    ):
         return None
 
     min_target_distance = max(entry * 0.007, atr_value * 0.75 if atr_value > 0 else 0)
     buffer = max(entry * 0.002, atr_value * 0.35 if atr_value > 0 else 0)
-    preferred_rr = max(float(min_rr or 1.8), 1.8)
-    absolute_min_rr = 1.5
+    preferred_rr = max(float(min_rr or 2.0), 2.0)
+    absolute_min_rr = 1.8
 
     if direction == "LONG":
         if not (support < entry):
@@ -1278,8 +1450,11 @@ def sr_based_targets(candles, entry, direction, atr_value=None, min_rr=1.8):
         "target_basis": "Strong Support/Resistance",
         "setup_type": setup_type,
         "signal_quality_reason": (
-            f"Strong S/R validated; support strength {support_strength}, "
-            f"resistance strength {resistance_strength}, {quality} RR {round(rr, 2)}"
+            f"Strong real S/R validated; support strength {support_strength} "
+            f"({int(support_meta.get('touches', 0) or 0)} touches), "
+            f"resistance strength {resistance_strength} "
+            f"({int(resistance_meta.get('touches', 0) or 0)} touches), "
+            f"{quality} RR {round(rr, 2)}"
         ),
     }
 
@@ -1323,6 +1498,72 @@ def _wick_reversal_warning(df, direction):
         return False
 
 
+def _sr_reaction_confirmation(df, direction, support, resistance, atr_value, interval="5m"):
+    """Confirm that price is reacting from S/R instead of chasing a finished move."""
+    try:
+        if df is None or len(df) < 35:
+            return False, "not enough candles for S/R reaction confirmation"
+        recent = df.tail(8)
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        close = float(last["close"])
+        open_ = float(last["open"])
+        prev_close = float(prev["close"])
+        support = float(support)
+        resistance = float(resistance)
+        atr_value = float(atr_value) if atr_value is not None and not pd.isna(atr_value) else 0.0
+        if close <= 0 or support <= 0 or resistance <= 0 or atr_value <= 0:
+            return False, "invalid S/R reaction inputs"
+
+        ema20 = float(ema(df, 20).iloc[-1])
+        ema50 = float(ema(df, 50).iloc[-1])
+        rsi_series = rsi(df)
+        rsi_now = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
+
+        touch_buffer = max(atr_value * 0.55, close * {"5m": 0.0035, "15m": 0.0055, "1h": 0.009}.get(interval, 0.005))
+        reclaim_buffer = max(atr_value * 0.18, close * 0.0015)
+
+        if direction == "LONG":
+            touched_support = float(recent["low"].min()) <= support + touch_buffer
+            reclaimed = close > support + reclaim_buffer and close >= prev_close
+            candle_ok = close > open_ or close > ema20
+            trend_ok = close >= ema20 * 0.996 and ema20 >= ema50 * 0.992
+            rsi_ok = 42 <= rsi_now <= 68
+            if not touched_support:
+                return False, "LONG skipped: no fresh support touch/retest"
+            if not reclaimed:
+                return False, "LONG skipped: support not reclaimed yet"
+            if not candle_ok:
+                return False, "LONG skipped: weak reaction candle"
+            if not trend_ok:
+                return False, "LONG skipped: EMA structure not supportive"
+            if not rsi_ok:
+                return False, f"LONG skipped: RSI {round(rsi_now, 1)} not in safe rebound zone"
+            return True, "LONG confirmed by support retest, reclaim, EMA and RSI"
+
+        if direction == "SHORT":
+            touched_resistance = float(recent["high"].max()) >= resistance - touch_buffer
+            rejected = close < resistance - reclaim_buffer and close <= prev_close
+            candle_ok = close < open_ or close < ema20
+            trend_ok = close <= ema20 * 1.004 and ema20 <= ema50 * 1.008
+            rsi_ok = 32 <= rsi_now <= 58
+            if not touched_resistance:
+                return False, "SHORT skipped: no fresh resistance touch/retest"
+            if not rejected:
+                return False, "SHORT skipped: resistance not rejected yet"
+            if not candle_ok:
+                return False, "SHORT skipped: weak rejection candle"
+            if not trend_ok:
+                return False, "SHORT skipped: EMA structure not supportive"
+            if not rsi_ok:
+                return False, f"SHORT skipped: RSI {round(rsi_now, 1)} not in safe rejection zone"
+            return True, "SHORT confirmed by resistance retest, rejection, EMA and RSI"
+
+        return False, "unknown direction"
+    except Exception as e:
+        return False, f"S/R reaction confirmation error: {e}"
+
+
 def _entry_location_filter(df, direction, sr_targets, atr_value, interval="5m"):
     """Reject entries that are late in the move or too close to the next opposing level."""
     try:
@@ -1340,26 +1581,36 @@ def _entry_location_filter(df, direction, sr_targets, atr_value, interval="5m"):
 
         if direction == "LONG":
             # The bot must buy near a confirmed support/reclaim, not after the move is almost finished.
-            if pos > 0.44:
+            max_support_distance = max(0.006, atr_ratio * 1.15)
+            if pos > 0.34:
                 return False, f"late LONG entry: price already {round(pos*100, 1)}% through S/R range"
-            if (resistance - entry) / entry < max(0.009, atr_ratio * 1.15):
+            if (entry - support) / entry > max_support_distance:
+                return False, "LONG entry too far from confirmed support"
+            if (resistance - entry) / entry < max(0.012, atr_ratio * 1.35):
                 return False, "LONG entry too close to resistance"
-            if extension > extension_limit:
+            if extension > extension_limit * 0.75:
                 return False, f"late LONG pump extension {round(extension*100, 2)}%"
             if _wick_reversal_warning(df, direction):
                 return False, "LONG rejected by upper-wick exhaustion"
         else:
             # The bot must short near resistance, not after most of the dump has already happened.
-            if pos < 0.56:
+            max_resistance_distance = max(0.006, atr_ratio * 1.15)
+            if pos < 0.66:
                 return False, f"late SHORT entry: price already near support ({round(pos*100, 1)}% range position)"
-            if (entry - support) / entry < max(0.009, atr_ratio * 1.15):
+            if (resistance - entry) / entry > max_resistance_distance:
+                return False, "SHORT entry too far from confirmed resistance"
+            if (entry - support) / entry < max(0.012, atr_ratio * 1.35):
                 return False, "SHORT entry too close to support"
-            if extension > extension_limit:
+            if extension > extension_limit * 0.75:
                 return False, f"late SHORT dump extension {round(extension*100, 2)}%"
             if _wick_reversal_warning(df, direction):
                 return False, "SHORT rejected by lower-wick exhaustion"
 
-        return True, "entry location protected against reversal"
+        reaction_ok, reaction_reason = _sr_reaction_confirmation(df, direction, support, resistance, atr_value, interval)
+        if not reaction_ok:
+            return False, reaction_reason
+
+        return True, f"entry protected by S/R location and reaction: {reaction_reason}"
     except Exception as e:
         return False, f"entry location filter error: {e}"
 
@@ -2131,9 +2382,10 @@ def get_top_free_signals(limit=2):
 
     candidates = []
 
-    print(f"Dynamic symbols loaded: {SYMBOLS}")
+    scan_symbols = get_scan_symbols()
+    print(f"Dynamic symbols loaded: {len(scan_symbols)} symbols")
 
-    for symbol in SYMBOLS:
+    for symbol in scan_symbols:
         for tf in TIMEFRAMES:
             try:
                 signal = generate_free_signal(symbol, tf)
@@ -2253,7 +2505,7 @@ def dry_run_signal_scan(symbols=None, timeframes=None, max_passed=10, verbose=Tr
 
         python -c "from market_analyzer import dry_run_signal_scan; print(dry_run_signal_scan())"
     """
-    selected_symbols = list(symbols or SYMBOLS)
+    selected_symbols = list(symbols or get_scan_symbols())
     selected_timeframes = list(timeframes or TIMEFRAMES)
     summary = {
         "passed_count": 0,
