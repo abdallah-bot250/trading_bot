@@ -934,7 +934,7 @@ input, select {
 
     <section class="nx-table-card">
         <h3>Signal Performance Chart</h3>
-        {% if performance_chart.labels %}
+        {% if performance_chart["labels"] %}
             <canvas id="signalPerformanceChart" style="min-height:260px;"></canvas>
         {% else %}
             <div class="nx-empty">Not enough signal history yet. The chart will appear after tracked trades exist.</div>
@@ -1511,10 +1511,10 @@ if (signalPerformanceNode) {
     new Chart(signalPerformanceNode, {
         type: "line",
         data: {
-            labels: {{ performance_chart.labels|tojson }},
+            labels: {{ performance_chart["labels"]|tojson }},
             datasets: [{
                 label: "Tracked P/L",
-                data: {{ performance_chart.values|tojson }},
+                data: {{ performance_chart["values"]|tojson }},
                 borderColor: "#20d68a",
                 backgroundColor: "rgba(32,214,138,.14)",
                 fill: true,
