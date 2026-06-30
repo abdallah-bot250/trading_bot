@@ -15,6 +15,7 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "binance").strip().lower()
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
+SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -64,6 +65,19 @@ def log_once(key, msg, ttl=LOG_THROTTLE_SECONDS):
     if now - last_seen >= ttl:
         LAST_LOG_CACHE[key] = now
         log(msg)
+
+def signal_log_summary(signal):
+    try:
+        return (
+            f"pair={signal.get('pair')} direction={signal.get('direction')} "
+            f"type={signal.get('type', 'N/A')} tf={signal.get('timeframe', 'N/A')} "
+            f"conf={signal.get('confidence')} rr={signal.get('risk_reward')} "
+            f"regime={signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))} "
+            f"strategy={signal.get('strategy_name', signal.get('setup_type', 'N/A'))}"
+        )
+    except Exception:
+        return "signal_summary_unavailable"
+
 
 # ================= DB =================
 def db():
@@ -226,7 +240,8 @@ def get_live_price(symbol):
                 r = response.json()
                 if "price" in r:
                     if provider == "BINANCE_US" and binance_global_451:
-                        log(f"MARKET_DATA_SOURCE BINANCE_US symbol={symbol} timeframe=price")
+                        if SIGNAL_DEBUG_LOGS:
+                            log(f"MARKET_DATA_SOURCE BINANCE_US symbol={symbol} timeframe=price")
                     return float(r["price"])
                 failures.append(f"{provider}=missing_price")
             except Exception as provider_error:
@@ -1290,7 +1305,7 @@ def get_monster_signals():
                 continue
 
             if not logical_signal(s):
-                log(f"Logical invalid signal skipped: {s}")
+                log(f"Logical invalid signal skipped: {signal_log_summary(s)}")
                 continue
 
             if not signal_not_expired(s):
@@ -1437,7 +1452,7 @@ def run():
                 continue
 
             for signal in signals:
-                log(f"Processing signal: {signal}")
+                log(f"Processing signal: {signal_log_summary(signal)}")
 
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user

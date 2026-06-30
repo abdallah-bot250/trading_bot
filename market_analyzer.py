@@ -33,6 +33,7 @@ SIGNAL_BUILD_COOLDOWN_SECONDS = int(os.environ.get("SIGNAL_BUILD_COOLDOWN_SECOND
 LAST_DRY_RUN_SKIPS = []
 MIN_SPOT_FINAL_SCORE = 88
 MIN_FUTURES_FINAL_SCORE = 90
+SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
@@ -74,7 +75,8 @@ def _log_symbol_filtered(symbol, reason):
         last_seen = SYMBOL_FILTER_LOG_CACHE.get(key, 0)
         if now - last_seen >= SYMBOL_FILTER_LOG_TTL_SECONDS:
             SYMBOL_FILTER_LOG_CACHE[key] = now
-            print(f"SYMBOL_FILTERED symbol={key[0]} reason={key[1]}")
+            if SIGNAL_DEBUG_LOGS:
+                print(f"SYMBOL_FILTERED symbol={key[0]} reason={key[1]}")
     except Exception:
         pass
 
@@ -243,7 +245,8 @@ def log_market_source_once(source, symbol, timeframe):
     last_seen = MARKET_SOURCE_LOG_CACHE.get(key, 0)
     if now - last_seen >= MARKET_SOURCE_LOG_TTL_SECONDS:
         MARKET_SOURCE_LOG_CACHE[key] = now
-        print(f"MARKET_DATA_SOURCE {source} symbol={symbol} timeframe={timeframe}")
+        if SIGNAL_DEBUG_LOGS:
+            print(f"MARKET_DATA_SOURCE {source} symbol={symbol} timeframe={timeframe}")
 
 # منع تكرار نفس الأزواج دايمًا
 LAST_USED_PAIRS = []
@@ -2992,10 +2995,11 @@ def get_top_free_signals(limit=2):
                     )
 
                     candidates.append(signal)
-                    print(
-                        f"✅ Candidate: {signal['pair']} {signal['timeframe']} "
-                        f"{signal['direction']} conf={signal['confidence']} score={signal['score']}"
-                    )
+                    if SIGNAL_DEBUG_LOGS:
+                        print(
+                            f"CANDIDATE_SIGNAL symbol={signal['pair']} tf={signal['timeframe']} "
+                            f"direction={signal['direction']} conf={signal['confidence']} rr={signal.get('risk_reward')}"
+                        )
             except Exception as e:
                 print(f"Signal generation error for {symbol} {tf}: {e}")
                 continue
