@@ -1990,6 +1990,431 @@ def signal_levels_valid(entry, tp, sl, direction):
         return False
 
 
+# ================= ADAPTIVE EXPERT SIGNAL ENGINE =================
+def _safe_float(value, default=0.0):
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _bounded(value, low=0, high=100):
+    return max(low, min(high, value))
+
+
+def _recent_closed_trades(limit=120):
+    try:
+        path = os.path.join(os.path.dirname(__file__), "trades.json")
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            rows = json.load(f)
+        return [t for t in rows if str(t.get("status", "")).upper() in ["TP", "SL"]][-limit:]
+    except Exception:
+        return []
+
+
+def _performance_bucket(rows, key, value):
+    sample = [t for t in rows if str(t.get(key) or "").upper() == str(value or "").upper()]
+    if not sample:
+        return 50.0, 0
+    wins = sum(1 for t in sample if str(t.get("status", "")).upper() == "TP")
+    return round((wins / len(sample)) * 100, 2), len(sample)
+
+
+def adaptive_learning_weight(strategy_name, symbol, timeframe, direction):
+    try:
+        rows = _recent_closed_trades()
+        if not rows:
+            return 0, "no recent closed trades"
+
+        strategy_wr, strategy_trades = _performance_bucket(rows, "strategy_name", strategy_name)
+        symbol_wr, symbol_trades = _performance_bucket(rows, "pair", symbol)
+        timeframe_wr, timeframe_trades = _performance_bucket(rows, "timeframe", timeframe)
+        direction_wr, direction_trades = _performance_bucket(rows, "direction", direction)
+
+        adjustment = 0
+        for wr, trades, weight in [
+            (strategy_wr, strategy_trades, 5),
+            (symbol_wr, symbol_trades, 4),
+            (timeframe_wr, timeframe_trades, 3),
+            (direction_wr, direction_trades, 3),
+        ]:
+            if trades < 4:
+                continue
+            if wr >= 62:
+                adjustment += weight
+            elif wr <= 42:
+                adjustment -= weight
+
+        adjustment = max(-15, min(15, adjustment))
+        print(f"STRATEGY_PERFORMANCE strategy={strategy_name} win_rate={strategy_wr} trades={strategy_trades}")
+        print(f"LEARNING_WEIGHT strategy={strategy_name} symbol={symbol} timeframe={timeframe} adjustment={adjustment}")
+        return adjustment, f"learning adjustment {adjustment}; strategy WR {strategy_wr}% over {strategy_trades}"
+    except Exception as e:
+        print(f"LEARNING_WEIGHT strategy={strategy_name} symbol={symbol} timeframe={timeframe} adjustment=0 error={e}")
+        return 0, "learning unavailable"
+
+
+def detect_symbol_market_regime(symbol, interval, df):
+    try:
+        if df is None or len(df) < 80:
+            return {"regime": "LOW_LIQUIDITY", "reason": "insufficient candles"}
+
+        close = _safe_float(df["close"].iloc[-1])
+        if close <= 0:
+            return {"regime": "LOW_LIQUIDITY", "reason": "invalid close"}
+
+        ema20v = _safe_float(ema(df, 20).iloc[-1])
+        ema50v = _safe_float(ema(df, 50).iloc[-1])
+        ema200v = _safe_float(ema(df, 200).iloc[-1] if len(df) >= 200 else ema(df, 100).iloc[-1])
+        rsi_now = _safe_float(rsi(df).iloc[-1], 50)
+        atr_series = atr(df).dropna()
+        atr_val = _safe_float(atr_series.iloc[-1] if len(atr_series) else 0)
+        atr_ratio = atr_val / close if close > 0 else 0
+        avg_vol = _safe_float(df["volume"].rolling(20).mean().iloc[-1])
+        last_vol = _safe_float(df["volume"].iloc[-1])
+        volume_ratio = last_vol / avg_vol if avg_vol > 0 else 0
+        levels = calculate_support_resistance(df)
+        support = nearest_support(close, levels.get("support", []))
+        resistance = nearest_resistance(close, levels.get("resistance", []))
+        recent_high = _safe_float(df["high"].tail(25).max())
+        recent_low = _safe_float(df["low"].tail(25).min())
+        prev_high = _safe_float(df["high"].iloc[-26:-1].max())
+        prev_low = _safe_float(df["low"].iloc[-26:-1].min())
+        last = df.iloc[-1]
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        body = abs(_safe_float(last["close"]) - _safe_float(last["open"]))
+        upper_wick = _safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))
+        lower_wick = min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])
+        range_width = (recent_high - recent_low) / close if close > 0 and recent_high > recent_low else 0
+        long_mtf = multi_timeframe_quality(symbol, "LONG", interval, df)
+        short_mtf = multi_timeframe_quality(symbol, "SHORT", interval, df)
+
+        base = {
+            "close": close,
+            "ema20": ema20v,
+            "ema50": ema50v,
+            "ema200": ema200v,
+            "rsi": rsi_now,
+            "atr": atr_val,
+            "atr_ratio": atr_ratio,
+            "volume_ratio": volume_ratio,
+            "support": support,
+            "resistance": resistance,
+            "recent_high": recent_high,
+            "recent_low": recent_low,
+            "range_width": range_width,
+            "body_ratio": body / candle_range,
+            "upper_wick_ratio": upper_wick / candle_range,
+            "lower_wick_ratio": lower_wick / candle_range,
+            "long_mtf": long_mtf,
+            "short_mtf": short_mtf,
+        }
+
+        if volume_ratio and volume_ratio < 0.35:
+            return {**base, "regime": "LOW_LIQUIDITY", "reason": f"volume ratio {round(volume_ratio, 2)} too low"}
+        if atr_ratio > 0.06 or candle_range > max(atr_val * 3.0, close * 0.035):
+            return {**base, "regime": "HIGH_VOLATILITY", "reason": f"ATR ratio {round(atr_ratio, 4)} too high"}
+        if volume_ratio >= 1.25 and close > prev_high and rsi_now < 74:
+            return {**base, "regime": "BREAKOUT", "breakout_direction": "LONG", "reason": "volume breakout above recent high"}
+        if volume_ratio >= 1.25 and close < prev_low and rsi_now > 26:
+            return {**base, "regime": "BREAKOUT", "breakout_direction": "SHORT", "reason": "volume breakdown below recent low"}
+        if support and lower_wick / candle_range >= 0.45 and rsi_now <= 42 and abs(close - support) / close < 0.012:
+            return {**base, "regime": "REVERSAL", "reversal_direction": "LONG", "reason": "support wick rejection with RSI recovery zone"}
+        if resistance and upper_wick / candle_range >= 0.45 and rsi_now >= 58 and abs(resistance - close) / close < 0.012:
+            return {**base, "regime": "REVERSAL", "reversal_direction": "SHORT", "reason": "resistance wick rejection with RSI rejection zone"}
+
+        ema_spread = (max(ema20v, ema50v, ema200v) - min(ema20v, ema50v, ema200v)) / close if close > 0 else 1
+        if range_width >= 0.012 and 38 <= rsi_now <= 62 and ema_spread < 0.0065:
+            return {**base, "regime": "RANGE", "reason": "range-bound market with neutral RSI and tight EMAs"}
+
+        if ema20v > ema50v > ema200v and long_mtf.get("state") in ["CONFIRMED", "PARTIAL"]:
+            return {**base, "regime": "BULL_TREND", "reason": "EMA 20/50/200 bullish alignment"}
+        if ema20v < ema50v < ema200v and short_mtf.get("state") in ["CONFIRMED", "PARTIAL"]:
+            return {**base, "regime": "BEAR_TREND", "reason": "EMA 20/50/200 bearish alignment"}
+        if range_width >= 0.012 and 38 <= rsi_now <= 62:
+            return {**base, "regime": "RANGE", "reason": "range-bound market with neutral RSI"}
+        return {**base, "regime": "HIGH_VOLATILITY" if atr_ratio > 0.04 else "RANGE", "reason": "mixed structure without clean trend"}
+    except Exception as e:
+        return {"regime": "LOW_LIQUIDITY", "reason": f"regime detection error: {e}"}
+
+
+def _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5):
+    support = regime_info.get("support")
+    resistance = regime_info.get("resistance")
+    atr_val = max(_safe_float(atr_val), entry * 0.004)
+    buffer = max(atr_val * 0.45, entry * 0.0025)
+
+    if direction == "LONG":
+        sl = (support - buffer) if support and support < entry else entry - max(atr_val * 1.25, entry * 0.006)
+        risk = entry - sl
+        if risk <= 0:
+            return None
+        target = resistance if resistance and resistance > entry + risk * rr_min else entry + risk * max(1.8, rr_min)
+        tp3 = max(target, entry + risk * rr_min)
+        tp1 = entry + (tp3 - entry) * 0.45
+        tp2 = entry + (tp3 - entry) * 0.72
+    else:
+        sl = (resistance + buffer) if resistance and resistance > entry else entry + max(atr_val * 1.25, entry * 0.006)
+        risk = sl - entry
+        if risk <= 0:
+            return None
+        target = support if support and support < entry - risk * rr_min else entry - risk * max(1.8, rr_min)
+        tp3 = min(target, entry - risk * rr_min)
+        tp1 = entry - (entry - tp3) * 0.45
+        tp2 = entry - (entry - tp3) * 0.72
+
+    rr = abs(tp3 - entry) / max(abs(entry - sl), entry * 0.0001)
+    return {
+        "entry": entry,
+        "sl": sl,
+        "tp": tp3,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "risk_reward": round(rr, 2),
+        "support": support,
+        "resistance": resistance,
+    }
+
+
+def _strategy_for_regime(regime_info):
+    regime = regime_info.get("regime")
+    close = _safe_float(regime_info.get("close"))
+    support = regime_info.get("support")
+    resistance = regime_info.get("resistance")
+    rsi_now = _safe_float(regime_info.get("rsi"), 50)
+
+    if regime == "BULL_TREND":
+        return "LONG", "trend_following_long", ["Bull trend EMA alignment", regime_info.get("reason")]
+    if regime == "BEAR_TREND":
+        return "SHORT", "trend_following_short", ["Bear trend EMA alignment", regime_info.get("reason")]
+    if regime == "BREAKOUT":
+        direction = regime_info.get("breakout_direction")
+        return direction, "confirmed_breakout", ["Breakout confirmed by volume", regime_info.get("reason")]
+    if regime == "REVERSAL":
+        direction = regime_info.get("reversal_direction")
+        return direction, "wick_rejection_reversal", ["Reversal only after wick rejection", regime_info.get("reason")]
+    if regime == "RANGE":
+        if support and close and abs(close - support) / close < 0.012 and rsi_now <= 48:
+            return "LONG", "range_support_bounce", ["Range support bounce", regime_info.get("reason")]
+        if resistance and close and abs(resistance - close) / close < 0.012 and rsi_now >= 52:
+            return "SHORT", "range_resistance_rejection", ["Range resistance rejection", regime_info.get("reason")]
+    return None, None, [regime_info.get("reason", "no strategy matched")]
+
+
+def _adaptive_score(regime_info, direction, strategy_name, levels, symbol, timeframe, reasons):
+    score = 45
+    long_mtf = regime_info.get("long_mtf", {})
+    short_mtf = regime_info.get("short_mtf", {})
+    mtf = long_mtf if direction == "LONG" else short_mtf
+    volume_ratio = _safe_float(regime_info.get("volume_ratio"))
+    rsi_now = _safe_float(regime_info.get("rsi"), 50)
+    ema20v = _safe_float(regime_info.get("ema20"))
+    ema50v = _safe_float(regime_info.get("ema50"))
+    ema200v = _safe_float(regime_info.get("ema200"))
+    rr = _safe_float(levels.get("risk_reward"))
+
+    if mtf.get("state") == "CONFIRMED":
+        score += 14
+        reasons.append("MTF confirmed")
+    elif mtf.get("state") == "PARTIAL":
+        score += 7
+        reasons.append("MTF partial")
+
+    if direction == "LONG" and ema20v > ema50v > ema200v:
+        score += 10
+        reasons.append("EMA structure supports LONG")
+    if direction == "SHORT" and ema20v < ema50v < ema200v:
+        score += 10
+        reasons.append("EMA structure supports SHORT")
+
+    if volume_ratio >= 1.25:
+        score += 8
+        reasons.append(f"volume confirmation {round(volume_ratio, 2)}x")
+    elif volume_ratio >= 0.8:
+        score += 3
+
+    if direction == "LONG" and 38 <= rsi_now <= 68:
+        score += 6
+        reasons.append("RSI quality for LONG")
+    if direction == "SHORT" and 32 <= rsi_now <= 62:
+        score += 6
+        reasons.append("RSI quality for SHORT")
+
+    if regime_info.get("support") and regime_info.get("resistance"):
+        score += 8
+        reasons.append("support/resistance mapped")
+
+    if regime_info.get("upper_wick_ratio", 0) > 0.42 or regime_info.get("lower_wick_ratio", 0) > 0.42:
+        score += 5
+        reasons.append("candle wick confirmation")
+
+    if rr >= 2.0:
+        score += 10
+    elif rr >= 1.5:
+        score += 6
+
+    learning_adjustment, learning_reason = adaptive_learning_weight(strategy_name, symbol, timeframe, direction)
+    score += learning_adjustment
+    reasons.append(learning_reason)
+    return int(_bounded(score, 0, 100))
+
+
+def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
+    try:
+        regime_info = detect_symbol_market_regime(symbol, interval, df)
+        regime = regime_info.get("regime", "LOW_LIQUIDITY")
+        if regime in ["LOW_LIQUIDITY", "HIGH_VOLATILITY"]:
+            return None, f"{regime}: {regime_info.get('reason')}", regime_info
+
+        direction, strategy_name, reasons = _strategy_for_regime(regime_info)
+        if not direction or not strategy_name:
+            return None, "no adaptive strategy matched", regime_info
+
+        entry = _safe_float(regime_info.get("close"))
+        atr_val = _safe_float(regime_info.get("atr"))
+        levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5)
+        if not levels:
+            return None, "could not build logical levels", regime_info
+        if levels["risk_reward"] < 1.5:
+            return None, f"RR {levels['risk_reward']} below 1.5", regime_info
+        if not signal_levels_valid(levels["entry"], levels["tp"], levels["sl"], direction):
+            return None, "invalid LONG/SHORT level geometry", regime_info
+
+        confidence = _adaptive_score(regime_info, direction, strategy_name, levels, symbol, interval, reasons)
+        min_conf = 75 if paid else 70
+        if confidence < min_conf:
+            return None, f"confidence {confidence} below {min_conf}", regime_info
+
+        target_basis = "Adaptive Support/Resistance"
+        reason_text = "; ".join([str(r) for r in reasons if r])
+        signal = {
+            "pair": symbol,
+            "timeframe": interval,
+            "type": "FUTURES",
+            "direction": direction,
+            "entry": format_price(levels["entry"]),
+            "tp": format_price(levels["tp3"]),
+            "tp1": format_price(levels["tp1"]),
+            "tp2": format_price(levels["tp2"]),
+            "tp3": format_price(levels["tp3"]),
+            "sl": format_price(levels["sl"]),
+            "confidence": confidence,
+            "trend": detect_trend(df),
+            "volume": volume_strength(df),
+            "smc": detect_smc(df),
+            "trend_power": trend_strength(df),
+            "structure": market_structure(df),
+            "score": confidence - 50 if direction == "LONG" else 50 - confidence,
+            "support": format_price(levels.get("support") or regime_info.get("recent_low")),
+            "resistance": format_price(levels.get("resistance") or regime_info.get("recent_high")),
+            "nearest_support": format_price(levels.get("support") or regime_info.get("recent_low")),
+            "nearest_resistance": format_price(levels.get("resistance") or regime_info.get("recent_high")),
+            "risk_reward": levels["risk_reward"],
+            "support_strength": 4,
+            "resistance_strength": 4,
+            "target_basis": target_basis,
+            "setup_type": strategy_name,
+            "strategy_name": strategy_name,
+            "market_regime": regime,
+            "adaptive_regime": regime,
+            "reasons": reasons,
+            "signal_quality_reason": reason_text,
+            "entry_location_reason": regime_info.get("reason", "adaptive setup"),
+            "management_note": "Protect the trade after TP1 or +0.6R; reduce exposure in high volatility.",
+            "breakeven_trigger_r": 0.6,
+        }
+        return signal, None, regime_info
+    except Exception as e:
+        return None, f"adaptive candidate error: {e}", {"regime": "ERROR"}
+
+
+def finalize_adaptive_signal(signal, df, paid=True):
+    try:
+        direction = signal["direction"]
+        interval = signal.get("timeframe", "5m")
+        entry = _safe_float(signal["entry"])
+        tp = _safe_float(signal["tp"])
+        sl = _safe_float(signal["sl"])
+        htf_ok = higher_timeframe_confirmation(signal["pair"], direction, interval)
+
+        ai_engine_report = build_ai_engine_report(
+            df,
+            {
+                "timeframe": interval,
+                "direction": direction,
+                "entry": entry,
+                "tp": tp,
+                "sl": sl,
+                "confidence": signal.get("confidence"),
+            },
+            higher_tf_ok=htf_ok,
+        )
+        max_risk = 80 if paid else 84
+        if ai_engine_report["risk_score"] >= max_risk:
+            return None, f"risk score {ai_engine_report['risk_score']} too high"
+
+        type_scores = evaluate_trade_types(
+            direction=direction,
+            trend=signal.get("trend"),
+            trend_power=signal.get("trend_power"),
+            confidence=signal.get("confidence"),
+            htf_ok=htf_ok,
+            structure=signal.get("structure"),
+            volume=signal.get("volume"),
+            volatility_state=ai_engine_report["volatility_state"],
+            risk_score=ai_engine_report["risk_score"],
+            timeframe=interval,
+        )
+        trade_type, adjusted_type_scores = choose_trade_type(type_scores)
+        signal["type"] = trade_type
+        signal.update({
+            "type_scores": adjusted_type_scores,
+            "spot_score": adjusted_type_scores.get("SPOT", 0),
+            "futures_score": adjusted_type_scores.get("FUTURES", 0),
+            "risk_score": ai_engine_report["risk_score"],
+            "risk_level": ai_engine_report["risk_level"],
+            "engine_confidence": ai_engine_report["engine_confidence"],
+            "multi_timeframe": ai_engine_report["multi_timeframe"],
+            "multi_timeframe_score": ai_engine_report["multi_timeframe_score"],
+            "market_structure": ai_engine_report["market_structure"],
+            "structure_score": ai_engine_report["structure_score"],
+            "volume_state": ai_engine_report["volume_state"],
+            "volume_score": ai_engine_report["volume_score"],
+            "volume_ratio": ai_engine_report["volume_ratio"],
+            "volatility_state": ai_engine_report["volatility_state"],
+            "volatility_score": ai_engine_report["volatility_score"],
+            "atr_ratio": ai_engine_report["atr_ratio"],
+            "trend_score": ai_engine_report["trend_score"],
+            "ema_alignment": ai_engine_report["ema_alignment"],
+            "ai_engine": ai_engine_report,
+            "final_score": signal.get("confidence"),
+            "final_score_reason": signal.get("signal_quality_reason"),
+        })
+        if not predict_trade(signal):
+            return None, "AI model rejected adaptive signal"
+        return signal, None
+    except Exception as e:
+        return None, f"adaptive finalize error: {e}"
+
+
+def no_trade_summary(symbol, interval, market_summary, best_candidate, rejection_reason):
+    try:
+        compact_market = {
+            "symbol": symbol,
+            "timeframe": interval,
+            "regime": market_summary.get("regime") if isinstance(market_summary, dict) else market_summary,
+            "reason": market_summary.get("reason") if isinstance(market_summary, dict) else "",
+        }
+        print(f"NO_TRADE market_summary={compact_market} best_candidate={best_candidate} rejection_reason={rejection_reason}")
+    except Exception:
+        pass
+
+
 # ================= STRONG SIGNAL FILTER =================
 def strong_signal_filter(df, trend, trend_power, direction):
     try:
@@ -2090,7 +2515,24 @@ def generate_signal(symbol, interval="5m"):
     if not news_ok:
         return None
 
-    # صارم لكن عملي
+    adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=True)
+    if adaptive_signal:
+        finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=True)
+        if finalized_signal:
+            _mark_signal_built(finalized_signal)
+            return finalized_signal
+        no_trade_summary(symbol, interval, adaptive_regime, {
+            "direction": adaptive_signal.get("direction"),
+            "strategy": adaptive_signal.get("strategy_name"),
+            "confidence": adaptive_signal.get("confidence"),
+            "rr": adaptive_signal.get("risk_reward"),
+        }, finalize_reason)
+        return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
+
+    no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
+    return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
+
+    # Legacy strict path retained as unreachable fallback documentation.
     direction, regime, selected_mtf, direction_reason = choose_signal_direction(
         symbol, interval, df, score, trend, trend_power, MIN_SCORE_TO_TRADE
     )
@@ -2317,6 +2759,23 @@ def generate_free_signal(symbol, interval="5m"):
         trend_power,
         structure
     )
+
+    adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=False)
+    if adaptive_signal:
+        finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=False)
+        if finalized_signal:
+            _mark_signal_built(finalized_signal)
+            return finalized_signal
+        no_trade_summary(symbol, interval, adaptive_regime, {
+            "direction": adaptive_signal.get("direction"),
+            "strategy": adaptive_signal.get("strategy_name"),
+            "confidence": adaptive_signal.get("confidence"),
+            "rr": adaptive_signal.get("risk_reward"),
+        }, finalize_reason)
+        return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
+
+    no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
+    return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
 
     direction, regime, selected_mtf, direction_reason = choose_signal_direction(
         symbol, interval, df, score, trend, trend_power, 5

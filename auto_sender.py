@@ -559,9 +559,10 @@ Trend: {signal.get('trend', 'N/A')}
 EMA Alignment: {signal.get('ema_alignment', 'N/A')}
 RSI/Momentum: {signal.get('structure', signal.get('market_structure', 'N/A'))}
 Volume: {signal.get('volume', signal.get('volume_state', 'N/A'))}
-Market Regime: {signal.get('market_regime', 'N/A')}
+Market Regime: {signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))}
+Strategy: {signal.get('strategy_name', signal.get('setup_type', 'N/A'))}
 
-Reason: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
+Why this trade: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
 Target Basis: {signal.get('target_basis', 'Support/Resistance')}
 Plan Access: {_plan_signal_profile(plan)}
 
