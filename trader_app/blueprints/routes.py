@@ -364,9 +364,46 @@ def proof():
 
 @public_bp.route("/bot-check")
 def bot_check():
+    telegram_connect_link = current_bot_link()
+    is_linked = False
+
+    if session.get("user"):
+        conn = None
+        try:
+            conn = db()
+            c = conn.cursor()
+            c.execute("""
+                SELECT id, email, chat_id
+                FROM users
+                WHERE LOWER(email) = %s
+                LIMIT 1
+            """, (session["user"].lower(),))
+            user_row = c.fetchone()
+            if user_row:
+                is_linked = bool(str(user_row[2] or "").strip())
+                if not is_linked:
+                    token = create_telegram_link_token(c, user_row[1])
+                    telegram_connect_link = f"{current_bot_link()}?start=link_{token}"
+                    conn.commit()
+                    log(f"TELEGRAM_LINK_CODE_GENERATED user_id={user_row[0]}")
+                else:
+                    telegram_connect_link = current_bot_link()
+            if conn:
+                conn.close()
+        except Exception as e:
+            try:
+                if conn:
+                    conn.rollback()
+                    conn.close()
+            except Exception:
+                pass
+            log(f"TELEGRAM_LINK_FAILED reason=bot_check_token_error error={e}")
+
     return render_template(
         "bot_check.html",
         bot_link=current_bot_link(),
+        telegram_connect_link=telegram_connect_link,
+        is_linked=is_linked,
         base_url=current_base_url(),
     )
 
@@ -1133,10 +1170,11 @@ def ensure_telegram_link_token_table(c):
 def create_telegram_link_token(c, user_email):
     ensure_telegram_link_token_table(c)
     token = secrets.token_urlsafe(32)
+    safe_email = str(user_email or "").strip().lower()
     c.execute("""
         INSERT INTO telegram_link_tokens (token, user_email)
         VALUES (%s, %s)
-    """, (token, str(user_email or "").strip().lower()))
+    """, (token, safe_email))
     return token
 
 
@@ -1155,6 +1193,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     ensure_telegram_link_token_table(c)
     token = str(token or "").strip()
     if not token:
+        log("TELEGRAM_LINK_FAILED reason=missing_token chat_id_present=True")
         send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
         return True
 
@@ -1166,6 +1205,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     """, (token,))
     link_row = c.fetchone()
     if not link_row:
+        log("TELEGRAM_LINK_FAILED reason=token_not_found chat_id_present=True")
         send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
         return True
 
@@ -1173,6 +1213,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     created_at = link_row[2]
     used_at = link_row[3]
     if used_at or telegram_link_is_expired(created_at):
+        log(f"TELEGRAM_LINK_FAILED reason=token_used_or_expired user_email={user_email} chat_id_present=True")
         send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
         return True
 
@@ -1184,6 +1225,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     """, (user_email,))
     target_user = c.fetchone()
     if not target_user:
+        log(f"TELEGRAM_LINK_FAILED reason=user_not_found user_email={user_email} chat_id_present=True")
         send(chat_id, "Nexora account not found. Please register on the website first.")
         return True
 
@@ -1192,6 +1234,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     current_chat_id = str(target_user[2] or "").strip()
 
     if current_chat_id and current_chat_id != str(chat_id):
+        log(f"TELEGRAM_LINK_FAILED reason=user_already_linked user_id={target_user_id} chat_id_present=True")
         send(chat_id, "This Nexora account is already linked to another Telegram. Login on the website to manage linking safely.")
         return True
 
@@ -1203,6 +1246,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     """, (str(chat_id), target_user_id))
     existing_chat_owner = c.fetchone()
     if existing_chat_owner:
+        log(f"TELEGRAM_LINK_FAILED reason=chat_id_owned_by_other_user user_id={target_user_id} chat_id_present=True")
         login_link = f"{current_base_url()}/login?chat_id={chat_id}"
         send(chat_id, "This Telegram is already linked to another Nexora account. Login with your password to move the Telegram link safely:\n" + login_link)
         return True
@@ -1219,7 +1263,8 @@ def handle_telegram_link_token(c, conn, chat_id, token):
         WHERE token = %s
     """, (token,))
     conn.commit()
-    log(f"TELEGRAM_LINK_TOKEN_SUCCESS email={target_email} chat_id={chat_id}")
+    log(f"TELEGRAM_LINK_SUCCESS user_id={target_user_id} chat_id_present=True")
+    audit_log("telegram_link_success", target_email, "chat_id_present=True")
     send(chat_id, "Telegram linked successfully to your Nexora account.")
     return True
 
@@ -1349,12 +1394,14 @@ def dashboard():
             except Exception as stats_error:
                 log(f"spot_futures stats unavailable: {stats_error}")
 
+        is_linked = True if user.get("chat_id") else False
         telegram_link_token = create_telegram_link_token(c, user.get("email"))
         telegram_connect_link = f"{current_bot_link()}?start=link_{telegram_link_token}"
+        if not is_linked:
+            log(f"TELEGRAM_USER_NOT_LINKED email={user.get('email')}")
         conn.commit()
         conn.close()
 
-        is_linked = True if user.get("chat_id") else False
         plan = str(user.get("plan") or "trial").strip().lower()
         profit = float(user.get("profit", 0) or 0)
         trades = int(user.get("trades", 0) or 0)

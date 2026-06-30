@@ -758,11 +758,17 @@ input, select {
         افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.
         <br><br>
         ❗ بدون الخطوة دي الإشارات مش هتوصلك
+        <br><br>
+        <strong>Telegram not linked — open the bot and send /start or use the secure link below.</strong>
     </div>
 
     <a href="{{ telegram_connect_link|default(bot_link) }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
        🤖 افتح البوت الآن
+    </a>
+    <a href="/bot-check"
+       style="display:inline-block; margin-top:16px; margin-inline-start:10px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
+       Check Connection
     </a>
 </div>
 {% else %}

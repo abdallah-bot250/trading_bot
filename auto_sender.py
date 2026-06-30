@@ -49,6 +49,7 @@ LAST_SIGNAL_CACHE = {
 # ================= SIGNAL MEMORY =================
 RECENT_SIGNAL_MEMORY = {}
 LAST_NO_SIGNAL_NOTIFY = {}
+LAST_UNLINKED_USER_LOG = {}
 
 # ================= LOG =================
 LAST_LOG_CACHE = {}
@@ -77,6 +78,17 @@ def signal_log_summary(signal):
         )
     except Exception:
         return "signal_summary_unavailable"
+
+
+def log_unlinked_user_once(email):
+    safe_email = str(email or "").strip().lower()
+    if not safe_email:
+        safe_email = "unknown"
+    now = time.time()
+    last_seen = LAST_UNLINKED_USER_LOG.get(safe_email, 0)
+    if now - last_seen >= LOG_THROTTLE_SECONDS:
+        LAST_UNLINKED_USER_LOG[safe_email] = now
+        log(f"TELEGRAM_SKIP_UNLINKED_USER email={safe_email}")
 
 
 # ================= DB =================
@@ -464,10 +476,8 @@ def get_users():
 
     c.execute("""
     SELECT chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid,
-           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1)
+           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1), email
     FROM users
-    WHERE chat_id IS NOT NULL
-      AND chat_id <> ''
     """)
 
     users = c.fetchall()
@@ -1382,8 +1392,10 @@ def notify_users_no_signal(users):
                 chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
                 spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
                 futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
+                email = type_flags[2] if len(type_flags) > 2 else ""
 
                 if not chat_id:
+                    log_unlinked_user_once(email)
                     continue
 
                 # ===== ACCESS CHECK =====
@@ -1458,8 +1470,10 @@ def run():
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
                     spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
                     futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
+                    email = type_flags[2] if len(type_flags) > 2 else ""
 
                     if not chat_id:
+                        log_unlinked_user_once(email)
                         continue
 
                     # ===== ACCESS CHECK =====
