@@ -673,6 +673,19 @@ input, select {
     .premium-status-card { text-align: center; }
 }
 
+
+
+/* Sale-ready dashboard polish */
+.nx-command-bar,.nx-sale-grid,.nx-ai-grid,.nx-table-card{max-width:1180px;margin:22px auto 0}
+.nx-command-bar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.nx-status-tile,.nx-sale-card,.nx-ai-card,.nx-table-card{background:linear-gradient(145deg,rgba(8,18,34,.88),rgba(13,28,50,.72));border:1px solid rgba(148,163,184,.16);box-shadow:0 22px 60px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05);backdrop-filter:blur(18px);border-radius:20px}
+.nx-status-tile{padding:16px}.nx-status-tile span,.nx-sale-card span,.nx-ai-card span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.nx-status-tile strong{display:block;margin-top:8px;font-size:20px;color:#f8fafc}
+.nx-sale-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.nx-sale-card{padding:20px;min-height:130px}.nx-sale-card strong{display:block;margin-top:10px;font-size:26px}.nx-sale-card small{display:block;margin-top:8px;color:#94a3b8;line-height:1.6}
+.nx-ai-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.nx-ai-card{padding:22px}.nx-ai-card h3,.nx-table-card h3{margin:0 0 12px;color:#e2e8f0}.nx-meter{height:10px;background:rgba(148,163,184,.18);border-radius:999px;overflow:hidden;margin:12px 0}.nx-meter span{display:block;height:100%;background:linear-gradient(90deg,#20d68a,#38bdf8);border-radius:999px}
+.nx-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.nx-kv div{padding:14px;border-radius:14px;background:rgba(15,23,42,.68);border:1px solid rgba(148,163,184,.1)}
+.nx-table-card{padding:22px;overflow:hidden}.nx-table{width:100%;border-collapse:collapse}.nx-table th,.nx-table td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left}.nx-table th{color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.nx-empty{padding:24px;text-align:center;color:#94a3b8;border:1px dashed rgba(148,163,184,.2);border-radius:16px;background:rgba(15,23,42,.35)}
+@media(max-width:900px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid,.nx-kv{grid-template-columns:1fr}.nx-table-card{overflow-x:auto}}
+
 </style>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
@@ -877,6 +890,80 @@ input, select {
             </button>
         </a>
     </div>
+
+
+
+    <section class="nx-command-bar" aria-label="Live account status">
+        <div class="nx-status-tile"><span>Bot Status</span><strong>{% if bot_active == 1 %}Running{% else %}Paused{% endif %}</strong></div>
+        <div class="nx-status-tile"><span>Market Status</span><strong>{{ signal_performance.market_status }}</strong></div>
+        <div class="nx-status-tile"><span>Last Scan</span><strong>{{ signal_performance.last_scan }}</strong></div>
+        <div class="nx-status-tile"><span>Telegram</span><strong>{% if is_linked %}Linked{% else %}Not Linked{% endif %}</strong></div>
+    </section>
+
+    <section class="nx-sale-grid" aria-label="Trading performance summary">
+        <div class="nx-sale-card"><span>Active Signals</span><strong>{{ dashboard_widgets.active_signals }}</strong><small>Open tracked signals from your account.</small></div>
+        <div class="nx-sale-card"><span>Win Rate</span><strong>{{ dashboard_widgets.real_win_rate }}%</strong><small>{% if signal_performance.closed_signals %}Based on closed tracked trades.{% else %}Not enough data yet.{% endif %}</small></div>
+        <div class="nx-sale-card"><span>Today Outcome</span><strong>${{ dashboard_widgets.today_outcome }}</strong><small>Uses tracked signal P/L when available.</small></div>
+        <div class="nx-sale-card"><span>Account Status</span><strong>{% if is_linked and bot_active == 1 %}Ready{% elif is_linked %}Linked{% else %}Action Needed{% endif %}</strong><small>Portfolio is shown only from available account data.</small></div>
+    </section>
+
+    <section class="nx-ai-grid" aria-label="Nexora AI Intelligence">
+        <div class="nx-ai-card">
+            <span>Nexora AI Intelligence</span>
+            <h3>AI Market Summary</h3>
+            <p style="color:#cbd5e1;line-height:1.8;">{{ signal_performance.latest_reason }}</p>
+            <div class="nx-meter"><span style="width:{{ [dashboard_widgets.ai_score,100]|min }}%;"></span></div>
+            <div class="nx-kv">
+                <div><span>AI Confidence Meter</span><strong>{{ dashboard_widgets.ai_score }}/100</strong></div>
+                <div><span>Current Market Regime</span><strong>{{ signal_performance.latest_regime }}</strong></div>
+                <div><span>Best Strategy</span><strong>{{ signal_performance.best_strategy }}</strong></div>
+                <div><span>Best Timeframe</span><strong>{{ signal_performance.best_timeframe }}</strong></div>
+                <div><span>Best Symbol</span><strong>{{ signal_performance.best_pair }}</strong></div>
+                <div><span>Last Learning Update</span><strong>{{ signal_performance.last_learning_update }}</strong></div>
+            </div>
+        </div>
+        <div class="nx-ai-card">
+            <h3>Performance Tracking</h3>
+            <div class="nx-kv" style="grid-template-columns:1fr;">
+                <div><span>Total Signals</span><strong>{{ signal_performance.total_signals }}</strong></div>
+                <div><span>Average RR</span><strong>{% if signal_performance.avg_rr %}{{ signal_performance.avg_rr }}{% else %}Not enough data yet{% endif %}</strong></div>
+                <div><span>Recent Closed Outcome</span><strong>{% if signal_performance.closed_signals %}{{ signal_performance.wins }}/{{ signal_performance.closed_signals }} wins{% else %}Not enough data yet{% endif %}</strong></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="nx-table-card">
+        <h3>Signal Performance Chart</h3>
+        {% if performance_chart.labels %}
+            <canvas id="signalPerformanceChart" style="min-height:260px;"></canvas>
+        {% else %}
+            <div class="nx-empty">Not enough signal history yet. The chart will appear after tracked trades exist.</div>
+        {% endif %}
+    </section>
+
+    <section class="nx-table-card">
+        <h3>Latest Trades</h3>
+        {% if recent_signals %}
+        <table class="nx-table">
+            <thead><tr><th>Pair</th><th>Direction</th><th>Entry</th><th>TP / SL</th><th>Confidence</th><th>Result</th><th>Time</th></tr></thead>
+            <tbody>
+            {% for s in recent_signals %}
+                <tr>
+                    <td>{{ s.pair or '-' }}</td>
+                    <td>{{ s.direction or '-' }}</td>
+                    <td>{{ s.entry or '-' }}</td>
+                    <td>{{ s.tp or '-' }} / {{ s.sl or '-' }}</td>
+                    <td>{{ s.confidence or '-' }}%</td>
+                    <td>{{ s.status or 'TRACKED' }}{% if s.pnl is defined and s.pnl is not none %} · {{ s.pnl }}{% endif %}</td>
+                    <td>{{ s.created_at or '-' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+            <div class="nx-empty">Not enough data yet. Recent trades will appear here after signals are tracked.</div>
+        {% endif %}
+    </section>
 
     <section class="plan-dashboard {{dashboard_tier}}">
         <div class="dashboard-top">
@@ -1417,6 +1504,33 @@ let chart = new Chart(document.getElementById("chart"), {
         }
     }
 });
+
+
+const signalPerformanceNode = document.getElementById("signalPerformanceChart");
+if (signalPerformanceNode) {
+    new Chart(signalPerformanceNode, {
+        type: "line",
+        data: {
+            labels: {{ performance_chart.labels|tojson }},
+            datasets: [{
+                label: "Tracked P/L",
+                data: {{ performance_chart.values|tojson }},
+                borderColor: "#20d68a",
+                backgroundColor: "rgba(32,214,138,.14)",
+                fill: true,
+                tension: .35
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: "#f8fafc" } } },
+            scales: {
+                x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,.1)" } },
+                y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(148,163,184,.1)" } }
+            }
+        }
+    });
+}
 
 const tierChartNode = document.getElementById("tierChart");
 if (tierChartNode) {

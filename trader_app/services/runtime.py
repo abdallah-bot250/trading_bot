@@ -446,32 +446,48 @@ def send(chat_id, text):
         return False
 
     
+def _compact_signal_reason(s):
+    reason = str(s.get("signal_quality_reason") or s.get("reason") or "").strip()
+    if not reason:
+        reason = "Trend alignment + MTF confirmation + volume support."
+    reason = " ".join(reason.split())
+    if len(reason) > 120:
+        reason = reason[:117].rstrip() + "..."
+    return reason
+
+
 def format_signal(s):
     if not s:
         return "لا توجد إشارة حالياً"
 
-    trade_type = s.get("type", "FUTURES")
-    return f"""
-🔥 {s.get('pair', 'N/A')}
+    tp1 = s.get("tp1", s.get("tp", "N/A"))
+    tp2 = s.get("tp2", s.get("tp", "N/A"))
+    tp3 = s.get("tp3", s.get("tp", "N/A"))
+    return f"""🚀 NEXORA AI SIGNAL
 
-📊 Type: {trade_type}
-📈 Direction: {s.get('direction', 'N/A')}
+Pair: {s.get('pair', 'N/A')}
+Mode: {s.get('type', 'FUTURES')}
+Direction: {s.get('direction', 'N/A')}
+TF: {s.get('timeframe', 'N/A')}
 
-💰 Entry: {s.get('entry', 'N/A')}
-🎯 TP: {s.get('tp', 'N/A')}
-🛑 SL: {s.get('sl', 'N/A')}
+Entry: {s.get('entry', 'N/A')}
+TP1: {tp1}
+TP2: {tp2}
+TP3: {tp3}
+SL: {s.get('sl', 'N/A')}
 
-📊 Confidence: {s.get('confidence', 'N/A')}%
-🧠 AI Confidence: {s.get('engine_confidence', s.get('confidence', 'N/A'))}%
-🛡 Risk Score: {s.get('risk_score', 'N/A')} / 100 ({s.get('risk_level', 'N/A')})
-🔭 Multi-Timeframe: {s.get('multi_timeframe', 'N/A')}
-📉 Trend: {s.get('trend', 'N/A')}
-📦 Volume: {s.get('volume', 'N/A')}
-🌊 Volatility: {s.get('volatility_state', 'N/A')}
-🧱 Structure: {s.get('market_structure', s.get('structure', 'N/A'))}
-⚖️ Spot/Futures Score: {s.get('spot_score', 'N/A')} / {s.get('futures_score', 'N/A')}
-🧠 Smart Money: {s.get('smc', 'N/A')}
-⏱ Timeframe: {s.get('timeframe', 'N/A')}
+Confidence: {s.get('confidence', 'N/A')}%
+RR: {s.get('risk_reward', 'N/A')}
+Regime: {s.get('market_regime', s.get('adaptive_regime', 'N/A'))}
+Strategy: {s.get('strategy_name', s.get('setup_type', 'N/A'))}
+
+Why:
+{_compact_signal_reason(s)}
+
+Manage:
+Move SL to breakeven after TP1 or +0.6R.
+
+⚠️ Risk warning: Crypto trading is risky. Not financial advice.
 """
 def can_receive_signals(user):
     """

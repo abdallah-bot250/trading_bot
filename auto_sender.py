@@ -543,55 +543,44 @@ def _signal_target_ladder(signal):
     except Exception:
         return signal.get("tp"), signal.get("tp"), signal.get("tp")
 
-def _plan_signal_profile(plan):
-    plan = str(plan or "trial").lower()
-    if plan == "trial":
-        return "Free Trial: 2 preview signals only. Premium analysis unlocks with a paid plan."
-    if plan == "basic":
-        return "Basic: more signals with clear Entry, TP and SL."
-    if plan == "pro":
-        return "Pro: advanced confidence, support/resistance and market context."
-    if plan == "vip":
-        return "Elite: full signal quality plus automation tools when configured."
-    if plan == "pro_2y":
-        return "Pro 2 Years: highest access tier with all signal and automation tools."
-    return "Nexora signal access"
+def _compact_trade_reason(signal):
+    reason = str(signal.get("signal_quality_reason") or signal.get("reason") or "").strip()
+    if not reason:
+        reason = "Trend alignment + MTF confirmation + volume support."
+    reason = " ".join(reason.split())
+    if len(reason) > 120:
+        reason = reason[:117].rstrip() + "..."
+    return reason
+
 
 # ================= FORMAT =================
 def format_signal(signal, plan=None):
     tp1, tp2, tp3 = _signal_target_ladder(signal)
-    return f"""NEXORA AI TRADER SIGNAL
+    return f"""🚀 NEXORA AI SIGNAL
 
-Pair: {signal['pair']}
+Pair: {signal.get('pair', 'N/A')}
 Mode: {signal.get('type', 'FUTURES')}
-Direction: {signal['direction']}
-Timeframe: {signal.get('timeframe', 'N/A')}
+Direction: {signal.get('direction', 'N/A')}
+TF: {signal.get('timeframe', 'N/A')}
 
-Entry: {signal['entry']}
+Entry: {signal.get('entry', 'N/A')}
 TP1: {tp1}
 TP2: {tp2}
 TP3: {tp3}
-SL: {signal['sl']}
+SL: {signal.get('sl', 'N/A')}
 
-Support: {signal.get('nearest_support', signal.get('support', 'N/A'))}
-Resistance: {signal.get('nearest_resistance', signal.get('resistance', 'N/A'))}
-Risk/Reward: {signal.get('risk_reward', 'N/A')}
 Confidence: {signal.get('confidence', 'N/A')}%
-AI Confidence: {signal.get('engine_confidence', signal.get('confidence', 'N/A'))}%
-Final Score: {signal.get('final_score', 'N/A')} / 100
-
-Trend: {signal.get('trend', 'N/A')}
-EMA Alignment: {signal.get('ema_alignment', 'N/A')}
-RSI/Momentum: {signal.get('structure', signal.get('market_structure', 'N/A'))}
-Volume: {signal.get('volume', signal.get('volume_state', 'N/A'))}
-Market Regime: {signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))}
+RR: {signal.get('risk_reward', 'N/A')}
+Regime: {signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))}
 Strategy: {signal.get('strategy_name', signal.get('setup_type', 'N/A'))}
 
-Why this trade: {signal.get('signal_quality_reason', 'Strong support/resistance validation passed')}
-Target Basis: {signal.get('target_basis', 'Support/Resistance')}
-Plan Access: {_plan_signal_profile(plan)}
+Why:
+{_compact_trade_reason(signal)}
 
-Risk Warning: Crypto trading is risky. This is not financial advice. Use proper position size and never trade money you cannot afford to lose.
+Manage:
+Move SL to breakeven after TP1 or +0.6R.
+
+⚠️ Risk warning: Crypto trading is risky. Not financial advice.
 """
 
 # ================= ACCESS HELPERS =================
@@ -1465,6 +1454,7 @@ def run():
 
             for signal in signals:
                 log(f"Processing signal: {signal_log_summary(signal)}")
+                signal_sent_users = 0
 
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
@@ -1486,11 +1476,11 @@ def run():
 
                     # ===== PLAN FILTER =====
                     if not signal_allowed_for_plan(plan, signal):
-                        log(f"Signal filtered for plan {plan} -> {signal['pair']}")
+                        log(f"SIGNAL_PLAN_BLOCKED plan={plan} reason=plan_limits pair={signal.get('pair')}")
                         continue
 
                     if not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
-                        log(f"Signal type filtered for user {chat_id}: {signal.get('type')} disabled")
+                        log(f"SIGNAL_PLAN_BLOCKED plan={plan} reason=signal_type_disabled pair={signal.get('pair')}")
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
@@ -1509,7 +1499,7 @@ def run():
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:
-                        log(f"SIGNAL_SENT chat_id={chat_id} pair={signal['pair']} type={signal.get('type', 'FUTURES')}")
+                        signal_sent_users += 1
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
                         record_sent_signal(chat_id, plan, signal)
 
@@ -1562,6 +1552,8 @@ def run():
 
                         except Exception as e:
                             log(f"Auto trade failed for {chat_id}: {e}")
+
+                log(f"SIGNAL_SENT pair={signal.get('pair')} direction={signal.get('direction')} users={signal_sent_users}")
 
             time.sleep(GLOBAL_LOOP_SLEEP)
 

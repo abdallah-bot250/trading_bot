@@ -1331,7 +1331,8 @@ def dashboard():
                     WHERE ar.referrer_chat_id = %s
                       AND COALESCE(u.bot_active, 0) = 1
                 """, (chat_id,))
-                active_referrals = int(c.fetchone()[0] or 0)
+                active_row = c.fetchone() or {}
+                active_referrals = int((active_row.get("count") if hasattr(active_row, "get") else active_row[0]) or 0)
             except Exception as referral_error:
                 conn.rollback()
                 log(f"active referral metric unavailable: {referral_error}")
@@ -1342,7 +1343,8 @@ def dashboard():
                     WHERE referrer_chat_id = %s
                       AND status = 'approved'
                 """, (chat_id,))
-                paid_referrals = int(c.fetchone()[0] or 0)
+                paid_row = c.fetchone() or {}
+                paid_referrals = int((paid_row.get("count") if hasattr(paid_row, "get") else paid_row[0]) or 0)
             except Exception as referral_error:
                 conn.rollback()
                 log(f"paid referral metric unavailable: {referral_error}")
@@ -1359,6 +1361,26 @@ def dashboard():
             "spot_profit": 0,
             "futures_profit": 0,
         }
+        signal_performance = {
+            "total_signals": 0,
+            "active_signals": 0,
+            "closed_signals": 0,
+            "wins": 0,
+            "win_rate": 0,
+            "today_outcome": 0,
+            "avg_rr": None,
+            "best_strategy": "Not enough data yet",
+            "best_timeframe": "Not enough data yet",
+            "best_pair": "Not enough data yet",
+            "last_scan": "No scans yet",
+            "market_status": "Waiting for qualified setup",
+            "last_learning_update": "Not enough data yet",
+            "latest_reason": "Not enough data yet",
+            "latest_regime": "Not enough data yet",
+            "latest_strategy": "Not enough data yet",
+        }
+        recent_signals = []
+        performance_chart = {"labels": [], "values": []}
         if chat_id:
             try:
                 c.execute("""
@@ -1392,8 +1414,90 @@ def dashboard():
                         type_stats["futures_win_rate"] = win_rate_value
                         type_stats["futures_profit"] = round(float(row["profit"] or 0), 2)
             except Exception as stats_error:
+                conn.rollback()
                 log(f"spot_futures stats unavailable: {stats_error}")
 
+            try:
+                c.execute("""
+                    SELECT
+                        COUNT(*) AS total_signals,
+                        COUNT(*) FILTER (WHERE status = 'OPEN') AS active_signals,
+                        COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_signals,
+                        COUNT(*) FILTER (WHERE status = 'CLOSED' AND COALESCE(pnl, 0) > 0) AS wins,
+                        COALESCE(SUM(CASE WHEN created_at >= date_trunc('day', NOW()) THEN COALESCE(pnl, 0) ELSE 0 END), 0) AS today_outcome,
+                        MAX(created_at) AS last_scan
+                    FROM trades_log
+                    WHERE chat_id = %s
+                """, (chat_id,))
+                perf = c.fetchone() or {}
+                signal_performance["total_signals"] = int(perf.get("total_signals") or 0)
+                signal_performance["active_signals"] = int(perf.get("active_signals") or 0)
+                signal_performance["closed_signals"] = int(perf.get("closed_signals") or 0)
+                signal_performance["wins"] = int(perf.get("wins") or 0)
+                signal_performance["win_rate"] = round((signal_performance["wins"] / signal_performance["closed_signals"]) * 100, 2) if signal_performance["closed_signals"] else 0
+                signal_performance["today_outcome"] = round(float(perf.get("today_outcome") or 0), 2)
+                signal_performance["last_scan"] = perf.get("last_scan") or "No scans yet"
+                signal_performance["market_status"] = "Live monitoring" if signal_performance["total_signals"] else "Waiting for qualified setup"
+            except Exception as perf_error:
+                conn.rollback()
+                log(f"dashboard performance metrics unavailable: {perf_error}")
+
+            try:
+                c.execute("""
+                    SELECT pair, direction, entry, tp, sl, confidence, status, created_at, trade_type, pnl
+                    FROM trades_log
+                    WHERE chat_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 8
+                """, (chat_id,))
+                recent_signals = c.fetchall()
+                if recent_signals:
+                    latest = recent_signals[0]
+                    signal_performance["best_pair"] = latest.get("pair") or "Not enough data yet"
+                    signal_performance["latest_reason"] = f"{latest.get('direction') or 'Signal'} setup with tracked confidence {latest.get('confidence') or 'N/A'}%."
+            except Exception as recent_error:
+                conn.rollback()
+                log(f"dashboard recent signals unavailable: {recent_error}")
+
+            try:
+                c.execute("""
+                    SELECT COALESCE(pair, 'Unknown') AS pair,
+                           COUNT(*) AS closed_count,
+                           COUNT(*) FILTER (WHERE COALESCE(pnl, 0) > 0) AS wins
+                    FROM trades_log
+                    WHERE chat_id = %s AND status = 'CLOSED'
+                    GROUP BY COALESCE(pair, 'Unknown')
+                    HAVING COUNT(*) > 0
+                    ORDER BY (COUNT(*) FILTER (WHERE COALESCE(pnl, 0) > 0))::float / COUNT(*) DESC, COUNT(*) DESC
+                    LIMIT 1
+                """, (chat_id,))
+                best_pair_row = c.fetchone()
+                if best_pair_row:
+                    signal_performance["best_pair"] = best_pair_row.get("pair") or signal_performance["best_pair"]
+            except Exception as best_pair_error:
+                conn.rollback()
+                log(f"dashboard best pair unavailable: {best_pair_error}")
+
+            try:
+                c.execute("""
+                    SELECT to_char(created_at::date, 'MM-DD') AS label,
+                           COALESCE(SUM(COALESCE(pnl, 0)), 0) AS pnl
+                    FROM trades_log
+                    WHERE chat_id = %s
+                    GROUP BY created_at::date
+                    ORDER BY created_at::date DESC
+                    LIMIT 7
+                """, (chat_id,))
+                chart_rows = list(reversed(c.fetchall()))
+                performance_chart = {
+                    "labels": [row.get("label") for row in chart_rows],
+                    "values": [round(float(row.get("pnl") or 0), 2) for row in chart_rows],
+                }
+            except Exception as chart_error:
+                conn.rollback()
+                log(f"dashboard chart unavailable: {chart_error}")
+
+        log("DASHBOARD_METRICS_LOADED ok=True")
         is_linked = True if user.get("chat_id") else False
         telegram_link_token = create_telegram_link_token(c, user.get("email"))
         telegram_connect_link = f"{current_bot_link()}?start=link_{telegram_link_token}"
@@ -1454,6 +1558,10 @@ def dashboard():
             "bot_connected": is_linked,
             "free_signal_usage": free_signal_usage,
             "free_signal_limit": free_signal_limit,
+            "active_signals": signal_performance["active_signals"],
+            "total_signals": signal_performance["total_signals"],
+            "today_outcome": signal_performance["today_outcome"],
+            "real_win_rate": signal_performance["win_rate"],
         }
         notifications = []
         if not is_linked:
@@ -1514,6 +1622,9 @@ def dashboard():
             dashboard_widgets=dashboard_widgets,
             notifications=notifications,
             recent_activity=recent_activity,
+            signal_performance=signal_performance,
+            recent_signals=recent_signals,
+            performance_chart=performance_chart,
             bot_link=current_bot_link(),
             telegram_connect_link=telegram_connect_link
         )
@@ -2373,6 +2484,8 @@ def admin_dashboard():
         active_plans_count = basic_users + pro_users + vip_users + pro_2y_users
         ai_score = min(99, max(50, round(62 + (signal_win_rate * 0.25) + min(signals_total, 100) * 0.08 + (8 if signals_profit > 0 else 0), 2)))
         avg_signal_pnl = round(signals_profit / signals_closed, 2) if signals_closed else 0
+        telegram_delivery_rate = round((linked_users / total_users) * 100, 2) if total_users else 0
+        queue_monitor = payments_pending + pending_withdrawals + signals_open
 
         admin_overview = {
             "revenue": revenue,
@@ -2413,6 +2526,17 @@ def admin_dashboard():
             "todays_registrations": todays_registrations,
             "todays_payments": todays_payments,
             "worker_status": "configured" if os.environ.get("RAILWAY_SERVICE_NAME") or os.environ.get("DATABASE_URL") else "local",
+            "users_online": active_bots,
+            "revenue_today": round(float(safe_scalar("""
+                SELECT COALESCE(SUM(amount), 0)
+                FROM processed_payments
+                WHERE created_at >= CURRENT_DATE
+                  AND payment_status IN ('finished', 'confirmed')
+            """, default=0) or 0), 2),
+            "telegram_delivery_rate": telegram_delivery_rate,
+            "signal_success_rate": signal_win_rate,
+            "ai_engine_health": "healthy" if ai_score >= 65 else "warming_up",
+            "queue_monitor": queue_monitor,
         }
 
         user_rows = safe_rows("""
@@ -2436,6 +2560,18 @@ def admin_dashboard():
             ORDER BY id DESC
         """)
 
+        recent_payments = safe_rows("""
+            SELECT invoice_id, email, plan, status, amount, created_at
+            FROM payment_invoices
+            ORDER BY created_at DESC
+            LIMIT 8
+        """)
+        recent_admin_signals = safe_rows("""
+            SELECT chat_id, pair, direction, entry, tp, sl, confidence, status, created_at
+            FROM trades_log
+            ORDER BY created_at DESC
+            LIMIT 8
+        """)
         coupons = safe_rows("""
             SELECT id, code, discount_percent, active, expires_at, max_redemptions, redemption_count, created_at
             FROM coupons
@@ -2465,6 +2601,8 @@ def admin_dashboard():
             users=users,
             withdrawals=withdrawals,
             coupons=coupons,
+            recent_payments=recent_payments,
+            recent_admin_signals=recent_admin_signals,
             admin_overview=admin_overview
         )
 
@@ -2535,8 +2673,16 @@ def admin_dashboard():
                 "todays_registrations": 0,
                 "todays_payments": 0,
                 "worker_status": "unknown",
+                "users_online": 0,
+                "revenue_today": 0,
+                "telegram_delivery_rate": 0,
+                "signal_success_rate": 0,
+                "ai_engine_health": "unknown",
+                "queue_monitor": 0,
                 "error": str(e),
-            }
+            },
+            recent_payments=[],
+            recent_admin_signals=[]
         )
 
 

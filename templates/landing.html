@@ -526,6 +526,11 @@ main > .section:nth-of-type(2) {
   }
 }
 
+
+
+/* Sale-ready landing additions */
+.nx-preview{position:relative;overflow:hidden}.nx-preview::before{content:"";position:absolute;inset:-30%;background:radial-gradient(circle,rgba(32,214,138,.16),transparent 42%);animation:nxFloat 8s ease-in-out infinite}.nx-dash-preview{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:16px}.nx-dash-preview .card{min-height:150px}.nx-roadmap{counter-reset:road}.nx-roadmap .card::before{counter-increment:road;content:"0" counter(road);display:inline-flex;width:38px;height:38px;align-items:center;justify-content:center;border-radius:12px;background:rgba(32,214,138,.14);color:#20d68a;font-weight:900;margin-bottom:12px}.nx-security-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}@keyframes nxFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(20px)}}@media(max-width:800px){.nx-dash-preview,.nx-security-list{grid-template-columns:1fr}}
+
 </style>
 <!-- TikTok Pixel Code Start -->
 <script>
@@ -698,6 +703,65 @@ main > .section:nth-of-type(2) {
       <div class="risk"><strong>Risk disclaimer:</strong> Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.</div>
     </div>
   </section>
+
+
+  <section class="section nx-preview">
+    <div class="container">
+      <div class="section-head"><span class="badge">Live product feel</span><h2>Animated dashboard preview built around real product workflows.</h2><p>No fake profit guarantees. The interface highlights plan status, Telegram linking, signal quality, and performance tracking.</p></div>
+      <div class="nx-dash-preview">
+        <div class="card"><h3>Account command center</h3><p>Plan, Telegram status, bot status, free usage, and upgrade paths stay visible without changing the backend flow.</p></div>
+        <div class="card"><h3>Signal intelligence</h3><p>Adaptive engine output can show direction, confidence, risk/reward, regime, and compact trade reasoning.</p></div>
+        <div class="card"><h3>Performance tracking</h3><p>When tracked trades exist, users see outcomes and recent history. Otherwise they get a clean empty state.</p></div>
+        <div class="card"><h3>Admin control</h3><p>Operators can review users, payments, signal health, queue state, and Telegram delivery visibility.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head"><span class="badge">Trading performance</span><h2>Performance is displayed only when tracked data exists.</h2><p>Nexora avoids fake results. New accounts see clear empty states until real signals and closed outcomes are recorded.</p></div>
+      <div class="grid-3">
+        <div class="card"><h3>Signal quality first</h3><p>The engine can skip the market when no qualified setup exists.</p></div>
+        <div class="card"><h3>Risk context</h3><p>Each professional signal focuses on Entry, TP, SL, Confidence and RR.</p></div>
+        <div class="card"><h3>Outcome tracking</h3><p>Closed tracked trades can power win rate and P/L summaries.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head"><span class="badge">Security</span><h2>Built with production safety in mind.</h2></div>
+      <div class="nx-security-list">
+        <div class="card"><h3>Official bot check</h3><p>Users verify Telegram through the official bot-check page.</p></div>
+        <div class="card"><h3>No withdrawal keys</h3><p>Users are warned to keep withdrawal permission disabled on exchange APIs.</p></div>
+        <div class="card"><h3>Payment traceability</h3><p>Invoices and manual payment paths remain visible for operational review.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head"><span class="badge">Roadmap</span><h2>A clear path for buyers and operators.</h2></div>
+      <div class="grid-4 nx-roadmap">
+        <div class="card"><h3>Signal quality</h3><p>Continue tuning adaptive strategy scoring from real closed outcomes.</p></div>
+        <div class="card"><h3>Admin analytics</h3><p>Expand operational dashboards as more production data arrives.</p></div>
+        <div class="card"><h3>User education</h3><p>Improve risk education and signal methodology pages.</p></div>
+        <div class="card"><h3>Automation controls</h3><p>Keep API execution optional and guarded by plan and risk limits.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head"><span class="badge">Testimonials</span><h2>Use verified customer quotes when available.</h2><p>Until real testimonials are approved, this section stays honest and product-focused.</p></div>
+      <div class="grid-3">
+        <div class="card"><h3>Transparent product</h3><p>Clear risk wording, plan visibility, and official Telegram linking.</p></div>
+        <div class="card"><h3>Operationally ready</h3><p>Admin pages, invoice history, manual payments, and diagnostics are included.</p></div>
+        <div class="card"><h3>Buyer-friendly</h3><p>The codebase keeps existing routes and production flows stable.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section class="section" id="faq">
     <div class="container">
       <div class="section-head"><span class="badge">FAQ</span><h2>Common questions before subscribing.</h2></div>

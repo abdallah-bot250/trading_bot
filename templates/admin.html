@@ -598,6 +598,11 @@ tbody tr:hover {
         display: block;
     }
 }
+
+
+/* Sale-ready admin polish */
+.nx-admin-kpi,.nx-admin-tables{display:grid;gap:16px;margin-top:22px}.nx-admin-kpi{grid-template-columns:repeat(4,minmax(0,1fr))}.nx-admin-card,.nx-admin-table{background:linear-gradient(145deg,rgba(8,18,34,.88),rgba(13,28,50,.72));border:1px solid rgba(148,163,184,.16);border-radius:20px;box-shadow:0 22px 60px rgba(0,0,0,.3);padding:20px;backdrop-filter:blur(18px)}.nx-admin-card span{display:block;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.nx-admin-card strong{display:block;margin-top:10px;font-size:28px}.nx-admin-card small{display:block;color:#94a3b8;margin-top:8px}.nx-admin-tables{grid-template-columns:1fr 1fr}.nx-admin-table{overflow:auto}.nx-admin-table table{width:100%;border-collapse:collapse}.nx-admin-table th,.nx-admin-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left}.nx-admin-table th{color:#94a3b8;font-size:12px;text-transform:uppercase}.nx-admin-empty{padding:20px;color:#94a3b8;border:1px dashed rgba(148,163,184,.2);border-radius:14px;text-align:center}@media(max-width:920px){.nx-admin-kpi,.nx-admin-tables{grid-template-columns:1fr 1fr}}@media(max-width:620px){.nx-admin-kpi,.nx-admin-tables{grid-template-columns:1fr}}
+
 </style>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
@@ -729,6 +734,42 @@ tbody tr:hover {
                 <strong>${{ pending_withdrawal_amount }}</strong>
             </div>
         </aside>
+    </section>
+
+
+
+    <section class="nx-admin-kpi" aria-label="Enterprise admin KPIs">
+        <div class="nx-admin-card"><span>Users Online</span><strong>{{ admin_overview.users_online }}</strong><small>Based on active bot users.</small></div>
+        <div class="nx-admin-card"><span>Revenue Today</span><strong>${{ admin_overview.revenue_today }}</strong><small>From confirmed processed payments.</small></div>
+        <div class="nx-admin-card"><span>Active Subscribers</span><strong>{{ admin_overview.premium_users }}</strong><small>Paid users with active subscription state.</small></div>
+        <div class="nx-admin-card"><span>Telegram Delivery Rate</span><strong>{{ admin_overview.telegram_delivery_rate }}%</strong><small>Linked Telegram accounts / total users.</small></div>
+        <div class="nx-admin-card"><span>Signal Success Rate</span><strong>{{ admin_overview.signal_success_rate }}%</strong><small>Closed trades with positive P/L.</small></div>
+        <div class="nx-admin-card"><span>AI Engine Health</span><strong>{{ admin_overview.ai_engine_health }}</strong><small>Derived from tracked signal score.</small></div>
+        <div class="nx-admin-card"><span>Queue Monitor</span><strong>{{ admin_overview.queue_monitor }}</strong><small>Pending payments, withdrawals, and open signals.</small></div>
+        <div class="nx-admin-card"><span>System</span><strong>{{ admin_overview.database_status }}</strong><small>Database status and worker checks.</small></div>
+    </section>
+
+    <section class="nx-admin-tables" aria-label="Recent operations">
+        <div class="nx-admin-table">
+            <h3>Recent Payments</h3>
+            {% if recent_payments %}
+            <table><thead><tr><th>Invoice</th><th>Email</th><th>Plan</th><th>Status</th><th>Amount</th></tr></thead><tbody>
+            {% for p in recent_payments %}
+                <tr><td>{{ p[0] or '-' }}</td><td>{{ p[1] or '-' }}</td><td>{{ p[2] or '-' }}</td><td>{{ p[3] or '-' }}</td><td>${{ p[4] or 0 }}</td></tr>
+            {% endfor %}
+            </tbody></table>
+            {% else %}<div class="nx-admin-empty">No payment records yet.</div>{% endif %}
+        </div>
+        <div class="nx-admin-table">
+            <h3>Recent Signals</h3>
+            {% if recent_admin_signals %}
+            <table><thead><tr><th>Pair</th><th>Direction</th><th>Entry</th><th>TP / SL</th><th>Confidence</th><th>Status</th></tr></thead><tbody>
+            {% for s in recent_admin_signals %}
+                <tr><td>{{ s[1] or '-' }}</td><td>{{ s[2] or '-' }}</td><td>{{ s[3] or '-' }}</td><td>{{ s[4] or '-' }} / {{ s[5] or '-' }}</td><td>{{ s[6] or '-' }}%</td><td>{{ s[7] or '-' }}</td></tr>
+            {% endfor %}
+            </tbody></table>
+            {% else %}<div class="nx-admin-empty">No tracked signals yet.</div>{% endif %}
+        </div>
     </section>
 
     <section class="stats" aria-label="Plan overview">
