@@ -330,14 +330,23 @@ def parse_binance_klines_to_df(data):
         if df.empty:
             return None
 
-        df = df[[0, 1, 2, 3, 4, 5]]
-        df.columns = ["time", "open", "high", "low", "close", "volume"]
+        # Binance klines contain base volume at index 5 and quote volume at index 7.
+        # Quote volume is more stable across assets and avoids false LOW_LIQUIDITY
+        # decisions when comparing cheap coins with large caps.
+        cols = [0, 1, 2, 3, 4, 5]
+        has_quote_volume = df.shape[1] > 7
+        if has_quote_volume:
+            cols.append(7)
+        df = df[cols]
+        df.columns = ["time", "open", "high", "low", "close", "volume"] + (["quote_volume"] if has_quote_volume else [])
 
         df["open"] = df["open"].astype(float)
         df["high"] = df["high"].astype(float)
         df["low"] = df["low"].astype(float)
         df["close"] = df["close"].astype(float)
         df["volume"] = df["volume"].astype(float)
+        if "quote_volume" in df.columns:
+            df["quote_volume"] = df["quote_volume"].astype(float)
 
         df = df.sort_values("time").reset_index(drop=True)
 
@@ -550,13 +559,60 @@ def trend_strength(df):
 
 
 # ================= VOLUME =================
+def _volume_series(df):
+    """Return the most reliable volume series for relative checks.
+
+    Binance/Bybit klines expose both base volume and quote volume. Quote volume
+    is better for cross-symbol liquidity quality, while base volume can make
+    low-priced assets look artificially large or tiny.
+    """
+    try:
+        if df is not None and "quote_volume" in df.columns:
+            series = pd.to_numeric(df["quote_volume"], errors="coerce")
+            if series.dropna().tail(20).sum() > 0:
+                return series
+        return pd.to_numeric(df["volume"], errors="coerce")
+    except Exception:
+        return pd.Series(dtype="float64")
+
+
+def robust_volume_profile(df, lookback=24):
+    """Robust relative-volume profile based on closed candles only.
+
+    Uses the previous candles as the baseline and blends median/mean so a single
+    huge spike does not make the next normal candle look like 0.02x liquidity.
+    This prevents the engine from incorrectly rejecting large-cap pairs.
+    """
+    try:
+        series = _volume_series(df).dropna()
+        if len(series) < max(8, lookback // 2):
+            return {"volume_ratio": 1.0, "volume_state": "UNKNOWN", "volume_score": 50}
+        current = _safe_float(series.iloc[-1])
+        history = series.iloc[-(lookback + 1):-1] if len(series) > lookback else series.iloc[:-1]
+        history = history[history > 0]
+        if current <= 0 or history.empty:
+            return {"volume_ratio": 0.0, "volume_state": "THIN", "volume_score": 38}
+        median_ref = _safe_float(history.median())
+        mean_ref = _safe_float(history.mean())
+        # Use the larger stable reference, but cap extreme spike influence.
+        ref = max(median_ref, min(mean_ref, median_ref * 2.5 if median_ref > 0 else mean_ref))
+        ratio = current / ref if ref > 0 else 0.0
+        if ratio >= 1.35:
+            state, score = "EXPANSION", 82
+        elif ratio >= 1.05:
+            state, score = "STRONG", 72
+        elif ratio >= 0.55:
+            state, score = "NORMAL", 58
+        else:
+            state, score = "THIN", 38
+        return {"volume_ratio": round(ratio, 3), "volume_state": state, "volume_score": score}
+    except Exception:
+        return {"volume_ratio": 0.0, "volume_state": "UNKNOWN", "volume_score": 45}
+
+
 def volume_strength(df):
-    avg_volume = df["volume"].rolling(20).mean()
-
-    if pd.notna(avg_volume.iloc[-1]) and df["volume"].iloc[-1] > avg_volume.iloc[-1] * 1.08:
-        return "STRONG"
-
-    return "WEAK"
+    profile = robust_volume_profile(df)
+    return "STRONG" if profile.get("volume_state") in ["STRONG", "EXPANSION"] else "WEAK"
 
 
 # ================= SMART MONEY =================
@@ -2178,9 +2234,10 @@ def detect_symbol_market_regime(symbol, interval, df):
         atr_series = atr(df).dropna()
         atr_val = _safe_float(atr_series.iloc[-1] if len(atr_series) else 0)
         atr_ratio = atr_val / close if close > 0 else 0
-        avg_vol = _safe_float(df["volume"].rolling(20).mean().iloc[-1])
-        last_vol = _safe_float(df["volume"].iloc[-1])
-        volume_ratio = last_vol / avg_vol if avg_vol > 0 else 0
+        volume_profile = robust_volume_profile(df)
+        volume_ratio = _safe_float(volume_profile.get("volume_ratio"), 0)
+        volume_state = volume_profile.get("volume_state", "UNKNOWN")
+        volume_score = _safe_float(volume_profile.get("volume_score"), 45)
         levels = calculate_support_resistance(df)
         support = nearest_support(close, levels.get("support", []))
         resistance = nearest_resistance(close, levels.get("resistance", []))
@@ -2206,6 +2263,8 @@ def detect_symbol_market_regime(symbol, interval, df):
             "atr": atr_val,
             "atr_ratio": atr_ratio,
             "volume_ratio": volume_ratio,
+            "volume_state": volume_state,
+            "volume_score": volume_score,
             "support": support,
             "resistance": resistance,
             "recent_high": recent_high,
@@ -2218,8 +2277,15 @@ def detect_symbol_market_regime(symbol, interval, df):
             "short_mtf": short_mtf,
         }
 
-        if volume_ratio and volume_ratio < 0.35:
-            return {**base, "regime": "LOW_LIQUIDITY", "reason": f"volume ratio {round(volume_ratio, 2)} too low"}
+        # Treat very poor relative volume as a hard block, but do not reject
+        # large-cap trend setups only because Binance.US/quote source reports a
+        # temporarily thin candle. Thin-but-trending markets are handled later
+        # by quality caps, not by inventing a trade.
+        if volume_ratio and volume_ratio < 0.12:
+            trend_stack = (ema20v > ema50v > ema200v) or (ema20v < ema50v < ema200v)
+            mtf_confirmed = long_mtf.get("state") in ["CONFIRMED", "PARTIAL"] or short_mtf.get("state") in ["CONFIRMED", "PARTIAL"]
+            if not (trend_stack and mtf_confirmed and volume_ratio >= 0.05):
+                return {**base, "regime": "LOW_LIQUIDITY", "reason": f"volume ratio {round(volume_ratio, 2)} too low"}
         if atr_ratio > 0.06 or candle_range > max(atr_val * 3.0, close * 0.035):
             return {**base, "regime": "HIGH_VOLATILITY", "reason": f"ATR ratio {round(atr_ratio, 4)} too high"}
         if volume_ratio >= 1.25 and close > prev_high and rsi_now < 74:
@@ -2526,8 +2592,15 @@ def finalize_adaptive_signal(signal, df, paid=True):
         quality_ok, quality_reason = apply_signal_quality_report(signal)
         if not quality_ok:
             return None, quality_reason
-        if not predict_trade(signal):
-            return None, "AI model rejected adaptive signal"
+        if _safe_float(signal.get("display_confidence"), 0) < 70:
+            return None, f"display confidence {signal.get('display_confidence')} below 70"
+        try:
+            from ai_model import explain_predict_trade
+            ai_ok, ai_reason = explain_predict_trade(signal)
+        except Exception:
+            ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
+        if not ai_ok:
+            return None, f"AI model rejected adaptive signal: {ai_reason}"
         return signal, None
     except Exception as e:
         return None, f"adaptive finalize error: {e}"
@@ -2838,6 +2911,8 @@ def generate_signal(symbol, interval="5m"):
     quality_ok, quality_reason = apply_signal_quality_report(signal)
     if not quality_ok:
         return skip_signal(symbol, interval, quality_reason)
+    if _safe_float(signal.get("display_confidence"), 0) < 70:
+        return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 
@@ -3087,12 +3162,16 @@ def generate_free_signal(symbol, interval="5m"):
     quality_ok, quality_reason = apply_signal_quality_report(signal)
     if not quality_ok:
         return skip_signal(symbol, interval, quality_reason)
+    if _safe_float(signal.get("display_confidence"), 0) < 70:
+        return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 
     try:
-        if not predict_trade(signal):
-            return None
+        from ai_model import explain_predict_trade
+        ai_ok, ai_reason = explain_predict_trade(signal)
+        if not ai_ok:
+            return skip_signal(symbol, interval, f"AI model rejected: {ai_reason}")
     except Exception as e:
         print(f"AI model error in generate_free_signal {symbol} {interval}: {e}")
         return None
@@ -3119,11 +3198,12 @@ def get_top_free_signals(limit=2):
             try:
                 signal = generate_free_signal(symbol, tf)
                 if signal:
+                    display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)))
                     signal["ranking_score"] = (
-                        signal["confidence"]
+                        display_conf
                         + abs(signal["score"] * 2)
                         + max(0, 20 - int(signal.get("risk_score", 50) / 4))
-                        + (signal.get("engine_confidence", signal["confidence"]) * 0.18)
+                        + (_safe_float(signal.get("engine_confidence", display_conf)) * 0.18)
                         + (signal.get("multi_timeframe_score", 50) * 0.12)
                         + (6 if signal["volume"] == "STRONG" else 0)
                         + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
@@ -3136,7 +3216,7 @@ def get_top_free_signals(limit=2):
                     if SIGNAL_DEBUG_LOGS:
                         print(
                             f"CANDIDATE_SIGNAL symbol={signal['pair']} tf={signal['timeframe']} "
-                            f"direction={signal['direction']} conf={signal['confidence']} rr={signal.get('risk_reward')}"
+                            f"direction={signal['direction']} display_conf={signal.get('display_confidence', signal.get('confidence'))} rr={signal.get('risk_reward')}"
                         )
             except Exception as e:
                 print(f"Signal generation error for {symbol} {tf}: {e}")

@@ -97,21 +97,44 @@ def detect_trend_profile(df):
     }
 
 
+def _volume_series(df):
+    try:
+        if df is not None and "quote_volume" in df.columns:
+            qv = df["quote_volume"].astype(float)
+            if qv.dropna().tail(20).sum() > 0:
+                return qv
+        return df["volume"].astype(float)
+    except Exception:
+        return np.array([])
+
+
 def analyze_volume(df):
     if df is None or len(df) < 25:
         return {"volume_state": "UNKNOWN", "volume_score": 45, "volume_ratio": 0}
 
-    current_volume = _safe_float(df["volume"].iloc[-1])
-    average_volume = _safe_float(df["volume"].tail(20).mean())
-    ratio = current_volume / average_volume if average_volume > 0 else 0
+    try:
+        series = _volume_series(df)
+        if len(series) < 10:
+            return {"volume_state": "UNKNOWN", "volume_score": 45, "volume_ratio": 0}
+        current_volume = _safe_float(series.iloc[-1])
+        history = series.iloc[-25:-1] if len(series) >= 25 else series.iloc[:-1]
+        history = history[history > 0]
+        if current_volume <= 0 or len(history) == 0:
+            return {"volume_state": "THIN", "volume_score": 38, "volume_ratio": 0}
+        median_ref = _safe_float(history.median())
+        mean_ref = _safe_float(history.mean())
+        reference = max(median_ref, min(mean_ref, median_ref * 2.5 if median_ref > 0 else mean_ref))
+        ratio = current_volume / reference if reference > 0 else 0
+    except Exception:
+        ratio = 0
 
     if ratio >= 1.35:
         state = "EXPANSION"
         score = 82
-    elif ratio >= 1.08:
+    elif ratio >= 1.05:
         state = "STRONG"
         score = 72
-    elif ratio >= 0.75:
+    elif ratio >= 0.55:
         state = "NORMAL"
         score = 58
     else:

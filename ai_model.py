@@ -189,3 +189,50 @@ def predict_trade(signal):
     except Exception as e:
         print(f"AI ERROR: {e}")
         return False
+
+def explain_predict_trade(signal):
+    """Return (allowed, reason) for the AI validation gate.
+
+    This keeps the legacy predict_trade decision but exposes the blocking reason
+    so the signal engine is no longer a black box in production logs.
+    """
+    try:
+        entry = float(signal.get("entry", 0))
+        tp = float(signal.get("tp", 0))
+        sl = float(signal.get("sl", 0))
+        direction = signal.get("direction")
+        confidence = float(signal.get("display_confidence", signal.get("confidence", 0)) or 0)
+        rr = float(signal.get("risk_reward", 0) or 0)
+        volume_state = str(signal.get("volume_state", signal.get("volume", ""))).upper()
+        risk_level = str(signal.get("risk_level", "")).upper()
+        trend_power = signal.get("trend_power")
+        structure = signal.get("structure")
+        tf = signal.get("timeframe")
+
+        if entry <= 0 or tp <= 0 or sl <= 0:
+            return False, "invalid entry/tp/sl"
+        if direction == "LONG" and not (tp > entry and sl < entry):
+            return False, "invalid LONG geometry"
+        if direction == "SHORT" and not (tp < entry and sl > entry):
+            return False, "invalid SHORT geometry"
+        if direction not in ["LONG", "SHORT"]:
+            return False, "invalid direction"
+        if rr and rr < 1.5:
+            return False, f"RR {round(rr, 2)} below 1.5"
+        if confidence < 70:
+            return False, f"display confidence {round(confidence, 2)} below 70"
+        if risk_level == "HIGH" and confidence < 82:
+            return False, "high risk requires stronger confidence"
+        if volume_state == "THIN" and confidence < 78:
+            return False, "thin volume requires stronger confirmation"
+        if trend_power == "STRONG_BULL" and direction == "SHORT":
+            return False, "SHORT against strong bull trend"
+        if trend_power == "STRONG_BEAR" and direction == "LONG":
+            return False, "LONG against strong bear trend"
+        if structure == "MID_RANGE" and tf == "5m" and confidence < 82:
+            return False, "5m mid-range setup lacks edge"
+
+        allowed = predict_trade({**signal, "confidence": confidence})
+        return (True, "approved") if allowed else (False, "legacy score below threshold")
+    except Exception as e:
+        return False, f"AI explain error: {e}"

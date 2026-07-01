@@ -1513,8 +1513,8 @@ def get_monster_signals():
             # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
-                    if float(s.get("confidence", 0)) < 75:
-                        log(f"Ultra mode rejected: {s.get('pair')} conf={s.get('confidence')}")
+                    if signal_display_confidence(s) < 75:
+                        log(f"Ultra mode rejected: {s.get('pair')} display_conf={signal_display_confidence(s)}")
                         continue
                 except:
                     continue
@@ -1526,7 +1526,7 @@ def get_monster_signals():
         final_signals = sorted(
             final_signals,
             key=lambda x: (
-                float(x.get("confidence", 0)),
+                signal_display_confidence(x),
                 abs(float(x.get("score", 0)))
             ),
             reverse=True
