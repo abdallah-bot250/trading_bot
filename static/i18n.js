@@ -207,7 +207,7 @@
     update(); setInterval(update, 60000);
   }
   function initTradingViewPreview(){
-    if(!document.querySelector('.hero') || document.querySelector('.nx-tv-wrap')) return;
+    if(!document.querySelector('.hero') || document.querySelector('.nx-tv-wrap') || document.querySelector('.nx-trading-terminal')) return;
     const target=document.querySelector('main .section, .hero');
     if(!target) return;
     const wrap=document.createElement('section');
