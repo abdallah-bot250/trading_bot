@@ -74,12 +74,19 @@ def signal_log_summary(signal):
         return (
             f"pair={signal.get('pair')} direction={signal.get('direction')} "
             f"type={signal.get('type', 'N/A')} tf={signal.get('timeframe', 'N/A')} "
-            f"conf={signal.get('confidence')} rr={signal.get('risk_reward')} "
+            f"display_conf={signal.get('display_confidence', signal.get('confidence'))} rr={signal.get('risk_reward')} "
             f"regime={signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))} "
             f"strategy={signal.get('strategy_name', signal.get('setup_type', 'N/A'))}"
         )
     except Exception:
         return "signal_summary_unavailable"
+
+
+def signal_display_confidence(signal):
+    try:
+        return float(signal.get("display_confidence", signal.get("confidence", 0)) or 0)
+    except Exception:
+        return 0.0
 
 
 def log_unlinked_user_once(email):
@@ -535,12 +542,10 @@ def record_sent_signal(chat_id, plan, signal):
     try:
         conn = db()
         c = conn.cursor()
-        c.execute("""
-        INSERT INTO signal_log (
-            chat_id, plan, pair, direction, signal_type, entry, tp, sl, confidence, status
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'SENT')
-        RETURNING id
-        """, (
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
+        columns = {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+        insert_columns = ["chat_id", "plan", "pair", "direction", "signal_type", "entry", "tp", "sl", "status"]
+        values = [
             str(chat_id),
             str(plan or "trial"),
             signal.get("pair"),
@@ -549,8 +554,17 @@ def record_sent_signal(chat_id, plan, signal):
             float(signal.get("entry", 0)),
             float(signal.get("tp", 0)),
             float(signal.get("sl", 0)),
-            float(signal.get("display_confidence", signal.get("confidence", 0))),
-        ))
+            "SENT",
+        ]
+        if "confidence" in columns:
+            insert_columns.insert(-1, "confidence")
+            values.insert(-1, float(signal.get("display_confidence", signal.get("confidence", 0))))
+        placeholders = ", ".join(["%s"] * len(insert_columns))
+        c.execute(f"""
+        INSERT INTO signal_log ({", ".join(insert_columns)})
+        VALUES ({placeholders})
+        RETURNING id
+        """, tuple(values))
         row = c.fetchone()
         conn.commit()
         conn.close()
@@ -1051,6 +1065,10 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         entry = float(signal["entry"])
         tp = float(signal["tp"])
         sl = float(signal["sl"])
+        display_confidence = signal_display_confidence(signal)
+        if display_confidence < 70:
+            log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
+            return None, "Auto trade rejected: display confidence below 70"
         freshness_ok, freshness_reason, live_price = validate_signal_entry_freshness(signal, context="AUTO_TRADE")
         if not freshness_ok:
             return None, f"Auto trade rejected by entry freshness guard: {freshness_reason}"
@@ -1627,6 +1645,10 @@ def run():
             for signal in signals:
                 log(f"Processing signal: {signal_log_summary(signal)}")
                 signal_sent_users = 0
+                display_confidence = signal_display_confidence(signal)
+                if display_confidence < 70:
+                    log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
+                    continue
 
                 for user in users:
                     chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
@@ -1675,7 +1697,7 @@ def run():
 
                     if sent_ok:
                         signal_sent_users += 1
-                        write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal['confidence']}")
+                        write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")
                         record_sent_signal(chat_id, plan, signal)
 
                         if plan == "trial":

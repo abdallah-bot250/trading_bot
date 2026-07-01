@@ -1443,13 +1443,29 @@ def dashboard():
                 log(f"dashboard performance metrics unavailable: {perf_error}")
 
             try:
+                confidence_expr = "NULL AS confidence"
+                try:
+                    c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("trades_log",))
+                    trade_columns = {
+                        (row.get("column_name") if hasattr(row, "get") else row[0])
+                        for row in (c.fetchall() or [])
+                    }
+                    if "display_confidence" in trade_columns:
+                        confidence_expr = "display_confidence AS confidence"
+                    elif "final_score" in trade_columns:
+                        confidence_expr = "final_score AS confidence"
+                    elif "confidence" in trade_columns:
+                        confidence_expr = "confidence"
+                except Exception as column_error:
+                    conn.rollback()
+                    log(f"dashboard signal confidence column detection unavailable: {column_error}")
                 c.execute("""
-                    SELECT pair, direction, entry, tp, sl, confidence, status, created_at, trade_type, pnl
+                    SELECT pair, direction, entry, tp, sl, {confidence_expr}, status, created_at, trade_type, pnl
                     FROM trades_log
                     WHERE chat_id = %s
                     ORDER BY created_at DESC
                     LIMIT 8
-                """, (chat_id,))
+                """.format(confidence_expr=confidence_expr), (chat_id,))
                 recent_signals = c.fetchall()
                 if recent_signals:
                     latest = recent_signals[0]

@@ -1174,7 +1174,7 @@ def _selected_signal_summary(signals):
             "symbol": s.get("pair"),
             "timeframe": s.get("timeframe"),
             "direction": s.get("direction"),
-            "confidence": s.get("confidence"),
+            "display_confidence": s.get("display_confidence", s.get("confidence")),
             "rr": s.get("risk_reward"),
         }
         for s in (signals or [])
