@@ -2026,6 +2026,88 @@ def _bounded(value, low=0, high=100):
     return max(low, min(high, value))
 
 
+def build_signal_quality_report(signal):
+    try:
+        confidence = _safe_float(signal.get("confidence"), 0)
+        volume_score = _safe_float(signal.get("volume_score"), 50)
+        risk_score = _safe_float(signal.get("risk_score"), 50)
+        mtf_score = _safe_float(signal.get("multi_timeframe_score"), 50)
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        volume_state = str(signal.get("volume_state") or "").upper()
+        risk_level = str(signal.get("risk_level") or ("LOW" if risk_score <= 35 else "MEDIUM" if risk_score <= 60 else "HIGH")).upper()
+        mtf_state = str(signal.get("multi_timeframe") or "").upper()
+        volume_label = signal.get("volume_state") or signal.get("volume") or "UNKNOWN"
+
+        if rr < 1.5:
+            return None, f"RR {round(rr, 2)} below 1.5"
+
+        rr_score = 95 if rr >= 2.4 else 88 if rr >= 2.0 else 80 if rr >= 1.8 else 72
+        risk_component = max(0, 100 - risk_score)
+        final_score = (
+            confidence * 0.34
+            + volume_score * 0.18
+            + risk_component * 0.20
+            + mtf_score * 0.16
+            + rr_score * 0.12
+        )
+        final_score = int(round(_bounded(final_score, 0, 100)))
+
+        display_confidence = int(round(confidence * 0.70 + final_score * 0.30))
+        cap = 94
+        cap_reason = "none"
+        thin_volume = volume_state == "THIN" or volume_score < 45
+        high_risk = risk_level == "HIGH"
+
+        if thin_volume and high_risk:
+            cap = 68
+            cap_reason = "thin_volume_high_risk"
+        elif high_risk:
+            cap = 72
+            cap_reason = "high_risk"
+        elif thin_volume:
+            cap = 78
+            cap_reason = "thin_volume"
+
+        strong_volume = volume_state in ["STRONG", "EXPANSION"] or volume_score >= 72
+        confirmed_mtf = mtf_state in ["CONFIRMED", "STACKED_CONFIRMATION"] or mtf_score >= 68
+        excellent_rr = rr >= 2.2
+        low_or_medium_risk = risk_level in ["LOW", "MEDIUM"]
+        if not (strong_volume and low_or_medium_risk and confirmed_mtf and excellent_rr):
+            cap = min(cap, 94)
+            if cap_reason == "none":
+                cap_reason = "95_plus_requires_volume_risk_mtf_rr"
+
+        display_confidence = int(_bounded(min(display_confidence, cap), 1, 99))
+        report = {
+            "display_confidence": display_confidence,
+            "final_score": final_score,
+            "risk_level": risk_level,
+            "volume_gate": volume_label,
+            "confidence_cap_reason": cap_reason,
+        }
+        return report, None
+    except Exception as e:
+        return None, f"quality report error: {e}"
+
+
+def apply_signal_quality_report(signal):
+    report, reason = build_signal_quality_report(signal)
+    if not report:
+        return False, reason
+    signal["quality_report"] = report
+    signal["display_confidence"] = report["display_confidence"]
+    signal["final_score"] = report["final_score"]
+    signal["risk_level"] = report["risk_level"]
+    signal["volume_gate"] = report["volume_gate"]
+    signal["confidence_cap_reason"] = report["confidence_cap_reason"]
+    print(
+        f"SIGNAL_QUALITY pair={signal.get('pair')} display_conf={report['display_confidence']} "
+        f"final={report['final_score']} risk={report['risk_level']} "
+        f"volume={report['volume_gate']} cap={report['confidence_cap_reason']}"
+    )
+    return True, None
+
+
 def _recent_closed_trades(limit=120):
     try:
         path = os.path.join(os.path.dirname(__file__), "trades.json")
@@ -2439,9 +2521,11 @@ def finalize_adaptive_signal(signal, df, paid=True):
             "trend_score": ai_engine_report["trend_score"],
             "ema_alignment": ai_engine_report["ema_alignment"],
             "ai_engine": ai_engine_report,
-            "final_score": signal.get("confidence"),
             "final_score_reason": signal.get("signal_quality_reason"),
         })
+        quality_ok, quality_reason = apply_signal_quality_report(signal)
+        if not quality_ok:
+            return None, quality_reason
         if not predict_trade(signal):
             return None, "AI model rejected adaptive signal"
         return signal, None
@@ -2751,6 +2835,11 @@ def generate_signal(symbol, interval="5m"):
     if score_report["final_score"] < required_score:
         return skip_signal(symbol, interval, f"final score {score_report['final_score']} below {required_score}: {score_report['final_score_reason']}")
     signal.update(score_report)
+    quality_ok, quality_reason = apply_signal_quality_report(signal)
+    if not quality_ok:
+        return skip_signal(symbol, interval, quality_reason)
+    if signal["final_score"] < required_score:
+        return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 
     try:
         if not predict_trade(signal):
@@ -2995,6 +3084,11 @@ def generate_free_signal(symbol, interval="5m"):
     if score_report["final_score"] < required_score:
         return skip_signal(symbol, interval, f"final score {score_report['final_score']} below {required_score}: {score_report['final_score_reason']}")
     signal.update(score_report)
+    quality_ok, quality_reason = apply_signal_quality_report(signal)
+    if not quality_ok:
+        return skip_signal(symbol, interval, quality_reason)
+    if signal["final_score"] < required_score:
+        return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 
     try:
         if not predict_trade(signal):

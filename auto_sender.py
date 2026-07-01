@@ -30,7 +30,8 @@ NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
 MAX_ENTRY_DEVIATION_PERCENT = float(os.environ.get("MAX_ENTRY_DEVIATION_PERCENT", "0.35"))
-ENTRY_CHASE_TOLERANCE_PERCENT = float(os.environ.get("ENTRY_CHASE_TOLERANCE_PERCENT", "0.18"))
+ENTRY_CHASE_TOLERANCE_PERCENT = float(os.environ.get("ENTRY_CHASE_TOLERANCE_PERCENT", "0.10"))
+MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("MAX_TP1_PROGRESS_PERCENT", "45"))
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -285,67 +286,107 @@ def get_live_price(symbol):
         log(f"get_live_price error for {symbol}: {e}")
         return None
 
-def signal_is_fresh(signal):
-    """Reject stale/chased signals before Telegram send or auto execution.
+def _safe_signal_float(value, default=0.0):
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
 
-    A signal message shows a precise Entry. If price already ran through that
-    entry in the trade direction, sending it late is dangerous: users enter
-    worse, then the normal pullback can hit SL. This guard blocks that.
-    """
+def _signal_primary_target(signal):
+    tp1 = _safe_signal_float(signal.get("tp1"))
+    if tp1 > 0:
+        return tp1
+    try:
+        ladder = _signal_target_ladder(signal)
+        return _safe_signal_float(ladder[0])
+    except Exception:
+        return _safe_signal_float(signal.get("tp"))
+
+def validate_signal_entry_freshness(signal, current_price=None, context="SEND"):
+    """Return one freshness decision for Telegram sends and auto execution."""
     try:
         pair = signal.get("pair")
         direction = str(signal.get("direction") or "").upper()
-        entry = float(signal.get("entry", 0))
-        tp = float(signal.get("tp", 0))
-        sl = float(signal.get("sl", 0))
+        entry = _safe_signal_float(signal.get("entry"))
+        tp = _safe_signal_float(signal.get("tp"))
+        tp1 = _signal_primary_target(signal)
+        sl = _safe_signal_float(signal.get("sl"))
         if not pair or entry <= 0 or direction not in ["LONG", "SHORT"]:
-            return False
+            return False, "invalid_signal_geometry", current_price
 
-        current_price = get_live_price(pair)
+        if current_price is None:
+            current_price = get_live_price(pair)
         if current_price is None or current_price <= 0:
-            return False
+            return False, "live_price_unavailable", current_price
 
         deviation = abs(current_price - entry) / entry * 100
 
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
             log(
-                f"SIGNAL_REJECTED_STALE pair={pair} direction={direction} "
+                f"SIGNAL_REJECTED_STALE context={context} pair={pair} direction={direction} "
                 f"entry={entry} current={current_price} deviation={round(deviation,4)}%"
             )
-            return False
+            return False, "price_moved_too_far_from_entry", current_price
 
         chase = ENTRY_CHASE_TOLERANCE_PERCENT / 100.0
 
         if direction == "LONG":
             if tp and current_price >= tp:
-                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT pair={pair} direction=LONG current={current_price} tp={tp}")
-                return False
+                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT context={context} pair={pair} direction=LONG current={current_price} tp={tp}")
+                return False, "target_already_hit", current_price
             if sl and current_price <= sl:
-                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT pair={pair} direction=LONG current={current_price} sl={sl}")
-                return False
+                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT context={context} pair={pair} direction=LONG current={current_price} sl={sl}")
+                return False, "stop_already_hit", current_price
             if current_price > entry * (1 + chase):
                 log(
-                    f"SIGNAL_REJECTED_CHASE pair={pair} direction=LONG "
+                    f"SIGNAL_REJECTED_CHASE context={context} pair={pair} direction=LONG "
                     f"entry={entry} current={current_price} tolerance={ENTRY_CHASE_TOLERANCE_PERCENT}%"
                 )
-                return False
+                return False, "long_entry_already_chased", current_price
+            if tp1 and tp1 > entry and current_price > entry:
+                progress = ((current_price - entry) / (tp1 - entry)) * 100
+                if progress >= MAX_TP1_PROGRESS_PERCENT:
+                    log(
+                        f"SIGNAL_REJECTED_TP1_PROGRESS context={context} pair={pair} direction=LONG "
+                        f"entry={entry} current={current_price} tp1={tp1} progress={round(progress,2)}%"
+                    )
+                    return False, "long_too_close_to_tp1", current_price
 
         if direction == "SHORT":
             if tp and current_price <= tp:
-                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT pair={pair} direction=SHORT current={current_price} tp={tp}")
-                return False
+                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT context={context} pair={pair} direction=SHORT current={current_price} tp={tp}")
+                return False, "target_already_hit", current_price
             if sl and current_price >= sl:
-                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT pair={pair} direction=SHORT current={current_price} sl={sl}")
-                return False
+                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT context={context} pair={pair} direction=SHORT current={current_price} sl={sl}")
+                return False, "stop_already_hit", current_price
             if current_price < entry * (1 - chase):
                 log(
-                    f"SIGNAL_REJECTED_CHASE pair={pair} direction=SHORT "
+                    f"SIGNAL_REJECTED_CHASE context={context} pair={pair} direction=SHORT "
                     f"entry={entry} current={current_price} tolerance={ENTRY_CHASE_TOLERANCE_PERCENT}%"
                 )
-                return False
+                return False, "short_entry_already_chased", current_price
+            if tp1 and tp1 < entry and current_price < entry:
+                progress = ((entry - current_price) / (entry - tp1)) * 100
+                if progress >= MAX_TP1_PROGRESS_PERCENT:
+                    log(
+                        f"SIGNAL_REJECTED_TP1_PROGRESS context={context} pair={pair} direction=SHORT "
+                        f"entry={entry} current={current_price} tp1={tp1} progress={round(progress,2)}%"
+                    )
+                    return False, "short_too_close_to_tp1", current_price
 
         signal["live_price_checked"] = clean_number(current_price, 8) if "clean_number" in globals() else current_price
-        return True
+        return True, "fresh", current_price
+    except Exception as e:
+        log(f"validate_signal_entry_freshness error: {e}")
+        return False, "freshness_validation_error", current_price
+
+def signal_is_fresh(signal):
+    """Reject stale/chased signals before Telegram send or auto execution."""
+    try:
+        ok, _, _ = validate_signal_entry_freshness(signal, context="SEND")
+        return ok
     except Exception as e:
         log(f"signal_is_fresh error: {e}")
         return False
@@ -508,7 +549,7 @@ def record_sent_signal(chat_id, plan, signal):
             float(signal.get("entry", 0)),
             float(signal.get("tp", 0)),
             float(signal.get("sl", 0)),
-            float(signal.get("confidence", 0)),
+            float(signal.get("display_confidence", signal.get("confidence", 0))),
         ))
         row = c.fetchone()
         conn.commit()
@@ -622,7 +663,7 @@ TP2: {tp2}
 TP3: {tp3}
 SL: {signal.get('sl', 'N/A')}
 
-Confidence: {signal.get('confidence', 'N/A')}%
+Confidence: {signal.get('display_confidence', signal.get('confidence', 'N/A'))}%
 RR: {signal.get('risk_reward', 'N/A')}
 Regime: {signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))}
 Strategy: {signal.get('strategy_name', signal.get('setup_type', 'N/A'))}
@@ -1010,9 +1051,12 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         entry = float(signal["entry"])
         tp = float(signal["tp"])
         sl = float(signal["sl"])
+        freshness_ok, freshness_reason, live_price = validate_signal_entry_freshness(signal, context="AUTO_TRADE")
+        if not freshness_ok:
+            return None, f"Auto trade rejected by entry freshness guard: {freshness_reason}"
 
         # تأكيد حي قبل التنفيذ
-        live_price = get_live_price(raw_symbol)
+        live_price = live_price or get_live_price(raw_symbol)
         if live_price is None:
             return None, "فشل سحب السعر الحالي"
 
@@ -1703,4 +1747,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-

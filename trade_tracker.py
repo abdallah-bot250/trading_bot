@@ -36,7 +36,7 @@ def add_trade(signal):
             "entry": float(signal["entry"]),
             "tp": float(signal["tp"]),
             "sl": float(signal["sl"]),
-            "confidence": float(signal["confidence"]),
+            "confidence": float(signal.get("display_confidence", signal["confidence"])),
             "rr": float(signal.get("risk_reward", signal.get("rr", 0))),
             "market_regime": signal.get("market_regime"),
             "setup_type": signal.get("setup_type"),
