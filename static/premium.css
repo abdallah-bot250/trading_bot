@@ -1020,6 +1020,10 @@ html[data-theme="light"] .nx-dashboard-return {
 .nx-terminal-container {
   position: relative;
   z-index: 1;
+  width: min(96vw, 1680px) !important;
+  max-width: none !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
 .nx-terminal-head {
   display: flex;
@@ -1060,8 +1064,10 @@ html[data-theme="light"] .nx-dashboard-return {
 }
 .nx-terminal-frame {
   position: relative;
-  width: 100%;
-  min-height: 620px;
+  width: 100% !important;
+  max-width: none !important;
+  height: clamp(650px, 78vh, 760px);
+  min-height: 650px;
   border-radius: 26px;
   padding: 12px;
   overflow: hidden;
@@ -1088,13 +1094,24 @@ html[data-theme="light"] .nx-dashboard-return {
 .nx-terminal-frame iframe {
   position: relative;
   z-index: 0;
-  display: block;
-  width: 100%;
-  min-height: 620px;
-  height: min(78vh, 760px);
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
   border: 0;
   border-radius: 18px;
   background: #050c14;
+}
+.nx-tv-wrap,
+.tradingview-widget-container {
+  width: 100% !important;
+  max-width: none !important;
+}
+.nx-tv-frame,
+.tradingview-widget-container iframe {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 html[data-theme="light"] .nx-terminal-status {
   background: rgba(255, 255, 255, .78);
@@ -1115,7 +1132,10 @@ html[data-theme="light"] .nx-terminal-frame {
   }
   .nx-terminal-frame,
   .nx-terminal-frame iframe {
-    min-height: 560px;
+    min-height: 520px;
+  }
+  .nx-terminal-frame {
+    height: 520px;
   }
 }
 @media (max-width: 560px) {
@@ -1125,11 +1145,12 @@ html[data-theme="light"] .nx-terminal-frame {
   .nx-terminal-frame {
     padding: 8px;
     border-radius: 20px;
-    min-height: 480px;
+    min-height: 420px;
+    height: 420px;
   }
   .nx-terminal-frame iframe {
-    min-height: 480px;
-    height: 70vh;
+    min-height: 100%;
+    height: 100%;
     border-radius: 14px;
   }
 }
