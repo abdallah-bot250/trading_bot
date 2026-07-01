@@ -308,6 +308,13 @@ def parse_kucoin_klines_to_df(rows):
 
         df = pd.DataFrame(parsed, columns=["time", "open", "high", "low", "close", "volume"])
         df = df.sort_values("time").reset_index(drop=True)
+
+        # Safety: Binance/Kline endpoints include the currently-forming candle.
+        # Signals must be based on closed candles only; otherwise entries can
+        # repaint during the candle and arrive after price has already moved.
+        if len(df) > 2:
+            df = df.iloc[:-1].reset_index(drop=True)
+
         return df
     except Exception as e:
         print(f"parse_kucoin_klines_to_df error: {e}")
@@ -333,6 +340,13 @@ def parse_binance_klines_to_df(data):
         df["volume"] = df["volume"].astype(float)
 
         df = df.sort_values("time").reset_index(drop=True)
+
+        # Safety: Binance/Kline endpoints include the currently-forming candle.
+        # Signals must be based on closed candles only; otherwise entries can
+        # repaint during the candle and arrive after price has already moved.
+        if len(df) > 2:
+            df = df.iloc[:-1].reset_index(drop=True)
+
         return df
     except Exception as e:
         print(f"parse_binance_klines_to_df error: {e}")
@@ -450,6 +464,11 @@ def get_market_data(symbol, interval="5m", limit=250):
 
         df = df[["time", "open", "high", "low", "close", "volume"]]
         df.dropna(inplace=True)
+
+        # KuCoin can also return the currently-forming candle first/last after
+        # normalization. Keep signal generation on closed candles only.
+        if len(df) > 2:
+            df = df.iloc[:-1].reset_index(drop=True)
 
         if df is not None and not df.empty:
             return df
@@ -2146,6 +2165,14 @@ def detect_symbol_market_regime(symbol, interval, df):
 
 
 def _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5):
+    """Build trade levels only when there is real room to the first obstacle.
+
+    Previous adaptive levels could ignore a nearby support/resistance and place
+    targets beyond it. That is exactly how a SHORT near support can bounce first,
+    hit SL, then later continue down. This version treats the nearest
+    support/resistance as an obstacle. If RR to the obstacle is not enough, the
+    candidate is rejected instead of inventing a far target.
+    """
     support = regime_info.get("support")
     resistance = regime_info.get("resistance")
     atr_val = max(_safe_float(atr_val), entry * 0.004)
@@ -2156,17 +2183,34 @@ def _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5):
         risk = entry - sl
         if risk <= 0:
             return None
-        target = resistance if resistance and resistance > entry + risk * rr_min else entry + risk * max(1.8, rr_min)
-        tp3 = max(target, entry + risk * rr_min)
+
+        if resistance and resistance > entry:
+            obstacle_target = resistance - buffer * 0.25
+            reward_to_obstacle = obstacle_target - entry
+            if reward_to_obstacle <= 0 or (reward_to_obstacle / risk) < rr_min:
+                return None
+            tp3 = obstacle_target
+        else:
+            tp3 = entry + risk * max(1.8, rr_min)
+
         tp1 = entry + (tp3 - entry) * 0.45
         tp2 = entry + (tp3 - entry) * 0.72
+
     else:
         sl = (resistance + buffer) if resistance and resistance > entry else entry + max(atr_val * 1.25, entry * 0.006)
         risk = sl - entry
         if risk <= 0:
             return None
-        target = support if support and support < entry - risk * rr_min else entry - risk * max(1.8, rr_min)
-        tp3 = min(target, entry - risk * rr_min)
+
+        if support and support < entry:
+            obstacle_target = support + buffer * 0.25
+            reward_to_obstacle = entry - obstacle_target
+            if reward_to_obstacle <= 0 or (reward_to_obstacle / risk) < rr_min:
+                return None
+            tp3 = obstacle_target
+        else:
+            tp3 = entry - risk * max(1.8, rr_min)
+
         tp1 = entry - (entry - tp3) * 0.45
         tp2 = entry - (entry - tp3) * 0.72
 
@@ -2282,7 +2326,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         atr_val = _safe_float(regime_info.get("atr"))
         levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5)
         if not levels:
-            return None, "could not build logical levels", regime_info
+            return None, "not enough room to nearest support/resistance for safe RR", regime_info
         if levels["risk_reward"] < 1.5:
             return None, f"RR {levels['risk_reward']} below 1.5", regime_info
         if not signal_levels_valid(levels["entry"], levels["tp"], levels["sl"], direction):

@@ -1267,9 +1267,9 @@ input, select {
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
         {{ csrf_field() }}
         <h3>🔐 ربط API</h3>
-        <input name="api_key" type="text" placeholder="Binance API Key"
+        <input name="api_key" type="text" placeholder="Bybit API Key (or exchange set in AUTO_TRADE_EXCHANGE)"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
-        <input name="api_secret" type="text" placeholder="Binance API Secret"
+        <input name="api_secret" type="text" placeholder="Bybit API Secret"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
         <button type="submit" style="background:#38bdf8; color:white;">💾 Save API</button>
     </form>
@@ -1306,15 +1306,15 @@ input, select {
         </div>
 
         <div style="margin:14px 0; background:rgba(245,158,11,0.10); border:1px solid rgba(245,158,11,0.25); color:#fde68a; padding:14px; border-radius:10px; line-height:1.8;">
-            Auto trading executes real exchange orders only when API keys are saved, the bot is ON, and risk controls are enabled. Keep withdrawal permission disabled on your exchange API.
+            Auto trading executes real Bybit/Binance orders only when API keys are saved, the bot is ON, and risk controls are enabled. Recommended setup: AUTO_TRADE_EXCHANGE=bybit, USDT-M futures, API trading permission only, withdrawals disabled.
         </div>
         <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; margin:12px 0 16px;">
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
-                <span><strong style="display:block;">Spot Auto Trading</strong><small style="color:#94a3b8;">Optional execution for Spot signals</small></span>
+                <span><strong style="display:block;">Spot Auto Trading</strong><small style="color:#94a3b8;">Optional execution for Spot signals when enabled</small></span>
                 <input name="spot_auto_trade_enabled" type="checkbox" value="1" style="width:22px; height:22px;">
             </label>
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
-                <span><strong style="display:block;">Futures Auto Trading</strong><small style="color:#94a3b8;">Optional execution for Futures signals</small></span>
+                <span><strong style="display:block;">Futures Auto Trading</strong><small style="color:#94a3b8;">Recommended: Bybit USDT-M futures with TP/SL guards</small></span>
                 <input name="futures_auto_trade_enabled" type="checkbox" value="1" style="width:22px; height:22px;">
             </label>
         </div>

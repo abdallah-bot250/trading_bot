@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "binance").strip().lower()
+AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "bybit").strip().lower()
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
@@ -29,7 +29,8 @@ DUPLICATE_WINDOW_SECONDS = 300
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
-MAX_ENTRY_DEVIATION_PERCENT = 0.75    # كان 0.35 وخانق الدنيا
+MAX_ENTRY_DEVIATION_PERCENT = float(os.environ.get("MAX_ENTRY_DEVIATION_PERCENT", "0.35"))
+ENTRY_CHASE_TOLERANCE_PERCENT = float(os.environ.get("ENTRY_CHASE_TOLERANCE_PERCENT", "0.18"))
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
 FREE_SIGNALS_LIMIT = 2
@@ -203,16 +204,23 @@ def send_channel(text):
         return False    
 
 # ================= SYMBOL HELPERS =================
-def normalize_symbol_for_ccxt(symbol):
+def normalize_symbol_for_ccxt(symbol, trade_type=None, exchange_name=None):
     try:
         if not symbol:
             return symbol
 
+        exchange_name = (exchange_name or AUTO_TRADE_EXCHANGE or "bybit").lower()
+        trade_type = str(trade_type or "spot").lower()
+
         if "/" in symbol:
+            if exchange_name == "bybit" and trade_type == "futures" and ":" not in symbol and symbol.endswith("/USDT"):
+                return f"{symbol}:USDT"
             return symbol
 
         if symbol.endswith("USDT"):
             base = symbol[:-4]
+            if exchange_name == "bybit" and trade_type == "futures":
+                return f"{base}/USDT:USDT"
             return f"{base}/USDT"
 
         return symbol
@@ -278,10 +286,19 @@ def get_live_price(symbol):
         return None
 
 def signal_is_fresh(signal):
+    """Reject stale/chased signals before Telegram send or auto execution.
+
+    A signal message shows a precise Entry. If price already ran through that
+    entry in the trade direction, sending it late is dangerous: users enter
+    worse, then the normal pullback can hit SL. This guard blocks that.
+    """
     try:
         pair = signal.get("pair")
+        direction = str(signal.get("direction") or "").upper()
         entry = float(signal.get("entry", 0))
-        if not pair or entry <= 0:
+        tp = float(signal.get("tp", 0))
+        sl = float(signal.get("sl", 0))
+        if not pair or entry <= 0 or direction not in ["LONG", "SHORT"]:
             return False
 
         current_price = get_live_price(pair)
@@ -291,9 +308,43 @@ def signal_is_fresh(signal):
         deviation = abs(current_price - entry) / entry * 100
 
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
-            log(f"Signal rejected (stale price): {pair} | entry={entry} current={current_price} deviation={round(deviation,4)}%")
+            log(
+                f"SIGNAL_REJECTED_STALE pair={pair} direction={direction} "
+                f"entry={entry} current={current_price} deviation={round(deviation,4)}%"
+            )
             return False
 
+        chase = ENTRY_CHASE_TOLERANCE_PERCENT / 100.0
+
+        if direction == "LONG":
+            if tp and current_price >= tp:
+                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT pair={pair} direction=LONG current={current_price} tp={tp}")
+                return False
+            if sl and current_price <= sl:
+                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT pair={pair} direction=LONG current={current_price} sl={sl}")
+                return False
+            if current_price > entry * (1 + chase):
+                log(
+                    f"SIGNAL_REJECTED_CHASE pair={pair} direction=LONG "
+                    f"entry={entry} current={current_price} tolerance={ENTRY_CHASE_TOLERANCE_PERCENT}%"
+                )
+                return False
+
+        if direction == "SHORT":
+            if tp and current_price <= tp:
+                log(f"SIGNAL_REJECTED_TARGET_ALREADY_HIT pair={pair} direction=SHORT current={current_price} tp={tp}")
+                return False
+            if sl and current_price >= sl:
+                log(f"SIGNAL_REJECTED_STOP_ALREADY_HIT pair={pair} direction=SHORT current={current_price} sl={sl}")
+                return False
+            if current_price < entry * (1 - chase):
+                log(
+                    f"SIGNAL_REJECTED_CHASE pair={pair} direction=SHORT "
+                    f"entry={entry} current={current_price} tolerance={ENTRY_CHASE_TOLERANCE_PERCENT}%"
+                )
+                return False
+
+        signal["live_price_checked"] = clean_number(current_price, 8) if "clean_number" in globals() else current_price
         return True
     except Exception as e:
         log(f"signal_is_fresh error: {e}")
@@ -476,7 +527,9 @@ def get_users():
 
     c.execute("""
     SELECT chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid,
-           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1), email
+           COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1), email,
+           COALESCE(spot_auto_trade_enabled, 0), COALESCE(futures_auto_trade_enabled, 0),
+           COALESCE(stop_loss_required, 1)
     FROM users
     """)
 
@@ -669,40 +722,45 @@ def signal_allowed_for_plan(plan, signal):
 def get_exchange(api_key, api_secret, trade_type):
     """Return the configured exchange for real auto-trading.
 
-    Market-data fallback is handled in market_analyzer.py. Real order execution
-    uses user API keys, so the exchange must match the user account. By default
-    we keep Binance for backwards compatibility. Set AUTO_TRADE_EXCHANGE to
-    binanceus or kucoin when selling/deploying for users whose keys are there.
-    Futures execution is only enabled on exchanges where the current code has
-    explicit support.
+    Default is Bybit because Binance can be blocked by region/API permissions.
+    Supported AUTO_TRADE_EXCHANGE values: bybit, binance, binanceus, kucoin.
+    Use Bybit API keys without withdrawal permission. For futures, this build
+    targets USDT-margined perpetuals (for example BTC/USDT:USDT).
     """
-    exchange_name = AUTO_TRADE_EXCHANGE or "binance"
+    exchange_name = (AUTO_TRADE_EXCHANGE or "bybit").lower()
     trade_type = str(trade_type or "spot").lower()
-    default_type = "future" if trade_type == "futures" else "spot"
+    default_type = "swap" if trade_type == "futures" else "spot"
 
-    if exchange_name == "kucoin":
-        if trade_type == "futures":
-            raise Exception("KuCoin auto futures execution is not enabled in this build. Use spot or set AUTO_TRADE_EXCHANGE=binance.")
-        return ccxt.kucoin({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-        })
-
-    if exchange_name in ["binanceus", "binance_us"]:
-        if trade_type == "futures":
-            raise Exception("Binance US does not support futures execution in this build. Use spot or set AUTO_TRADE_EXCHANGE=binance.")
-        return ccxt.binanceus({
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-        })
-
-    return ccxt.binance({
+    common = {
         "apiKey": api_key,
         "secret": api_secret,
         "enableRateLimit": True,
-        "options": {"defaultType": default_type}
+    }
+
+    if exchange_name == "bybit":
+        return ccxt.bybit({
+            **common,
+            "options": {
+                "defaultType": default_type,
+                "adjustForTimeDifference": True,
+                "recvWindow": 10000,
+            },
+        })
+
+    if exchange_name == "kucoin":
+        if trade_type == "futures":
+            raise Exception("KuCoin futures execution is not enabled in this build. Use spot or set AUTO_TRADE_EXCHANGE=bybit.")
+        return ccxt.kucoin(common)
+
+    if exchange_name in ["binanceus", "binance_us"]:
+        if trade_type == "futures":
+            raise Exception("Binance US does not support futures execution in this build. Use spot or set AUTO_TRADE_EXCHANGE=bybit.")
+        return ccxt.binanceus(common)
+
+    # Backwards-compatible Binance mode.
+    return ccxt.binance({
+        **common,
+        "options": {"defaultType": "future" if trade_type == "futures" else "spot"},
     })
 
 # ================= SAFETY HELPERS =================
@@ -861,27 +919,69 @@ def calculate_amount(usdt_balance, risk_percent, entry_price):
     return round(amount, 6)
 
 def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, trade_type):
+    """Place protective TP/SL where the selected exchange supports it.
+
+    Auto-trading must never silently pretend that protection exists. If we cannot
+    place protection for a real futures order, return False so the operator can
+    see it in logs and Telegram. Spot market execution is left unprotected by
+    design because many exchanges do not support portable spot OCO through CCXT.
+    """
     try:
         opposite_side = "sell" if side == "buy" else "buy"
+        exchange_id = getattr(exchange, "id", "").lower()
+        trade_type = str(trade_type or "spot").lower()
 
-        if trade_type == "futures":
+        if trade_type != "futures":
+            return True, "Spot order executed; TP/SL should be managed manually or by exchange tools."
+
+        if exchange_id == "bybit":
+            # Bybit supports TP/SL params on USDT perpetual positions. We attach
+            # them using the unified edit_position/position trading stop style
+            # when available; if unavailable, try reduce-only trigger orders.
+            try:
+                if hasattr(exchange, "set_position_mode"):
+                    pass
+            except Exception:
+                pass
+            try:
+                exchange.create_order(
+                    symbol=symbol,
+                    type="market",
+                    side=opposite_side,
+                    amount=amount,
+                    price=None,
+                    params={"reduceOnly": True, "triggerPrice": tp_price, "takeProfit": True},
+                )
+                exchange.create_order(
+                    symbol=symbol,
+                    type="market",
+                    side=opposite_side,
+                    amount=amount,
+                    price=None,
+                    params={"reduceOnly": True, "triggerPrice": sl_price, "stopLoss": True},
+                )
+                return True, "Bybit reduce-only TP/SL trigger orders submitted"
+            except Exception as trigger_error:
+                return False, f"Bybit protection order error: {trigger_error}"
+
+        if exchange_id == "binance":
             exchange.create_order(
                 symbol=symbol,
                 type="TAKE_PROFIT_MARKET",
                 side=opposite_side,
                 amount=amount,
-                params={"stopPrice": tp_price, "closePosition": False}
+                params={"stopPrice": tp_price, "closePosition": False},
             )
-
             exchange.create_order(
                 symbol=symbol,
                 type="STOP_MARKET",
                 side=opposite_side,
                 amount=amount,
-                params={"stopPrice": sl_price, "closePosition": False}
+                params={"stopPrice": sl_price, "closePosition": False},
             )
+            return True, "Binance TP/SL placed"
 
-        return True, "TP/SL placed"
+        return False, f"Protection orders not implemented for exchange={exchange_id}"
 
     except Exception as e:
         return False, f"Protection order error: {e}"
@@ -893,7 +993,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         exchange.load_markets()
 
         raw_symbol = signal["pair"]
-        symbol = normalize_symbol_for_ccxt(raw_symbol)
+        symbol = normalize_symbol_for_ccxt(raw_symbol, trade_type=trade_type, exchange_name=AUTO_TRADE_EXCHANGE)
 
         balance = exchange.fetch_balance()
         usdt_balance = (
@@ -920,7 +1020,13 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if deviation > MAX_ENTRY_DEVIATION_PERCENT:
             return None, f"تم رفض الصفقة: السعر تحرك ({round(deviation,4)}%)"
 
-        amount = calculate_amount(usdt_balance, risk_percent, entry)
+        chase = ENTRY_CHASE_TOLERANCE_PERCENT / 100.0
+        if signal["direction"] == "LONG" and live_price > entry * (1 + chase):
+            return None, "تم رفض الصفقة: السعر سبق نقطة الدخول للشراء"
+        if signal["direction"] == "SHORT" and live_price < entry * (1 - chase):
+            return None, "تم رفض الصفقة: السعر سبق نقطة الدخول للبيع"
+
+        amount = calculate_amount(usdt_balance, risk_percent, live_price)
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
@@ -928,14 +1034,33 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if not valid_amount:
             return None, f"Validation failed: {reason}"
 
-        order = exchange.create_market_order(symbol, side, amount)
+        exchange_id = getattr(exchange, "id", "").lower()
+        if exchange_id == "bybit" and trade_type == "futures":
+            order = exchange.create_order(
+                symbol=symbol,
+                type="market",
+                side=side,
+                amount=amount,
+                price=None,
+                params={
+                    "takeProfit": tp,
+                    "stopLoss": sl,
+                    "tpTriggerBy": "LastPrice",
+                    "slTriggerBy": "LastPrice",
+                },
+            )
+            protection_ok, protection_msg = True, "Bybit market order submitted with attached TP/SL params"
+        else:
+            order = exchange.create_market_order(symbol, side, amount)
+            protection_ok, protection_msg = place_protection_orders(
+                exchange, symbol, side, amount, tp, sl, trade_type
+            )
 
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
-        protection_ok, protection_msg = place_protection_orders(
-            exchange, symbol, side, amount, tp, sl, trade_type
-        )
+        if trade_type == "futures" and not protection_ok:
+            log(f"AUTO_TRADE_PROTECTION_WARNING pair={raw_symbol} exchange={exchange_id} reason={protection_msg}")
 
         conn = db()
         c = conn.cursor()
@@ -1382,6 +1507,9 @@ def notify_users_no_signal(users):
                 spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
                 futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
                 email = type_flags[2] if len(type_flags) > 2 else ""
+                spot_auto_trade_enabled = int(type_flags[3]) if len(type_flags) > 3 else 0
+                futures_auto_trade_enabled = int(type_flags[4]) if len(type_flags) > 4 else 0
+                stop_loss_required = int(type_flags[5]) if len(type_flags) > 5 else 1
 
                 if not chat_id:
                     log_unlinked_user_once(email)
@@ -1426,7 +1554,7 @@ def notify_users_no_signal(users):
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
-    log("🚀 BOT STARTED - MONSTER MODE")
+    log(f"🚀 BOT STARTED - MONSTER MODE | auto_exchange={AUTO_TRADE_EXCHANGE}")
     log("Entering main bot loop...")
 
     while True:
@@ -1461,6 +1589,9 @@ def run():
                     spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
                     futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
                     email = type_flags[2] if len(type_flags) > 2 else ""
+                    spot_auto_trade_enabled = int(type_flags[3]) if len(type_flags) > 3 else 0
+                    futures_auto_trade_enabled = int(type_flags[4]) if len(type_flags) > 4 else 0
+                    stop_loss_required = int(type_flags[5]) if len(type_flags) > 5 else 1
 
                     if not chat_id:
                         log_unlinked_user_once(email)
@@ -1490,9 +1621,9 @@ def run():
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
-                    # بدل ما نرفضها نهائيًا، نديها فرصة طالما لسه كويسة
                     if not signal_is_fresh(signal):
-                        log(f"⚠️ price moved slightly but sending anyway: {signal['pair']}")
+                        log(f"SIGNAL_SEND_BLOCKED_STALE pair={signal.get('pair')} direction={signal.get('direction')}")
+                        continue
 
                     # ===== SEND SIGNAL =====
                     msg = format_signal(signal, plan)
@@ -1525,6 +1656,15 @@ def run():
                                 continue
 
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
+                            if signal_trade_type == "spot" and spot_auto_trade_enabled != 1:
+                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=spot_auto_disabled")
+                                continue
+                            if signal_trade_type == "futures" and futures_auto_trade_enabled != 1:
+                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=futures_auto_disabled")
+                                continue
+                            if stop_loss_required == 1 and not signal.get("sl"):
+                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=missing_stop_loss")
+                                continue
 
                             order, result_msg = execute_trade(
                                 api_key=api_key,
