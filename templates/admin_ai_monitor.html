@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin AI Monitor | Nexora Admin</title>
+<link rel="stylesheet" href="/static/premium.css?v=marketing-ready-1">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-marketing-page">
+<main class="nx-marketing-layout">
+  <aside class="nx-product-sidebar" aria-label="Admin navigation">
+    <a class="nx-product-brand" href="/admin">
+      <span>N</span>
+      <strong>Nexora Admin</strong>
+    </a>
+    <nav>
+      <a href="/admin">Admin Overview</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
+      <a href="/admin/payments">Payments</a>
+      <a href="/admin/manual-payments">Manual Payments</a>
+      <a href="/admin/system-health">System Health</a>
+      <a class="active" href="/admin/ai-monitor">AI Monitor</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </aside>
+
+  <section class="nx-product-main">
+    <header class="nx-product-topbar">
+      <div>
+        <span>Admin Only</span>
+        <h1>AI Monitor</h1>
+        <p>Read-only operational monitor for AI health, signal flow, delivery status, and available engine logs.</p>
+      </div>
+      <div class="nx-product-actions">
+        <button class="theme-toggle" type="button" aria-label="Toggle theme">Theme</button>
+        <a href="/admin">Back to Admin</a>
+      </div>
+    </header>
+
+    <section class="nx-metric-grid">
+      <article><span>AI Engine Health</span><strong>{{ monitor.ai_health }}</strong></article>
+      <article><span>Last Scan</span><strong>{{ monitor.last_scan }}</strong></article>
+      <article><span>Scan Duration</span><strong>{{ monitor.scan_duration }}</strong></article>
+      <article><span>Coins Scanned</span><strong>{{ monitor.coins_scanned }}</strong></article>
+      <article><span>Signals Built</span><strong>{{ monitor.signals_built }}</strong></article>
+      <article><span>Signals Rejected</span><strong>{{ monitor.signals_rejected }}</strong></article>
+      <article><span>Telegram Delivery Rate</span><strong>{% if monitor.telegram_delivery_rate is not none %}{{ monitor.telegram_delivery_rate }}%{% else %}Not available{% endif %}</strong></article>
+      <article><span>Data Source</span><strong>{{ source }}</strong></article>
+      <article><span>Auto Trade Attempts</span><strong>{{ monitor.auto_trade_attempts }}</strong></article>
+      <article><span>Auto Trade Skipped</span><strong>{{ monitor.auto_trade_skipped }}</strong></article>
+      <article><span>Win Rate</span><strong>{% if performance.win_rate is not none %}{{ performance.win_rate }}%{% else %}Not enough data{% endif %}</strong></article>
+      <article><span>Average RR</span><strong>{% if performance.average_rr is not none %}{{ performance.average_rr }}{% else %}Not enough data{% endif %}</strong></article>
+    </section>
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Top Rejection Reasons</h2>
+        <span>Only if recorded</span>
+      </div>
+      {% if monitor.top_rejection_reasons %}
+      <div class="nx-chip-row">
+        {% for reason in monitor.top_rejection_reasons %}
+        <span>{{ reason }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="nx-empty-state">No rejection reason summary is available from the current logs.</div>
+      {% endif %}
+    </section>
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Recent Engine Logs</h2>
+        <span>Read-only summary</span>
+      </div>
+      {% if monitor.recent_logs %}
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead><tr><th>Time</th><th>Message</th></tr></thead>
+          <tbody>
+          {% for row in monitor.recent_logs %}
+            <tr>
+              <td>{{ row.created_at if row.created_at is defined else '-' }}</td>
+              <td>{{ row.message or '-' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="nx-empty-state">No readable engine logs are available yet.</div>
+      {% endif %}
+    </section>
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Recent Signals</h2>
+        <span>{{ source }}</span>
+      </div>
+      {% if recent_signals %}
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead><tr><th>Pair</th><th>Direction</th><th>TF</th><th>Confidence</th><th>Status</th><th>Time</th></tr></thead>
+          <tbody>
+          {% for s in recent_signals %}
+            <tr>
+              <td>{{ s.pair or '-' }}</td>
+              <td><span class="nx-badge {{ (s.direction or '')|lower }}">{{ s.direction or '-' }}</span></td>
+              <td>{{ s.timeframe or 'N/A' }}</td>
+              <td>{% if s.confidence is not none %}{{ s.confidence }}%{% else %}N/A{% endif %}</td>
+              <td><span class="nx-badge">{{ s.status or 'Open' }}</span></td>
+              <td>{{ s.sent_at or '-' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="nx-empty-state">No tracked signals are available yet.</div>
+      {% endif %}
+    </section>
+  </section>
+</main>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=marketing-ready-1"></script>
+</body>
+</html>

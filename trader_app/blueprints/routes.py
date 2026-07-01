@@ -1730,6 +1730,286 @@ def _safe_current_user_snapshot():
     return snapshot
 
 
+def _safe_table_columns(cursor, table_name):
+    try:
+        cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+        """, (table_name,))
+        return {
+            (row.get("column_name") if hasattr(row, "get") else row[0])
+            for row in (cursor.fetchall() or [])
+        }
+    except Exception as e:
+        try:
+            cursor.connection.rollback()
+        except Exception:
+            pass
+        log(f"marketing table columns unavailable table={table_name}: {e}")
+        return set()
+
+
+def _safe_rows(cursor, query, params=()):
+    try:
+        cursor.execute(query, params)
+        return cursor.fetchall() or []
+    except Exception as e:
+        try:
+            cursor.connection.rollback()
+        except Exception:
+            pass
+        log(f"marketing rows unavailable: {e}")
+        return []
+
+
+def _safe_scalar(cursor, query, params=(), default=None):
+    try:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+        if not row:
+            return default
+        value = row.get("value") if hasattr(row, "get") else row[0]
+        return default if value is None else value
+    except Exception as e:
+        try:
+            cursor.connection.rollback()
+        except Exception:
+            pass
+        log(f"marketing scalar unavailable: {e}")
+        return default
+
+
+def _num(value):
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _marketing_signal_select(columns):
+    def expr(names, alias, default="NULL"):
+        for name in names:
+            if name in columns:
+                return f"{name} AS {alias}"
+        return f"{default} AS {alias}"
+
+    return [
+        expr(["pair", "symbol"], "pair", "''"),
+        expr(["direction", "side"], "direction", "''"),
+        expr(["timeframe", "tf"], "timeframe", "'N/A'"),
+        expr(["entry", "entry_price"], "entry"),
+        expr(["tp1", "take_profit_1", "target_1", "tp"], "tp1"),
+        expr(["tp2", "take_profit_2", "target_2"], "tp2"),
+        expr(["tp3", "take_profit_3", "target_3"], "tp3"),
+        expr(["sl", "stop_loss"], "sl"),
+        expr(["display_confidence", "final_score", "confidence"], "confidence"),
+        expr(["risk_reward", "rr"], "risk_reward"),
+        expr(["status", "result"], "status", "'Open'"),
+        expr(["created_at", "sent_at", "timestamp"], "sent_at"),
+        expr(["pnl", "profit"], "pnl"),
+        expr(["strategy_name", "strategy"], "strategy", "'Not enough data yet'"),
+        expr(["regime", "market_regime"], "regime", "'Not enough data yet'"),
+        expr(["signal_quality_reason", "reason"], "reason", "'Not enough verified data yet.'"),
+        expr(["trade_type", "mode"], "mode", "'FUTURES'"),
+    ]
+
+
+def _load_marketing_signals(chat_id=None, limit=50):
+    rows = []
+    source = "fallback"
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        for table_name in ("trades_log", "signal_log"):
+            columns = _safe_table_columns(c, table_name)
+            if not columns:
+                continue
+            select_sql = ", ".join(_marketing_signal_select(columns))
+            where = ""
+            params = []
+            if chat_id and "chat_id" in columns:
+                where = "WHERE chat_id = %s"
+                params.append(str(chat_id))
+            order_col = "created_at" if "created_at" in columns else ("sent_at" if "sent_at" in columns else None)
+            order_sql = f"ORDER BY {order_col} DESC" if order_col else ""
+            params.append(int(limit))
+            query = f"""
+                SELECT {select_sql}
+                FROM {table_name}
+                {where}
+                {order_sql}
+                LIMIT %s
+            """
+            rows = [dict(row) for row in _safe_rows(c, query, tuple(params))]
+            if rows:
+                source = table_name
+                break
+        conn.close()
+    except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+                conn.close()
+        except Exception:
+            pass
+        log(f"marketing signals unavailable: {e}")
+    return rows, source
+
+
+def _build_performance_snapshot(rows):
+    total = len(rows)
+    closed_rows = [
+        row for row in rows
+        if str(row.get("status") or "").upper() in {"CLOSED", "TP1", "TP2", "TP3", "SL"}
+        or _num(row.get("pnl")) is not None
+    ]
+    wins = 0
+    losses = 0
+    positive_pnl = 0.0
+    negative_pnl = 0.0
+    rr_values = []
+    pair_counts = {}
+    strategy_counts = {}
+    timeframe_counts = {}
+
+    for row in rows:
+        pair = str(row.get("pair") or "").strip()
+        strategy = str(row.get("strategy") or "").strip()
+        timeframe = str(row.get("timeframe") or "").strip()
+        if pair:
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
+        if strategy and strategy != "Not enough data yet":
+            strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+        if timeframe and timeframe != "N/A":
+            timeframe_counts[timeframe] = timeframe_counts.get(timeframe, 0) + 1
+
+        pnl = _num(row.get("pnl"))
+        status = str(row.get("status") or "").upper()
+        if pnl is not None:
+            if pnl > 0:
+                wins += 1
+                positive_pnl += pnl
+            elif pnl < 0:
+                losses += 1
+                negative_pnl += abs(pnl)
+        elif status.startswith("TP"):
+            wins += 1
+        elif status == "SL":
+            losses += 1
+
+        rr = _num(row.get("risk_reward"))
+        if rr is None:
+            entry = _num(row.get("entry"))
+            tp1 = _num(row.get("tp1"))
+            sl = _num(row.get("sl"))
+            if entry is not None and tp1 is not None and sl is not None and abs(entry - sl) > 0:
+                rr = abs(tp1 - entry) / abs(entry - sl)
+        if rr is not None and rr > 0:
+            rr_values.append(rr)
+
+    verified = wins + losses
+    chart_labels = []
+    chart_values = []
+    running = 0
+    for index, row in enumerate(reversed(rows[-20:]), start=1):
+        pnl = _num(row.get("pnl"))
+        if pnl is None:
+            continue
+        running += pnl
+        chart_labels.append(str(index))
+        chart_values.append(round(running, 2))
+
+    def best(counter):
+        if not counter:
+            return "Not enough data yet"
+        return sorted(counter.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    return {
+        "total_signals": total,
+        "verified_trades": verified,
+        "win_rate": round((wins / verified) * 100, 2) if verified else None,
+        "average_rr": round(sum(rr_values) / len(rr_values), 2) if rr_values else None,
+        "profit_factor": round(positive_pnl / negative_pnl, 2) if negative_pnl > 0 else None,
+        "best_pair": best(pair_counts),
+        "best_strategy": best(strategy_counts),
+        "best_timeframe": best(timeframe_counts),
+        "chart_labels": chart_labels,
+        "chart_values": chart_values,
+        "has_verified_history": verified > 0,
+    }
+
+
+def _marketing_admin_metrics():
+    metrics = {
+        "ai_health": "No recent scan data",
+        "last_scan": "Not available",
+        "scan_duration": "Not available",
+        "coins_scanned": "Not available",
+        "signals_built": 0,
+        "signals_rejected": "Not available",
+        "top_rejection_reasons": [],
+        "telegram_delivery_rate": None,
+        "auto_trade_attempts": "Not available",
+        "auto_trade_skipped": "Not available",
+        "recent_logs": [],
+    }
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        metrics["signals_built"] = int(_safe_scalar(c, "SELECT COUNT(*) AS value FROM trades_log", default=0) or 0)
+        last_scan = _safe_scalar(c, "SELECT MAX(created_at) AS value FROM trades_log", default=None)
+        if last_scan:
+            metrics["last_scan"] = last_scan
+            metrics["ai_health"] = "Monitoring"
+        total_users = int(_safe_scalar(c, "SELECT COUNT(*) AS value FROM users", default=0) or 0)
+        linked_users = int(_safe_scalar(c, "SELECT COUNT(*) AS value FROM users WHERE COALESCE(chat_id, '') != ''", default=0) or 0)
+        metrics["telegram_delivery_rate"] = round((linked_users / total_users) * 100, 2) if total_users else None
+
+        log_columns = _safe_table_columns(c, "bot_logs")
+        if log_columns:
+            message_col = "message" if "message" in log_columns else ("event" if "event" in log_columns else None)
+            time_col = "created_at" if "created_at" in log_columns else ("timestamp" if "timestamp" in log_columns else None)
+            if message_col:
+                order_sql = f"ORDER BY {time_col} DESC" if time_col else ""
+                metrics["recent_logs"] = _safe_rows(c, f"""
+                    SELECT {message_col} AS message {',' + time_col + ' AS created_at' if time_col else ''}
+                    FROM bot_logs
+                    {order_sql}
+                    LIMIT 8
+                """)
+                metrics["signals_rejected"] = int(_safe_scalar(c, f"""
+                    SELECT COUNT(*) AS value
+                    FROM bot_logs
+                    WHERE {message_col} ILIKE '%reject%' OR {message_col} ILIKE '%skipped%'
+                """, default=0) or 0)
+                metrics["auto_trade_attempts"] = int(_safe_scalar(c, f"""
+                    SELECT COUNT(*) AS value
+                    FROM bot_logs
+                    WHERE {message_col} ILIKE '%AUTO_TRADE%' OR {message_col} ILIKE '%auto trade%'
+                """, default=0) or 0)
+                metrics["auto_trade_skipped"] = int(_safe_scalar(c, f"""
+                    SELECT COUNT(*) AS value
+                    FROM bot_logs
+                    WHERE ({message_col} ILIKE '%AUTO_TRADE%' OR {message_col} ILIKE '%auto trade%')
+                      AND ({message_col} ILIKE '%skip%' OR {message_col} ILIKE '%blocked%')
+                """, default=0) or 0)
+        conn.close()
+    except Exception as e:
+        try:
+            if conn:
+                conn.rollback()
+                conn.close()
+        except Exception:
+            pass
+        log(f"marketing admin metrics unavailable: {e}")
+    return metrics
+
+
 def _dashboard_section(section_key):
     user = _safe_current_user_snapshot()
     if not user:
@@ -1827,6 +2107,68 @@ def _dashboard_section(section_key):
     return render_template("dashboard_section.html", page=page, user=user)
 
 
+@dashboard_bp.route("/performance")
+def performance_page():
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+    chat_id = str(user.get("chat_id") or "").strip()
+    rows, source = _load_marketing_signals(chat_id, 50) if chat_id else ([], "telegram_not_linked")
+    performance = _build_performance_snapshot(rows)
+    return render_template(
+        "marketing_page.html",
+        page_key="performance",
+        title="Performance",
+        eyebrow="Verified Trading History",
+        summary="Read-only view of tracked signals and closed outcomes. If verified history is not available yet, Nexora shows an honest empty state.",
+        user=user,
+        source=source,
+        performance=performance,
+        signals=rows[:50],
+        ai=None,
+        auto_trade=None,
+    )
+
+
+@dashboard_bp.route("/ai")
+def ai_analysis_page():
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+    chat_id = str(user.get("chat_id") or "").strip()
+    rows, source = _load_marketing_signals(chat_id, 20) if chat_id else ([], "telegram_not_linked")
+    latest = rows[0] if rows else {}
+    performance = _build_performance_snapshot(rows)
+    ai = {
+        "market_regime": latest.get("regime") or "Not enough data yet",
+        "latest_summary": latest.get("reason") or "Not enough verified signal data yet.",
+        "last_scan": latest.get("sent_at") or "Not available",
+        "coins_scanned": "Not available",
+        "signals_rejected": "Not available",
+        "top_rejection_reasons": [],
+        "best_setup": latest.get("pair") or "Not enough data yet",
+        "engine_health": "Monitoring" if rows else "Waiting for verified scans",
+        "learning_status": "Not enough closed trade history yet" if not performance["has_verified_history"] else "Using verified closed outcomes",
+        "best_strategy": performance["best_strategy"],
+        "best_timeframe": performance["best_timeframe"],
+        "best_pair": performance["best_pair"],
+        "confidence": latest.get("confidence"),
+    }
+    return render_template(
+        "marketing_page.html",
+        page_key="ai",
+        title="Nexora AI Intelligence",
+        eyebrow="AI Analysis",
+        summary="A clean read-only snapshot of the latest available AI signal context, without inventing market analysis.",
+        user=user,
+        source=source,
+        performance=performance,
+        signals=rows[:10],
+        ai=ai,
+        auto_trade=None,
+    )
+
+
 @dashboard_bp.route("/my-plan")
 def my_plan_page():
     return _dashboard_section("my-plan")
@@ -1834,12 +2176,66 @@ def my_plan_page():
 
 @dashboard_bp.route("/signals")
 def signals_page():
-    return _dashboard_section("signals")
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+    chat_id = str(user.get("chat_id") or "").strip()
+    rows, source = _load_marketing_signals(chat_id, 50) if chat_id else ([], "telegram_not_linked")
+    return render_template(
+        "marketing_page.html",
+        page_key="signals",
+        title="Live Signals",
+        eyebrow="Signal Desk",
+        summary="Latest tracked signals for your account. Empty means the engine has not found a qualified setup yet or Telegram is not linked.",
+        user=user,
+        source=source,
+        performance=_build_performance_snapshot(rows),
+        signals=rows[:50],
+        ai=None,
+        auto_trade=None,
+    )
 
 
 @dashboard_bp.route("/auto-trading")
 def auto_trading_page():
     return _dashboard_section("auto-trading")
+
+
+@dashboard_bp.route("/auto-trade")
+def auto_trade_dashboard_page():
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+    chat_id = str(user.get("chat_id") or "").strip()
+    rows, source = _load_marketing_signals(chat_id, 25) if chat_id else ([], "telegram_not_linked")
+    auto_trade = {
+        "exchange": "Bybit",
+        "status": "Enabled" if int(user.get("spot_auto_trade_enabled") or 0) == 1 or int(user.get("futures_auto_trade_enabled") or 0) == 1 else "Disabled",
+        "spot": "Enabled" if int(user.get("spot_auto_trade_enabled") or 0) == 1 else "Disabled",
+        "futures": "Enabled" if int(user.get("futures_auto_trade_enabled") or 0) == 1 else "Disabled",
+        "api_status": "Not connected yet",
+        "open_positions": len([row for row in rows if str(row.get("status") or "").upper() == "OPEN"]),
+        "closed_today": "Not available",
+        "pnl_today": "Not available",
+        "guards": [
+            ("Entry freshness", "Active before dispatch/execution"),
+            ("Max deviation", "Configured in execution guard"),
+            ("Chase protection", "Blocks stale entries"),
+        ],
+    }
+    return render_template(
+        "marketing_page.html",
+        page_key="auto-trade",
+        title="Auto Trade Dashboard",
+        eyebrow="Execution Readiness",
+        summary="Read-only overview of auto-trade readiness and safety guards. No orders are sent from this page.",
+        user=user,
+        source=source,
+        performance=_build_performance_snapshot(rows),
+        signals=rows[:10],
+        ai=None,
+        auto_trade=auto_trade,
+    )
 
 
 @dashboard_bp.route("/referrals")
@@ -1907,6 +2303,25 @@ def admin_repair_pro_2y_page():
 @admin_bp.route("/admin/settings")
 def admin_settings_page():
     return _admin_section("settings")
+
+
+@admin_bp.route("/admin/ai-monitor")
+def admin_ai_monitor_page():
+    if not session.get("user"):
+        return redirect("/login")
+    if not is_current_admin():
+        return "Forbidden", 403
+
+    rows, source = _load_marketing_signals(None, 50)
+    performance = _build_performance_snapshot(rows)
+    monitor = _marketing_admin_metrics()
+    return render_template(
+        "admin_ai_monitor.html",
+        source=source,
+        monitor=monitor,
+        performance=performance,
+        recent_signals=rows[:20],
+    )
 
 
 # ================= SIMPLE DATA API =================

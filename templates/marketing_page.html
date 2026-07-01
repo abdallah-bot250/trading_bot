@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }} | Nexora AI Trader</title>
+<link rel="stylesheet" href="/static/premium.css?v=marketing-ready-1">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-marketing-page">
+<main class="nx-marketing-layout">
+  <aside class="nx-product-sidebar" aria-label="Product navigation">
+    <a class="nx-product-brand" href="/dashboard">
+      <span>N</span>
+      <strong>Nexora</strong>
+    </a>
+    <nav>
+      <a class="{% if page_key == 'performance' %}active{% endif %}" href="/performance">Performance</a>
+      <a class="{% if page_key == 'signals' %}active{% endif %}" href="/signals">Live Signals</a>
+      <a class="{% if page_key == 'ai' %}active{% endif %}" href="/ai">AI Analysis</a>
+      <a class="{% if page_key == 'auto-trade' %}active{% endif %}" href="/auto-trade">Auto Trade</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/payments">Plans</a>
+      <a href="/bot-check">Telegram Link</a>
+    </nav>
+  </aside>
+
+  <section class="nx-product-main">
+    <header class="nx-product-topbar">
+      <div>
+        <span>{{ eyebrow }}</span>
+        <h1>{{ title }}</h1>
+        <p>{{ summary }}</p>
+      </div>
+      <div class="nx-product-actions">
+        <button class="theme-toggle" type="button" aria-label="Toggle theme">Theme</button>
+        <a href="/dashboard">Back to Dashboard</a>
+      </div>
+    </header>
+
+    {% if page_key == 'performance' %}
+    <section class="nx-metric-grid">
+      <article><span>Total Signals</span><strong>{{ performance.total_signals }}</strong></article>
+      <article><span>Win Rate</span><strong>{% if performance.win_rate is not none %}{{ performance.win_rate }}%{% else %}Not enough data{% endif %}</strong></article>
+      <article><span>Average RR</span><strong>{% if performance.average_rr is not none %}{{ performance.average_rr }}{% else %}Not enough data{% endif %}</strong></article>
+      <article><span>Profit Factor</span><strong>{% if performance.profit_factor is not none %}{{ performance.profit_factor }}{% else %}Not enough data{% endif %}</strong></article>
+      <article><span>Best Pair</span><strong>{{ performance.best_pair }}</strong></article>
+      <article><span>Best Strategy</span><strong>{{ performance.best_strategy }}</strong></article>
+      <article><span>Best Timeframe</span><strong>{{ performance.best_timeframe }}</strong></article>
+      <article><span>Data Source</span><strong>{{ source }}</strong></article>
+    </section>
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Performance Chart</h2>
+        <span>Verified PnL only</span>
+      </div>
+      {% if performance.chart_labels %}
+      <canvas id="nxPerformanceChart" height="120"></canvas>
+      {% else %}
+      <div class="nx-empty-state">Not enough verified trade history yet.</div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if page_key == 'ai' and ai %}
+    <section class="nx-metric-grid">
+      <article><span>Current Market Regime</span><strong>{{ ai.market_regime }}</strong></article>
+      <article><span>AI Engine Health</span><strong>{{ ai.engine_health }}</strong></article>
+      <article><span>Last Scan Time</span><strong>{{ ai.last_scan }}</strong></article>
+      <article><span>Coins Scanned</span><strong>{{ ai.coins_scanned }}</strong></article>
+      <article><span>Signals Rejected</span><strong>{{ ai.signals_rejected }}</strong></article>
+      <article><span>Best Current Setup</span><strong>{{ ai.best_setup }}</strong></article>
+      <article><span>Best Strategy</span><strong>{{ ai.best_strategy }}</strong></article>
+      <article><span>Learning Status</span><strong>{{ ai.learning_status }}</strong></article>
+    </section>
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Latest AI Summary</h2>
+        <span>{% if ai.confidence %}Confidence {{ ai.confidence }}%{% else %}No verified confidence yet{% endif %}</span>
+      </div>
+      <p class="nx-readable">{{ ai.latest_summary }}</p>
+      {% if ai.top_rejection_reasons %}
+      <div class="nx-chip-row">
+        {% for reason in ai.top_rejection_reasons %}
+        <span>{{ reason }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="nx-empty-state">No verified rejection summary is available yet.</div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if page_key == 'auto-trade' and auto_trade %}
+    <section class="nx-metric-grid">
+      <article><span>Exchange</span><strong>{{ auto_trade.exchange }}</strong></article>
+      <article><span>Auto Trade Status</span><strong>{{ auto_trade.status }}</strong></article>
+      <article><span>Spot</span><strong>{{ auto_trade.spot }}</strong></article>
+      <article><span>Futures</span><strong>{{ auto_trade.futures }}</strong></article>
+      <article><span>API Status</span><strong>{{ auto_trade.api_status }}</strong></article>
+      <article><span>Open Positions</span><strong>{{ auto_trade.open_positions }}</strong></article>
+      <article><span>Closed Today</span><strong>{{ auto_trade.closed_today }}</strong></article>
+      <article><span>PnL Today</span><strong>{{ auto_trade.pnl_today }}</strong></article>
+    </section>
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Safety Guards</h2>
+        <span>Read-only</span>
+      </div>
+      <div class="nx-guard-grid">
+        {% for label, value in auto_trade.guards %}
+        <article><span>{{ label }}</span><strong>{{ value }}</strong></article>
+        {% endfor %}
+      </div>
+      <div class="nx-empty-state">Not connected yet. Add exchange API keys from the main dashboard only when you are ready.</div>
+    </section>
+    {% endif %}
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>{% if page_key == 'signals' %}Latest Signals{% else %}Recent 50 Trades / Signals{% endif %}</h2>
+        <span>{{ source }}</span>
+      </div>
+      {% if signals %}
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead>
+            <tr>
+              <th>Pair</th>
+              <th>Direction</th>
+              <th>TF</th>
+              <th>Entry</th>
+              <th>TP1 / TP2 / TP3</th>
+              <th>SL</th>
+              <th>Confidence</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in signals %}
+            <tr>
+              <td>{{ s.pair or '-' }}</td>
+              <td><span class="nx-badge {{ (s.direction or '')|lower }}">{{ s.direction or '-' }}</span></td>
+              <td>{{ s.timeframe or 'N/A' }}</td>
+              <td>{{ s.entry if s.entry is not none else '-' }}</td>
+              <td>{{ s.tp1 if s.tp1 is not none else '-' }} / {{ s.tp2 if s.tp2 is not none else '-' }} / {{ s.tp3 if s.tp3 is not none else '-' }}</td>
+              <td>{{ s.sl if s.sl is not none else '-' }}</td>
+              <td>{% if s.confidence is not none %}{{ s.confidence }}%{% else %}N/A{% endif %}</td>
+              <td><span class="nx-badge">{{ s.status or 'Open' }}</span></td>
+              <td>{{ s.sent_at or '-' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="nx-empty-state">No verified signals available yet.</div>
+      {% endif %}
+    </section>
+  </section>
+</main>
+
+{% if performance and performance.chart_labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+(function(){
+  var canvas = document.getElementById("nxPerformanceChart");
+  if (!canvas || !window.Chart) return;
+  new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: {{ performance.chart_labels|tojson }},
+      datasets: [{
+        data: {{ performance.chart_values|tojson }},
+        borderColor: "#20d68a",
+        backgroundColor: "rgba(32,214,138,.14)",
+        fill: true,
+        tension: .35
+      }]
+    },
+    options: {plugins:{legend:{display:false}}, scales:{x:{grid:{color:"rgba(148,163,184,.12)"}}, y:{grid:{color:"rgba(148,163,184,.12)"}}}}
+  });
+})();
+</script>
+{% endif %}
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=marketing-ready-1"></script>
+</body>
+</html>
