@@ -36,12 +36,18 @@ MIN_FUTURES_FINAL_SCORE = 90
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 EXPERT_QUALITY_MIN_PERCENT = float(os.environ.get("EXPERT_QUALITY_MIN_PERCENT", "90"))
 NEWS_BLACKOUT_MINUTES = int(os.environ.get("NEWS_BLACKOUT_MINUTES", "30"))
+ENTRY_MANAGER_MAX_UPDATE_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_UPDATE_PERCENT", "0.12"))
+ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT", "35"))
+ENTRY_MANAGER_MIN_SL_ROOM_PERCENT = float(os.environ.get("ENTRY_MANAGER_MIN_SL_ROOM_PERCENT", "0.12"))
+ENTRY_MANAGER_MIN_RR = float(os.environ.get("ENTRY_MANAGER_MIN_RR", "1.5"))
 MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
 SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
+ENTRY_MANAGER_LOG_CACHE = {}
+ENTRY_MANAGER_LOG_TTL_SECONDS = 300
 ALLOWED_DYNAMIC_BASE_ASSETS = {
     "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "TRX", "TON", "LINK",
     "AVAX", "DOT", "LTC", "BCH", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ",
@@ -2510,6 +2516,197 @@ def _no_trade_reason(symbol, interval, reason):
     print(f"NO_TRADE_BETTER_THAN_BAD_TRADE symbol={symbol} timeframe={interval}")
 
 
+def _entry_manager_log(event, symbol, reason):
+    try:
+        reason_key = str(reason or "ok")[:90]
+        key = (event, str(symbol or "").upper(), reason_key)
+        now = time.time()
+        if now - ENTRY_MANAGER_LOG_CACHE.get(key, 0) >= ENTRY_MANAGER_LOG_TTL_SECONDS:
+            ENTRY_MANAGER_LOG_CACHE[key] = now
+            print(f"{event} symbol={key[1]} reason={reason_key}")
+    except Exception:
+        pass
+
+
+def get_live_price(symbol):
+    symbol = str(symbol or "").upper().strip()
+    if not symbol:
+        return None, "missing symbol"
+    sources = [
+        ("BINANCE", f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"),
+        ("BINANCE_US", f"https://api.binance.us/api/v3/ticker/price?symbol={symbol}"),
+    ]
+    kucoin_symbol = symbol[:-4] + "-USDT" if symbol.endswith("USDT") else symbol
+    sources.append(("KUCOIN", f"https://api.kucoin.com/api/v1/market/orderbook/level1?symbol={kucoin_symbol}"))
+    failures = []
+    for source, url in sources:
+        data, status = _safe_market_json(url, timeout=6)
+        try:
+            if source == "KUCOIN":
+                price = _safe_float((data or {}).get("data", {}).get("price"))
+            else:
+                price = _safe_float((data or {}).get("price"))
+            if price > 0:
+                return price, source
+            failures.append(f"{source}:{status}")
+        except Exception as e:
+            failures.append(f"{source}:{e}")
+    return None, ";".join(failures) or "no live price source"
+
+
+def _entry_progress(direction, old_entry, current_price, tp1):
+    try:
+        if direction == "LONG":
+            if current_price <= old_entry or tp1 <= old_entry:
+                return 0.0
+            return ((current_price - old_entry) / (tp1 - old_entry)) * 100
+        if current_price >= old_entry or tp1 >= old_entry:
+            return 0.0
+        return ((old_entry - current_price) / (old_entry - tp1)) * 100
+    except Exception:
+        return 999.0
+
+
+def _sl_room_percent(direction, current_price, sl):
+    try:
+        if current_price <= 0 or sl <= 0:
+            return 0.0
+        if direction == "LONG":
+            return ((current_price - sl) / current_price) * 100
+        return ((sl - current_price) / current_price) * 100
+    except Exception:
+        return 0.0
+
+
+def _entry_manager_market_still_valid(symbol, direction, df, current_price):
+    try:
+        mtf = expert_multi_timeframe_context(symbol, direction, df)
+        if mtf.get("state") != "CONFIRMED":
+            return False, mtf.get("reason", "MTF no longer confirmed")
+        ema20v = _safe_float(ema(df, 20).iloc[-1])
+        ema50v = _safe_float(ema(df, 50).iloc[-1])
+        if direction == "LONG" and current_price < ema50v and ema20v < ema50v:
+            return False, "live price lost bullish EMA structure"
+        if direction == "SHORT" and current_price > ema50v and ema20v > ema50v:
+            return False, "live price lost bearish EMA structure"
+        return True, "market direction still valid"
+    except Exception as e:
+        return False, f"market direction review error: {e}"
+
+
+def _rebuild_entry_levels(signal, df, current_price):
+    direction = signal.get("direction")
+    support = _safe_float(signal.get("nearest_support") or signal.get("support"))
+    resistance = _safe_float(signal.get("nearest_resistance") or signal.get("resistance"))
+    atr_val = _safe_float(signal.get("atr"))
+    if atr_val <= 0:
+        atr_series = atr(df).dropna()
+        atr_val = _safe_float(atr_series.iloc[-1] if len(atr_series) else 0)
+    regime_info = {
+        "support": support if support > 0 else None,
+        "resistance": resistance if resistance > 0 else None,
+    }
+    return _candidate_levels(current_price, direction, regime_info, atr_val, rr_min=ENTRY_MANAGER_MIN_RR)
+
+
+def professional_entry_manager(signal, df):
+    try:
+        symbol = signal.get("pair")
+        direction = signal.get("direction")
+        old_entry = _safe_float(signal.get("entry"))
+        old_tp1 = _safe_float(signal.get("tp1") or signal.get("tp"))
+        old_sl = _safe_float(signal.get("sl"))
+        if not symbol or direction not in ["LONG", "SHORT"] or old_entry <= 0 or old_tp1 <= 0 or old_sl <= 0:
+            _entry_manager_log("ENTRY_REJECTED", symbol, "invalid signal levels")
+            return None, "invalid signal levels"
+
+        current_price, source = get_live_price(symbol)
+        if not current_price or current_price <= 0:
+            _entry_manager_log("ENTRY_REJECTED", symbol, f"live price unavailable {source}")
+            return None, f"live price unavailable: {source}"
+
+        deviation = abs(current_price - old_entry) / old_entry * 100
+        if deviation > ENTRY_MANAGER_MAX_UPDATE_PERCENT:
+            _entry_manager_log("ENTRY_REJECTED", symbol, f"deviation {round(deviation, 4)}% above {ENTRY_MANAGER_MAX_UPDATE_PERCENT}%")
+            return None, "live price moved too far from entry"
+
+        progress = _entry_progress(direction, old_entry, current_price, old_tp1)
+        if progress >= ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT:
+            _entry_manager_log("ENTRY_REJECTED", symbol, f"price progressed {round(progress, 2)}% toward TP1")
+            return None, "price too close to TP1"
+
+        sl_room = _sl_room_percent(direction, current_price, old_sl)
+        if sl_room <= ENTRY_MANAGER_MIN_SL_ROOM_PERCENT:
+            _entry_manager_log("ENTRY_REJECTED", symbol, f"SL room {round(sl_room, 4)}% too tight")
+            return None, "price too close to SL"
+
+        direction_ok, direction_reason = _entry_manager_market_still_valid(symbol, direction, df, current_price)
+        if not direction_ok:
+            _entry_manager_log("ENTRY_REJECTED", symbol, direction_reason)
+            return None, direction_reason
+
+        levels = _rebuild_entry_levels(signal, df, current_price)
+        if not levels:
+            _entry_manager_log("ENTRY_REJECTED", symbol, "updated S/R levels do not provide safe RR")
+            return None, "updated S/R levels do not provide safe RR"
+        if levels.get("risk_reward", 0) < ENTRY_MANAGER_MIN_RR:
+            _entry_manager_log("ENTRY_REJECTED", symbol, f"updated RR {levels.get('risk_reward')} below {ENTRY_MANAGER_MIN_RR}")
+            return None, "updated RR below minimum"
+        if not signal_levels_valid(levels["entry"], levels["tp"], levels["sl"], direction):
+            _entry_manager_log("ENTRY_REJECTED", symbol, "updated levels invalid")
+            return None, "updated levels invalid"
+
+        signal.update({
+            "entry": format_price(levels["entry"]),
+            "tp": format_price(levels["tp3"]),
+            "tp1": format_price(levels["tp1"]),
+            "tp2": format_price(levels["tp2"]),
+            "tp3": format_price(levels["tp3"]),
+            "sl": format_price(levels["sl"]),
+            "risk_reward": levels["risk_reward"],
+            "entry_manager": {
+                "live_price": current_price,
+                "source": source,
+                "old_entry": old_entry,
+                "deviation_percent": round(deviation, 5),
+                "tp1_progress_percent": round(progress, 2),
+                "updated": True,
+            },
+        })
+        _entry_manager_log(
+            "ENTRY_UPDATED",
+            symbol,
+            f"old={format_price(old_entry)} new={signal.get('entry')} rr={signal.get('risk_reward')} source={source}",
+        )
+        return signal, None
+    except Exception as e:
+        _entry_manager_log("ENTRY_REJECTED", signal.get("pair") if isinstance(signal, dict) else "", f"manager error {e}")
+        return None, f"entry manager error: {e}"
+
+
+def final_fund_manager_review(signal):
+    try:
+        direction = signal.get("direction")
+        entry = _safe_float(signal.get("entry"))
+        tp1 = _safe_float(signal.get("tp1") or signal.get("tp"))
+        tp = _safe_float(signal.get("tp"))
+        sl = _safe_float(signal.get("sl"))
+        rr = _safe_float(signal.get("risk_reward"))
+        if rr < ENTRY_MANAGER_MIN_RR:
+            return False, f"RR {rr} below {ENTRY_MANAGER_MIN_RR}"
+        if not signal_levels_valid(entry, tp, sl, direction):
+            return False, "final levels invalid"
+        if direction == "LONG" and not (tp1 > entry and tp > entry and sl < entry):
+            return False, "LONG final geometry invalid"
+        if direction == "SHORT" and not (tp1 < entry and tp < entry and sl > entry):
+            return False, "SHORT final geometry invalid"
+        if _safe_float(signal.get("display_confidence", signal.get("confidence")), 0) < 70:
+            return False, "display confidence below minimum"
+        return True, "fund manager review accepted live entry"
+    except Exception as e:
+        return False, f"final review error: {e}"
+
+
 def detect_symbol_market_regime(symbol, interval, df):
     try:
         if df is None or len(df) < 80:
@@ -2996,7 +3193,15 @@ def finalize_adaptive_signal(signal, df, paid=True):
             ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
         if not ai_ok:
             return None, f"AI model rejected adaptive signal: {ai_reason}"
-        return signal, None
+        managed_signal, entry_reason = professional_entry_manager(signal, df)
+        if not managed_signal:
+            return None, entry_reason
+        final_ok, final_reason = final_fund_manager_review(managed_signal)
+        if not final_ok:
+            _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
+            return None, final_reason
+        _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
+        return managed_signal, None
     except Exception as e:
         return None, f"adaptive finalize error: {e}"
 
