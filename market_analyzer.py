@@ -34,6 +34,8 @@ LAST_DRY_RUN_SKIPS = []
 MIN_SPOT_FINAL_SCORE = 88
 MIN_FUTURES_FINAL_SCORE = 90
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
+EXPERT_QUALITY_MIN_PERCENT = float(os.environ.get("EXPERT_QUALITY_MIN_PERCENT", "90"))
+NEWS_BLACKOUT_MINUTES = int(os.environ.get("NEWS_BLACKOUT_MINUTES", "30"))
 MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
@@ -2184,6 +2186,46 @@ def _performance_bucket(rows, key, value):
     return round((wins / len(sample)) * 100, 2), len(sample)
 
 
+def statistical_learning_summary(rows):
+    try:
+        if len(rows) < 100:
+            return {"ready": False, "trades": len(rows)}
+
+        def bucket(key):
+            groups = {}
+            for row in rows:
+                value = str(row.get(key) or "UNKNOWN").upper()
+                groups.setdefault(value, {"trades": 0, "wins": 0})
+                groups[value]["trades"] += 1
+                if str(row.get("status", "")).upper() == "TP":
+                    groups[value]["wins"] += 1
+            scored = []
+            for value, data in groups.items():
+                if data["trades"] < 4:
+                    continue
+                win_rate = round((data["wins"] / data["trades"]) * 100, 2)
+                scored.append((value, win_rate, data["trades"]))
+            if not scored:
+                return None, None
+            scored.sort(key=lambda item: (item[1], item[2]))
+            return scored[-1], scored[0]
+
+        summary = {"ready": True, "trades": len(rows)}
+        for label, key in [
+            ("strategy", "strategy_name"),
+            ("symbol", "pair"),
+            ("timeframe", "timeframe"),
+            ("session", "session"),
+            ("regime", "market_regime"),
+        ]:
+            best, worst = bucket(key)
+            summary[f"best_{label}"] = best
+            summary[f"worst_{label}"] = worst
+        return summary
+    except Exception as e:
+        return {"ready": False, "trades": len(rows), "error": str(e)}
+
+
 def adaptive_learning_weight(strategy_name, symbol, timeframe, direction):
     try:
         rows = _recent_closed_trades()
@@ -2211,11 +2253,261 @@ def adaptive_learning_weight(strategy_name, symbol, timeframe, direction):
 
         adjustment = max(-15, min(15, adjustment))
         print(f"STRATEGY_PERFORMANCE strategy={strategy_name} win_rate={strategy_wr} trades={strategy_trades}")
+        stats = statistical_learning_summary(rows)
+        if stats.get("ready"):
+            print(
+                "STATISTICAL_LEARNING "
+                f"trades={stats.get('trades')} "
+                f"best_strategy={stats.get('best_strategy')} worst_strategy={stats.get('worst_strategy')} "
+                f"best_symbol={stats.get('best_symbol')} worst_symbol={stats.get('worst_symbol')} "
+                f"best_timeframe={stats.get('best_timeframe')} best_session={stats.get('best_session')} "
+                f"best_regime={stats.get('best_regime')}"
+            )
         print(f"LEARNING_WEIGHT strategy={strategy_name} symbol={symbol} timeframe={timeframe} adjustment={adjustment}")
         return adjustment, f"learning adjustment {adjustment}; strategy WR {strategy_wr}% over {strategy_trades}"
     except Exception as e:
         print(f"LEARNING_WEIGHT strategy={strategy_name} symbol={symbol} timeframe={timeframe} adjustment=0 error={e}")
         return 0, "learning unavailable"
+
+
+def _expert_tf_direction(df):
+    try:
+        if df is None or len(df) < 80:
+            return "UNKNOWN"
+        close = _safe_float(df["close"].iloc[-1])
+        ema20v = _safe_float(ema(df, 20).iloc[-1])
+        ema50v = _safe_float(ema(df, 50).iloc[-1])
+        ema200v = _safe_float(ema(df, 200).iloc[-1] if len(df) >= 200 else ema(df, 100).iloc[-1])
+        rsi_now = _safe_float(rsi(df).iloc[-1], 50)
+        if close <= 0 or min(ema20v, ema50v, ema200v) <= 0:
+            return "UNKNOWN"
+        if ema20v > ema50v > ema200v and close > ema50v and rsi_now >= 48:
+            return "BULL"
+        if ema20v < ema50v < ema200v and close < ema50v and rsi_now <= 52:
+            return "BEAR"
+        return "RANGE"
+    except Exception:
+        return "UNKNOWN"
+
+
+def expert_multi_timeframe_context(symbol, direction, current_df=None):
+    frames = {}
+    try:
+        for tf in ["4h", "1h", "15m", "5m"]:
+            df = current_df if tf == "5m" and current_df is not None else cached_market_data(symbol, tf, 220)
+            frames[tf] = {
+                "direction": _expert_tf_direction(df),
+                "available": df is not None and len(df) >= 80,
+            }
+        major = frames["4h"]["direction"]
+        confirm = frames["1h"]["direction"]
+        desired = "BULL" if direction == "LONG" else "BEAR"
+        if major == "UNKNOWN" or confirm == "UNKNOWN":
+            return {"state": "UNCONFIRMED", "score": 0, "reason": "4H/1H data unavailable", "frames": frames}
+        if major != confirm:
+            return {"state": "CONFLICT", "score": 0, "reason": f"4H {major} conflicts with 1H {confirm}", "frames": frames}
+        if major != desired:
+            return {"state": "CONFLICT", "score": 0, "reason": f"4H/1H {major} does not support {direction}", "frames": frames}
+
+        score = 60
+        if frames["15m"]["direction"] in [desired, "RANGE"]:
+            score += 20
+        if frames["5m"]["direction"] in [desired, "RANGE"]:
+            score += 10
+        state = "CONFIRMED" if score >= 80 else "PARTIAL"
+        return {"state": state, "score": min(score, 100), "reason": f"4H main trend and 1H confirmation support {direction}", "frames": frames}
+    except Exception as e:
+        return {"state": "UNCONFIRMED", "score": 0, "reason": f"expert MTF error: {e}", "frames": frames}
+
+
+def expert_session_state():
+    try:
+        now = datetime.utcnow()
+        hour = now.hour + (now.minute / 60)
+        if 13 <= hour < 16.5:
+            return {"session": "LONDON_NEW_YORK_OVERLAP", "tradable": True, "quality_bonus": 8}
+        if 7 <= hour < 16:
+            return {"session": "LONDON", "tradable": True, "quality_bonus": 4}
+        if 16.5 <= hour < 21:
+            return {"session": "NEW_YORK_LATE", "tradable": False, "quality_bonus": -8}
+        return {"session": "OFF_SESSION", "tradable": False, "quality_bonus": -12}
+    except Exception:
+        return {"session": "UNKNOWN", "tradable": False, "quality_bonus": -10}
+
+
+def high_impact_news_guard():
+    try:
+        manual_flag = os.environ.get("HIGH_IMPACT_NEWS_ACTIVE", "").strip().lower() in {"1", "true", "yes", "on"}
+        until = os.environ.get("HIGH_IMPACT_NEWS_UNTIL", "").strip()
+        if manual_flag:
+            return False, "HIGH_NEWS_RISK manual blackout active"
+        if until:
+            try:
+                clean_until = until.replace("Z", "+00:00")
+                until_dt = datetime.fromisoformat(clean_until)
+                if until_dt.tzinfo is not None:
+                    until_dt = until_dt.replace(tzinfo=None)
+                if datetime.utcnow() <= until_dt:
+                    return False, "HIGH_NEWS_RISK active until configured time"
+            except Exception:
+                return False, "HIGH_NEWS_RISK invalid HIGH_IMPACT_NEWS_UNTIL configuration"
+        return True, "no high impact news blackout configured"
+    except Exception as e:
+        return False, f"HIGH_NEWS_RISK guard error: {e}"
+
+
+def expert_volatility_state(df):
+    try:
+        if df is None or len(df) < 80:
+            return {"state": "LOW_LIQUIDITY", "ok": False, "reason": "insufficient candles"}
+        close = _safe_float(df["close"].iloc[-1])
+        atr_series = atr(df).dropna()
+        if close <= 0 or len(atr_series) < 30:
+            return {"state": "LOW_VOLATILITY", "ok": False, "reason": "insufficient ATR history"}
+        atr_val = _safe_float(atr_series.iloc[-1])
+        atr_avg = _safe_float(atr_series.tail(60).mean(), atr_val)
+        atr_ratio = atr_val / close if close > 0 else 0
+        relative = atr_val / atr_avg if atr_avg > 0 else 0
+        if atr_ratio < 0.0018 or relative < 0.55:
+            return {"state": "LOW_VOLATILITY", "ok": False, "reason": f"ATR too low ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
+        if atr_ratio > 0.045 or relative > 2.25:
+            return {"state": "HIGH_VOLATILITY", "ok": False, "reason": f"ATR too high ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
+        return {"state": "NORMAL_VOLATILITY", "ok": True, "reason": f"ATR tradable ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
+    except Exception as e:
+        return {"state": "VOLATILITY_ERROR", "ok": False, "reason": str(e)}
+
+
+def trend_exhaustion_filter(df, direction):
+    try:
+        if df is None or len(df) < 50:
+            return False, "insufficient exhaustion history"
+        close = _safe_float(df["close"].iloc[-1])
+        avg_candle_move = float(df["close"].pct_change().abs().tail(40).mean() or 0)
+        if close <= 0 or avg_candle_move <= 0:
+            return False, "invalid exhaustion baseline"
+        recent_move = abs(close - _safe_float(df["close"].iloc[-6])) / close
+        expected_move = avg_candle_move * 6
+        if expected_move > 0 and recent_move > expected_move * 0.80:
+            return True, f"trend exhaustion: recent move used {round((recent_move / expected_move) * 100, 1)}% of average move"
+        last = df.iloc[-1]
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        upper_wick = _safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))
+        lower_wick = min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])
+        if direction == "LONG" and upper_wick / candle_range > 0.55:
+            return True, "LONG exhaustion upper wick"
+        if direction == "SHORT" and lower_wick / candle_range > 0.55:
+            return True, "SHORT exhaustion lower wick"
+        return False, "not exhausted"
+    except Exception as e:
+        return True, f"exhaustion filter error: {e}"
+
+
+def smart_money_entry_zone(df, direction, regime_info):
+    try:
+        close = _safe_float(regime_info.get("close"))
+        atr_val = max(_safe_float(regime_info.get("atr")), close * 0.003 if close else 0.0)
+        support = regime_info.get("support")
+        resistance = regime_info.get("resistance")
+        recent_high = _safe_float(regime_info.get("recent_high"))
+        recent_low = _safe_float(regime_info.get("recent_low"))
+        if close <= 0 or atr_val <= 0:
+            return {"ok": False, "setup": None, "reason": "invalid smart-money baseline"}
+
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        upper_wick_ratio = (_safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))) / candle_range
+        lower_wick_ratio = (min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])) / candle_range
+        mid_range = recent_low + ((recent_high - recent_low) * 0.5) if recent_high > recent_low else close
+        fvg_long = len(df) >= 3 and _safe_float(df["low"].iloc[-1]) > _safe_float(df["high"].iloc[-3])
+        fvg_short = len(df) >= 3 and _safe_float(df["high"].iloc[-1]) < _safe_float(df["low"].iloc[-3])
+
+        if direction == "LONG":
+            if support and abs(close - support) <= max(atr_val * 0.85, close * 0.007):
+                return {"ok": True, "setup": "Bounce from Support", "reason": "entry near support with defined invalidation"}
+            if lower_wick_ratio >= 0.45 and _safe_float(last["low"]) < recent_low and close > recent_low:
+                return {"ok": True, "setup": "Liquidity Sweep", "reason": "sell-side liquidity swept and reclaimed"}
+            if _safe_float(prev["high"]) < close and _safe_float(last["low"]) <= _safe_float(prev["high"]) + atr_val * 0.25:
+                return {"ok": True, "setup": "Break + Retest", "reason": "breakout retested prior high"}
+            if fvg_long and close <= mid_range:
+                return {"ok": True, "setup": "Fair Value Gap", "reason": "bullish imbalance inside discount area"}
+            if close <= mid_range and regime_info.get("regime") in ["ACCUMULATION", "WEAK_BULL", "STRONG_BULL"]:
+                return {"ok": True, "setup": "Discount Pullback", "reason": "price in discount relative to recent range"}
+        else:
+            if resistance and abs(resistance - close) <= max(atr_val * 0.85, close * 0.007):
+                return {"ok": True, "setup": "Bounce from Resistance", "reason": "entry near resistance with defined invalidation"}
+            if upper_wick_ratio >= 0.45 and _safe_float(last["high"]) > recent_high and close < recent_high:
+                return {"ok": True, "setup": "Liquidity Sweep", "reason": "buy-side liquidity swept and rejected"}
+            if _safe_float(prev["low"]) > close and _safe_float(last["high"]) >= _safe_float(prev["low"]) - atr_val * 0.25:
+                return {"ok": True, "setup": "Break + Retest", "reason": "breakdown retested prior low"}
+            if fvg_short and close >= mid_range:
+                return {"ok": True, "setup": "Fair Value Gap", "reason": "bearish imbalance inside premium area"}
+            if close >= mid_range and regime_info.get("regime") in ["DISTRIBUTION", "WEAK_BEAR", "STRONG_BEAR"]:
+                return {"ok": True, "setup": "Premium Pullback", "reason": "price in premium relative to recent range"}
+        return {"ok": False, "setup": None, "reason": "no retest, pullback, liquidity sweep, order block, FVG, or S/R bounce"}
+    except Exception as e:
+        return {"ok": False, "setup": None, "reason": f"smart money filter error: {e}"}
+
+
+def expert_quality_checklist(signal, regime_info, expert_context):
+    checks = []
+    def add(name, passed, reason):
+        checks.append({"name": name, "passed": bool(passed), "reason": reason})
+
+    mtf = expert_context.get("mtf", {})
+    volatility = expert_context.get("volatility", {})
+    session = expert_context.get("session", {})
+    smart = expert_context.get("smart_money", {})
+    news_ok = expert_context.get("news_ok", False)
+    rr = _safe_float(signal.get("risk_reward"))
+    display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence")))
+    volume_score = _safe_float(signal.get("volume_score", regime_info.get("volume_score", 0)))
+    risk_score = _safe_float(signal.get("risk_score", 100))
+    regime = str(signal.get("market_regime") or regime_info.get("regime") or "")
+
+    add("Trend", regime in ["STRONG_BULL", "WEAK_BULL", "STRONG_BEAR", "WEAK_BEAR", "EXPANSION", "ACCUMULATION", "DISTRIBUTION", "BREAKOUT", "REVERSAL", "RANGE"], regime)
+    add("Momentum", display_conf >= 70, f"display confidence {display_conf}")
+    add("Volume", volume_score >= 50, f"volume score {volume_score}")
+    add("Liquidity", regime not in ["LOW_LIQUIDITY", "LOW_VOLUME_CHOP"], regime)
+    add("Volatility", volatility.get("ok") is True, volatility.get("reason"))
+    add("MTF", mtf.get("state") == "CONFIRMED", mtf.get("reason"))
+    add("Risk", risk_score < 78, f"risk score {risk_score}")
+    add("RR", rr >= 1.5, f"RR {rr}")
+    add("Entry", smart.get("ok") is True, smart.get("reason"))
+    add("Structure", smart.get("ok") is True or (bool(signal.get("structure")) and str(signal.get("structure")) != "MID_RANGE"), signal.get("structure"))
+    add("Session", session.get("tradable") is True or display_conf >= 94, session.get("session"))
+    add("News", news_ok is True, expert_context.get("news_reason"))
+
+    passed = sum(1 for item in checks if item["passed"])
+    percent = round((passed / len(checks)) * 100, 2) if checks else 0
+    failed = [item for item in checks if not item["passed"]]
+    return {
+        "passed": passed,
+        "total": len(checks),
+        "percent": percent,
+        "failed": failed,
+        "checks": checks,
+    }
+
+
+def expert_self_review(signal, checklist):
+    try:
+        if checklist.get("percent", 0) < EXPERT_QUALITY_MIN_PERCENT:
+            return False, "Would I risk my own money? No - checklist below fund-manager standard"
+        if _safe_float(signal.get("risk_score"), 100) >= 78:
+            return False, "Would I risk my own money? No - risk score too high"
+        if _safe_float(signal.get("risk_reward"), 0) < 1.5:
+            return False, "Would I risk my own money? No - RR below minimum"
+        if _safe_float(signal.get("display_confidence", signal.get("confidence")), 0) < 70:
+            return False, "Would I risk my own money? No - confidence too low"
+        return True, "Would I risk my own money? Yes - checklist passed"
+    except Exception as e:
+        return False, f"Would I risk my own money? No - self review error: {e}"
+
+
+def _no_trade_reason(symbol, interval, reason):
+    print(f"NO_TRADE_REASON symbol={symbol} timeframe={interval} reason={reason}")
+    print(f"NO_TRADE_BETTER_THAN_BAD_TRADE symbol={symbol} timeframe={interval}")
 
 
 def detect_symbol_market_regime(symbol, interval, df):
@@ -2238,6 +2530,8 @@ def detect_symbol_market_regime(symbol, interval, df):
         volume_ratio = _safe_float(volume_profile.get("volume_ratio"), 0)
         volume_state = volume_profile.get("volume_state", "UNKNOWN")
         volume_score = _safe_float(volume_profile.get("volume_score"), 45)
+        atr_avg = _safe_float(atr_series.tail(60).mean() if len(atr_series) >= 60 else atr_val, atr_val)
+        atr_relative = atr_val / atr_avg if atr_avg > 0 else 1
         levels = calculate_support_resistance(df)
         support = nearest_support(close, levels.get("support", []))
         resistance = nearest_resistance(close, levels.get("resistance", []))
@@ -2251,6 +2545,8 @@ def detect_symbol_market_regime(symbol, interval, df):
         upper_wick = _safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))
         lower_wick = min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])
         range_width = (recent_high - recent_low) / close if close > 0 and recent_high > recent_low else 0
+        close_position = (close - recent_low) / (recent_high - recent_low) if recent_high > recent_low else 0.5
+        ema_spread = (max(ema20v, ema50v, ema200v) - min(ema20v, ema50v, ema200v)) / close if close > 0 else 1
         long_mtf = multi_timeframe_quality(symbol, "LONG", interval, df)
         short_mtf = multi_timeframe_quality(symbol, "SHORT", interval, df)
 
@@ -2270,12 +2566,40 @@ def detect_symbol_market_regime(symbol, interval, df):
             "recent_high": recent_high,
             "recent_low": recent_low,
             "range_width": range_width,
+            "close_position": close_position,
+            "ema_spread": ema_spread,
+            "atr_relative": atr_relative,
             "body_ratio": body / candle_range,
             "upper_wick_ratio": upper_wick / candle_range,
             "lower_wick_ratio": lower_wick / candle_range,
             "long_mtf": long_mtf,
             "short_mtf": short_mtf,
         }
+
+        volatility_state = expert_volatility_state(df)
+        if volatility_state.get("state") == "LOW_VOLATILITY":
+            return {**base, "regime": "LOW_VOLATILITY", "reason": volatility_state.get("reason")}
+
+        fake_breakout_up = _safe_float(last["high"]) > prev_high and close < prev_high and upper_wick / candle_range >= 0.42
+        fake_breakout_down = _safe_float(last["low"]) < prev_low and close > prev_low and lower_wick / candle_range >= 0.42
+        if fake_breakout_up or fake_breakout_down:
+            return {**base, "regime": "FAKE_BREAKOUT", "reason": "breakout failed and closed back inside range"}
+
+        if volume_score < 45 and volume_ratio < 0.55 and range_width < 0.018 and ema_spread < 0.0065:
+            return {**base, "regime": "LOW_VOLUME_CHOP", "reason": f"thin chop volume_score={round(volume_score, 1)} range={round(range_width, 4)}"}
+
+        if range_width < 0.010 and atr_relative < 0.8 and ema_spread < 0.006:
+            return {**base, "regime": "CONSOLIDATION", "reason": "tight range with compressed ATR"}
+
+        if range_width >= 0.018 and atr_relative >= 1.25 and volume_ratio >= 1.0:
+            expansion_direction = "LONG" if close_position >= 0.55 else "SHORT" if close_position <= 0.45 else None
+            return {**base, "regime": "EXPANSION", "breakout_direction": expansion_direction, "reason": "ATR and volume expansion from range"}
+
+        if range_width >= 0.014 and close_position <= 0.35 and volume_ratio >= 0.75 and 36 <= rsi_now <= 55:
+            return {**base, "regime": "ACCUMULATION", "reversal_direction": "LONG", "reason": "discount range accumulation with acceptable volume"}
+
+        if range_width >= 0.014 and close_position >= 0.65 and volume_ratio >= 0.75 and 45 <= rsi_now <= 66:
+            return {**base, "regime": "DISTRIBUTION", "reversal_direction": "SHORT", "reason": "premium range distribution with acceptable volume"}
 
         # Treat very poor relative volume as a hard block, but do not reject
         # large-cap trend setups only because Binance.US/quote source reports a
@@ -2297,14 +2621,15 @@ def detect_symbol_market_regime(symbol, interval, df):
         if resistance and upper_wick / candle_range >= 0.45 and rsi_now >= 58 and abs(resistance - close) / close < 0.012:
             return {**base, "regime": "REVERSAL", "reversal_direction": "SHORT", "reason": "resistance wick rejection with RSI rejection zone"}
 
-        ema_spread = (max(ema20v, ema50v, ema200v) - min(ema20v, ema50v, ema200v)) / close if close > 0 else 1
         if range_width >= 0.012 and 38 <= rsi_now <= 62 and ema_spread < 0.0065:
             return {**base, "regime": "RANGE", "reason": "range-bound market with neutral RSI and tight EMAs"}
 
         if ema20v > ema50v > ema200v and long_mtf.get("state") in ["CONFIRMED", "PARTIAL"]:
-            return {**base, "regime": "BULL_TREND", "reason": "EMA 20/50/200 bullish alignment"}
+            strength = "STRONG_BULL" if long_mtf.get("state") == "CONFIRMED" and volume_score >= 55 and rsi_now >= 52 and atr_relative >= 0.75 else "WEAK_BULL"
+            return {**base, "regime": strength, "reason": f"{strength} EMA 20/50/200 bullish alignment"}
         if ema20v < ema50v < ema200v and short_mtf.get("state") in ["CONFIRMED", "PARTIAL"]:
-            return {**base, "regime": "BEAR_TREND", "reason": "EMA 20/50/200 bearish alignment"}
+            strength = "STRONG_BEAR" if short_mtf.get("state") == "CONFIRMED" and volume_score >= 55 and rsi_now <= 48 and atr_relative >= 0.75 else "WEAK_BEAR"
+            return {**base, "regime": strength, "reason": f"{strength} EMA 20/50/200 bearish alignment"}
         if range_width >= 0.012 and 38 <= rsi_now <= 62:
             return {**base, "regime": "RANGE", "reason": "range-bound market with neutral RSI"}
         return {**base, "regime": "HIGH_VOLATILITY" if atr_ratio > 0.04 else "RANGE", "reason": "mixed structure without clean trend"}
@@ -2383,17 +2708,21 @@ def _strategy_for_regime(regime_info):
     resistance = regime_info.get("resistance")
     rsi_now = _safe_float(regime_info.get("rsi"), 50)
 
-    if regime == "BULL_TREND":
+    if regime in ["STRONG_BULL", "WEAK_BULL", "BULL_TREND"]:
         return "LONG", "trend_following_long", ["Bull trend EMA alignment", regime_info.get("reason")]
-    if regime == "BEAR_TREND":
+    if regime in ["STRONG_BEAR", "WEAK_BEAR", "BEAR_TREND"]:
         return "SHORT", "trend_following_short", ["Bear trend EMA alignment", regime_info.get("reason")]
-    if regime == "BREAKOUT":
+    if regime in ["BREAKOUT", "EXPANSION"]:
         direction = regime_info.get("breakout_direction")
+        if not direction:
+            direction = "LONG" if regime_info.get("close_position", 0.5) >= 0.55 else "SHORT"
         return direction, "confirmed_breakout", ["Breakout confirmed by volume", regime_info.get("reason")]
-    if regime == "REVERSAL":
+    if regime in ["REVERSAL", "ACCUMULATION", "DISTRIBUTION"]:
         direction = regime_info.get("reversal_direction")
+        if not direction:
+            direction = "LONG" if regime == "ACCUMULATION" else "SHORT"
         return direction, "wick_rejection_reversal", ["Reversal only after wick rejection", regime_info.get("reason")]
-    if regime == "RANGE":
+    if regime in ["RANGE", "CONSOLIDATION"]:
         if support and close and abs(close - support) / close < 0.012 and rsi_now <= 48:
             return "LONG", "range_support_bounce", ["Range support bounce", regime_info.get("reason")]
         if resistance and close and abs(resistance - close) / close < 0.012 and rsi_now >= 52:
@@ -2463,12 +2792,42 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
     try:
         regime_info = detect_symbol_market_regime(symbol, interval, df)
         regime = regime_info.get("regime", "LOW_LIQUIDITY")
-        if regime in ["LOW_LIQUIDITY", "HIGH_VOLATILITY"]:
-            return None, f"{regime}: {regime_info.get('reason')}", regime_info
+        if regime in ["LOW_LIQUIDITY", "HIGH_VOLATILITY", "LOW_VOLATILITY", "LOW_VOLUME_CHOP", "FAKE_BREAKOUT", "HIGH_NEWS_RISK"]:
+            reason = f"{regime}: {regime_info.get('reason')}"
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, regime_info
+
+        volatility_state = expert_volatility_state(df)
+        if not volatility_state.get("ok"):
+            reason = f"{volatility_state.get('state')}: {volatility_state.get('reason')}"
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, {**regime_info, "volatility_filter": volatility_state}
+
+        news_ok, news_reason = high_impact_news_guard()
+        if not news_ok:
+            _no_trade_reason(symbol, interval, news_reason)
+            return None, news_reason, {**regime_info, "regime": "HIGH_NEWS_RISK", "reason": news_reason}
 
         direction, strategy_name, reasons = _strategy_for_regime(regime_info)
         if not direction or not strategy_name:
             return None, "no adaptive strategy matched", regime_info
+
+        expert_mtf = expert_multi_timeframe_context(symbol, direction, df if interval == "5m" else None)
+        if expert_mtf.get("state") != "CONFIRMED":
+            reason = f"MTF rejected: {expert_mtf.get('reason')}"
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, {**regime_info, "expert_mtf": expert_mtf}
+
+        smart_entry = smart_money_entry_zone(df, direction, regime_info)
+        if not smart_entry.get("ok"):
+            reason = f"Entry rejected: {smart_entry.get('reason')}"
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, {**regime_info, "smart_money": smart_entry}
+
+        exhausted, exhaustion_reason = trend_exhaustion_filter(df, direction)
+        if exhausted:
+            _no_trade_reason(symbol, interval, exhaustion_reason)
+            return None, exhaustion_reason, {**regime_info, "exhaustion": exhaustion_reason}
 
         entry = _safe_float(regime_info.get("close"))
         atr_val = _safe_float(regime_info.get("atr"))
@@ -2517,8 +2876,17 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "strategy_name": strategy_name,
             "market_regime": regime,
             "adaptive_regime": regime,
+            "expert_mtf": expert_mtf,
+            "expert_session": expert_session_state(),
+            "expert_volatility": volatility_state,
+            "smart_money_setup": smart_entry.get("setup"),
+            "smart_money_reason": smart_entry.get("reason"),
+            "news_filter": news_reason,
+            "atr": atr_val,
+            "atr_ratio": regime_info.get("atr_ratio"),
+            "volume_ratio": regime_info.get("volume_ratio"),
             "reasons": reasons,
-            "signal_quality_reason": reason_text,
+            "signal_quality_reason": f"{reason_text}; {smart_entry.get('setup')}: {smart_entry.get('reason')}",
             "entry_location_reason": regime_info.get("reason", "adaptive setup"),
             "management_note": "Protect the trade after TP1 or +0.6R; reduce exposure in high volatility.",
             "breakeven_trigger_r": 0.6,
@@ -2594,6 +2962,33 @@ def finalize_adaptive_signal(signal, df, paid=True):
             return None, quality_reason
         if _safe_float(signal.get("display_confidence"), 0) < 70:
             return None, f"display confidence {signal.get('display_confidence')} below 70"
+        expert_context = {
+            "mtf": signal.get("expert_mtf") or {},
+            "volatility": signal.get("expert_volatility") or {},
+            "session": signal.get("expert_session") or expert_session_state(),
+            "smart_money": {
+                "ok": bool(signal.get("smart_money_setup")),
+                "setup": signal.get("smart_money_setup"),
+                "reason": signal.get("smart_money_reason"),
+            },
+            "news_ok": str(signal.get("news_filter") or "").lower().startswith("no high impact"),
+            "news_reason": signal.get("news_filter"),
+        }
+        checklist = expert_quality_checklist(signal, {
+            "regime": signal.get("market_regime"),
+            "volume_score": signal.get("volume_score"),
+        }, expert_context)
+        signal["quality_checklist"] = checklist
+        signal["quality_checklist_score"] = checklist["percent"]
+        if checklist["percent"] < EXPERT_QUALITY_MIN_PERCENT:
+            failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
+            _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
+            return None, f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}"
+        self_ok, self_reason = expert_self_review(signal, checklist)
+        signal["self_review"] = self_reason
+        if not self_ok:
+            _no_trade_reason(signal.get("pair"), interval, self_reason)
+            return None, self_reason
         try:
             from ai_model import explain_predict_trade
             ai_ok, ai_reason = explain_predict_trade(signal)
