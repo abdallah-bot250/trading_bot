@@ -16,6 +16,7 @@ AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "bybit").strip().low
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
+NEXORA_PROOF_MODE = os.environ.get("NEXORA_PROOF_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -87,6 +88,41 @@ def signal_display_confidence(signal):
         return float(signal.get("display_confidence", signal.get("confidence", 0)) or 0)
     except Exception:
         return 0.0
+
+
+def extract_actual_fill_price(order):
+    try:
+        if not isinstance(order, dict):
+            return None
+        for key in ("average", "price"):
+            value = order.get(key)
+            if value not in (None, "", 0, "0"):
+                price = float(value)
+                if price > 0:
+                    return price
+        cost = order.get("cost")
+        filled = order.get("filled")
+        if cost not in (None, "", 0, "0") and filled not in (None, "", 0, "0"):
+            cost_f = float(cost)
+            filled_f = float(filled)
+            if cost_f > 0 and filled_f > 0:
+                return cost_f / filled_f
+        trades = order.get("trades") or []
+        total_cost = 0.0
+        total_amount = 0.0
+        for trade in trades:
+            if not isinstance(trade, dict):
+                continue
+            amount = float(trade.get("amount") or trade.get("filled") or 0)
+            price = float(trade.get("price") or trade.get("average") or 0)
+            if amount > 0 and price > 0:
+                total_amount += amount
+                total_cost += amount * price
+        if total_amount > 0 and total_cost > 0:
+            return total_cost / total_amount
+        return None
+    except Exception:
+        return None
 
 
 def log_unlinked_user_once(email):
@@ -570,6 +606,11 @@ def record_sent_signal(chat_id, plan, signal):
         conn.close()
         signal_id = row[0] if row else None
         log(f"Signal tracked id={signal_id} chat_id={chat_id} pair={signal.get('pair')}")
+        if NEXORA_PROOF_MODE:
+            log(
+                f"PROOF_SIGNAL_RECORDED id={signal_id} pair={signal.get('pair')} "
+                f"direction={signal.get('direction')} display_conf={signal_display_confidence(signal)}"
+            )
         return signal_id
     except Exception as e:
         log(f"record_sent_signal error: {e}")
@@ -1143,6 +1184,19 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
+        actual_entry_price = extract_actual_fill_price(order)
+        if actual_entry_price is None:
+            log(f"AUTO_TRADE_FILL_PRICE_UNAVAILABLE pair={raw_symbol} order_id={order.get('id')} exchange={exchange_id}")
+            return None, "Auto trade submitted but fill price unavailable; trade was not recorded as safely executed"
+
+        fill_deviation = abs(float(actual_entry_price) - entry) / entry * 100
+        if fill_deviation > MAX_ENTRY_DEVIATION_PERCENT:
+            log(
+                f"AUTO_TRADE_FILL_DEVIATION_TOO_HIGH pair={raw_symbol} order_id={order.get('id')} "
+                f"signal_entry={entry} actual_entry={actual_entry_price} deviation={round(fill_deviation, 4)}"
+            )
+            return None, "Auto trade fill deviation too high; trade was not recorded as safely executed"
+
         if trade_type == "futures" and not protection_ok:
             log(f"AUTO_TRADE_PROTECTION_WARNING pair={raw_symbol} exchange={exchange_id} reason={protection_msg}")
 
@@ -1159,7 +1213,7 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
             raw_symbol,
             signal["direction"],
             trade_type,
-            entry,
+            float(actual_entry_price),
             tp,
             sl,
             amount,
@@ -1244,6 +1298,11 @@ What happened: {what_happened}
                         if not outcome_sent:
                             log(f"SIGNAL_OUTCOME_SEND_FAILED signal_id={signal_id} chat_id_present={bool(chat_id)} pair={pair}")
                     write_log(chat_id, "INFO", f"Signal outcome {pair} {outcome} pnl={round(float(pnl_percent), 4)}%")
+                    if NEXORA_PROOF_MODE:
+                        log(
+                            f"PROOF_OUTCOME_RECORDED signal_id={signal_id} pair={pair} "
+                            f"outcome={outcome} pnl={round(float(pnl_percent), 4)}"
+                        )
             except Exception as inner_e:
                 log(f"Signal tracking row error id={signal_id}: {inner_e}")
 
