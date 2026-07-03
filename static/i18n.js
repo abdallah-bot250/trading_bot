@@ -207,12 +207,7 @@
     update(); setInterval(update, 60000);
   }
   function initTradingViewPreview(){
-    if(!document.querySelector('.hero') || document.querySelector('.nx-tv-wrap') || document.querySelector('.nx-trading-terminal')) return;
-    const target=document.querySelector('main .section, .hero');
-    if(!target) return;
-    const wrap=document.createElement('section');
-    wrap.className='nx-tv-wrap';
-    wrap.innerHTML='<div class="nx-tv-head">Live Market Chart <span>BTCUSDT preview</span></div><iframe class="nx-tv-frame" title="TradingView BTCUSDT chart" loading="lazy" src="https://s.tradingview.com/widgetembed/?symbol=BINANCE%3ABTCUSDT&interval=60&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111827&studies=[]&theme=dark&style=1&timezone=Etc%2FUTC&withdateranges=1&hideideas=1"></iframe>';
-    target.parentNode.insertBefore(wrap, target.nextSibling);
+    document.querySelectorAll('.nx-tv-wrap').forEach(function(el){ el.remove(); });
+    return;
   }
 })();
