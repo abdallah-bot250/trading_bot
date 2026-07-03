@@ -714,7 +714,7 @@ def is_paid_plan_active(plan, expiry, is_paid):
 # ================= PLAN FILTER =================
 def signal_allowed_for_plan(plan, signal):
     try:
-        confidence = float(signal.get("confidence", 0))
+        confidence = signal_display_confidence(signal)
         engine_confidence = float(signal.get("engine_confidence", confidence))
         risk_score = float(signal.get("risk_score", 50))
         score = abs(float(signal.get("score", 0)))
@@ -724,6 +724,9 @@ def signal_allowed_for_plan(plan, signal):
 
         if risk_score >= 72:
             return False
+
+        if plan == "pro_2y":
+            return True
 
         if plan == "trial":
             return (
@@ -762,17 +765,36 @@ def signal_allowed_for_plan(plan, signal):
                 and score >= 6
             )
 
-        if plan == "pro_2y":
-            return (
-                confidence >= 82
-                and engine_confidence >= 78
-                and risk_score <= 56
-                and score >= 6
-            )
-
         return False
     except:
         return False
+
+
+def signal_plan_block_reason(plan, signal):
+    try:
+        display_confidence = signal_display_confidence(signal)
+        engine_confidence = float(signal.get("engine_confidence", display_confidence))
+        risk_score = float(signal.get("risk_score", 50))
+        score = abs(float(signal.get("score", 0)))
+        timeframe = signal.get("timeframe", "5m")
+        volume = signal.get("volume", "WEAK")
+        trend_power = signal.get("trend_power", "MIXED")
+
+        if risk_score >= 72:
+            return f"global_risk_filter display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score}"
+        if plan == "trial":
+            return f"trial_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} timeframe={timeframe}"
+        if plan == "basic":
+            return f"basic_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} volume={volume}"
+        if plan == "pro":
+            return f"pro_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} volume={volume} trend_power={trend_power}"
+        if plan == "vip":
+            return f"vip_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score}"
+        if plan == "pro_2y":
+            return f"pro_2y_global_gate display_conf={display_confidence} risk_score={risk_score} score={score}"
+        return f"unknown_plan display_conf={display_confidence} risk_score={risk_score}"
+    except Exception as e:
+        return f"plan_filter_error error={e}"
 # ================= EXCHANGE =================
 def get_exchange(api_key, api_secret, trade_type):
     """Return the configured exchange for real auto-trading.
@@ -1164,6 +1186,8 @@ def update_signal_outcomes():
         SELECT id, chat_id, pair, direction, entry, tp, sl
         FROM signal_log
         WHERE status = 'SENT'
+          AND chat_id IS NOT NULL
+          AND chat_id <> ''
         ORDER BY sent_at ASC
         LIMIT 200
         """)
@@ -1197,15 +1221,15 @@ def update_signal_outcomes():
                     c.execute("""
                     UPDATE signal_log
                     SET status = 'CLOSED', outcome = %s, current_price = %s, pnl_percent = %s, closed_at = NOW()
-                    WHERE id = %s
-                    """, (outcome, float(current_price), round(float(pnl_percent), 4), signal_id))
+                    WHERE id = %s AND chat_id = %s
+                    """, (outcome, float(current_price), round(float(pnl_percent), 4), signal_id, str(chat_id)))
                     conn.commit()
 
                     if SIGNAL_TRACKING_NOTIFY:
                         icon = "✅" if outcome == "TP_HIT" else "🛑"
                         clean_pnl_percent = clean_number(pnl_percent, 2)
                         what_happened = "TP Hit" if outcome == "TP_HIT" else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
-                        send(chat_id, f"""{icon} Signal Update
+                        outcome_sent = send(chat_id, f"""{icon} Signal Update
 
 Pair: {pair}
 Direction: {direction}
@@ -1217,6 +1241,8 @@ PNL %: {clean_pnl_percent}%
 Duration: N/A
 What happened: {what_happened}
 """)
+                        if not outcome_sent:
+                            log(f"SIGNAL_OUTCOME_SEND_FAILED signal_id={signal_id} chat_id_present={bool(chat_id)} pair={pair}")
                     write_log(chat_id, "INFO", f"Signal outcome {pair} {outcome} pnl={round(float(pnl_percent), 4)}%")
             except Exception as inner_e:
                 log(f"Signal tracking row error id={signal_id}: {inner_e}")
@@ -1673,11 +1699,19 @@ def run():
 
                     # ===== PLAN FILTER =====
                     if not signal_allowed_for_plan(plan, signal):
-                        log(f"SIGNAL_PLAN_BLOCKED plan={plan} reason=plan_limits pair={signal.get('pair')}")
+                        log(
+                            f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
+                            f"display_conf={display_confidence} risk_score={signal.get('risk_score')} "
+                            f"reason={signal_plan_block_reason(plan, signal)}"
+                        )
                         continue
 
                     if not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
-                        log(f"SIGNAL_PLAN_BLOCKED plan={plan} reason=signal_type_disabled pair={signal.get('pair')}")
+                        log(
+                            f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
+                            f"display_conf={display_confidence} risk_score={signal.get('risk_score')} "
+                            f"reason=signal_type_disabled"
+                        )
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
