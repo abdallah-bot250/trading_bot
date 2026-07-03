@@ -2238,6 +2238,381 @@ def auto_trade_dashboard_page():
     )
 
 
+SAAS_FEATURE_NAV = [
+    ("Rules Center", "/rules", "Beta"),
+    ("Demo Rules", "/demo-rules", "Coming Soon"),
+    ("AI Optimizations", "/ai-optimizations", "Beta"),
+    ("Strategy Templates", "/templates", "Available"),
+    ("Connected Exchanges", "/exchanges", "Beta"),
+    ("Leverage Trading", "/leverage", "Available"),
+    ("Notifications", "/notifications", "Beta"),
+    ("Indicators", "/indicators", "Available"),
+    ("Conditions", "/conditions", "Available"),
+    ("Executions", "/executions", "Beta"),
+    ("Marketplace", "/marketplace", "Coming Soon"),
+    ("Academy", "/academy", "Available"),
+    ("TradingView", "/tradingview", "Available"),
+    ("Execution Speed", "/execution-speed", "Beta"),
+    ("DeFi", "/defi", "Coming Soon"),
+    ("Pricing", "/pricing", "Available"),
+]
+
+
+STRATEGY_TEMPLATE_CARDS = [
+    {"title": "Conservative AI Signals", "status": "Available", "description": "Lower-frequency signal presentation for users who prefer strict risk controls and cleaner setups."},
+    {"title": "Balanced AI Signals", "status": "Available", "description": "A balanced preset description for trend, confirmation, and risk-managed Telegram signals."},
+    {"title": "Aggressive Momentum", "status": "Beta", "description": "Momentum-focused concept for users who understand higher volatility. Presentation only; engine logic is unchanged."},
+    {"title": "Trend Following", "status": "Available", "description": "Explains the existing trend-confirmation style with EMA, MTF, and market structure context."},
+    {"title": "Breakout Hunter", "status": "Beta", "description": "Describes confirmed breakout tracking with volume and safety filters. No user-editable automation yet."},
+    {"title": "Range Protection", "status": "Available", "description": "Highlights range caution, no-trade behavior, and support/resistance validation."},
+    {"title": "Smart Money Sweep", "status": "Beta", "description": "Educational template around liquidity sweep and structure confirmation already described by Nexora."},
+]
+
+
+PLAN_FEATURE_ROWS = [
+    ("Free Trial", "2 signals", "UI preview", "0", "Available", "No", "Market data only", "Basic", "Academy preview", "Community"),
+    ("Basic", "Limited monthly", "Paper rules UI", "Low", "Available", "No", "Bybit display / Binance data", "Core", "Available", "Standard"),
+    ("Pro", "Higher monthly", "Paper rules UI", "Medium", "Available", "Manual tools", "Bybit display / Binance data", "Advanced", "Available", "Priority"),
+    ("Elite", "Premium access", "Paper rules UI", "Higher", "Available", "Eligible", "Bybit display / Binance data", "Advanced", "Available", "VIP"),
+    ("Pro 2 Years", "Highest access", "Paper rules UI", "Highest", "Available", "Eligible", "Bybit display / Binance data", "Advanced", "Available", "VIP"),
+]
+
+
+def _feature_badge(status):
+    status = str(status or "Coming Soon").strip()
+    if status not in {"Available", "Beta", "Coming Soon"}:
+        return "Coming Soon"
+    return status
+
+
+def _product_feature_definitions(user=None):
+    telegram_connected = bool(user and user.get("chat_id"))
+    auto_trade_enabled = bool(user and (int(user.get("spot_auto_trade_enabled") or 0) == 1 or int(user.get("futures_auto_trade_enabled") or 0) == 1))
+    return {
+        "rules": {
+            "title": "Rules Center",
+            "eyebrow": "Coinrule-style Rules",
+            "status": "Beta",
+            "summary": "A presentation layer for live and demo trading rules. It does not edit the live Signal Engine yet.",
+            "cards": [
+                ("Live Rules", "UI only", "Coming Soon", "Live rule creation is intentionally disabled until a dedicated backend is added."),
+                ("Demo Rules", "Presentation", "Beta", "Paper rule concepts are shown without sending orders."),
+                ("Rule Status", "Enabled / Disabled", "Beta", "Status badges are product presentation only when no rule backend exists."),
+                ("Risk Mode", "Conservative", "Available", "Risk language maps to existing Nexora safety positioning."),
+            ],
+            "table": {
+                "headers": ["Rule", "Pair", "Timeframe", "Risk Mode", "Status"],
+                "rows": [
+                    ["Conservative AI Signals", "BTC/ETH majors", "15m / 1h", "Conservative", "UI only"],
+                    ["Breakout Hunter", "High-liquidity pairs", "15m", "Balanced", "Coming Soon"],
+                    ["Range Protection", "Major pairs", "15m", "Defensive", "UI only"],
+                ],
+            },
+        },
+        "demo-rules": {
+            "title": "Demo / Paper Rules",
+            "eyebrow": "Paper Trading",
+            "status": "Coming Soon",
+            "summary": "A safe paper-mode dashboard concept. It never executes trades and never changes the real bot.",
+            "cards": [
+                ("Virtual Balance", "Not connected yet", "Coming Soon", "Requires a future paper ledger backend."),
+                ("Demo Signals", "Read-only preview", "Beta", "Demo concepts can be displayed without execution."),
+                ("TP/SL Simulation", "Visual only", "Coming Soon", "No simulated fills are written to production tables."),
+                ("Paper Mode", "Disabled", "Coming Soon", "Clearly marked as not live execution."),
+            ],
+        },
+        "ai-optimizations": {
+            "title": "AI Optimizations",
+            "eyebrow": "Strategy Intelligence",
+            "status": "Beta",
+            "summary": "Shows verified learning and optimization context when trade history exists; otherwise uses an honest empty state.",
+            "cards": [],
+        },
+        "templates": {
+            "title": "Strategy Templates",
+            "eyebrow": "SaaS Templates",
+            "status": "Available",
+            "summary": "Professional preset descriptions for buyers and users. Selecting templates does not modify the live Signal Engine.",
+            "cards": [(item["title"], "Description only", item["status"], item["description"]) for item in STRATEGY_TEMPLATE_CARDS],
+        },
+        "exchanges": {
+            "title": "Connected Exchanges",
+            "eyebrow": "Exchange Layer",
+            "status": "Beta",
+            "summary": "Read-only connectivity presentation. No new exchange execution backend is added.",
+            "cards": [
+                ("Bybit", "Connected" if auto_trade_enabled else "Not connected yet", "Beta", "Used for eligible auto-trade users when API keys are configured."),
+                ("Binance Market Data", "Market data source", "Available", "Used as a public market-data source/fallback where available."),
+                ("OKX", "Placeholder", "Coming Soon", "Displayed as a future exchange option only."),
+                ("KuCoin", "Market data / placeholder", "Beta", "Can be used as market-data fallback where supported; no new execution added."),
+            ],
+        },
+        "leverage": {
+            "title": "Leverage Trading",
+            "eyebrow": "Futures Safety",
+            "status": "Available",
+            "summary": "Explains futures support and risk controls without changing leverage execution.",
+            "cards": [
+                ("Futures Supported", "Yes", "Available", "Futures signal presentation exists for eligible plans."),
+                ("Max Leverage Display", "Config-dependent", "Beta", "Shown as product information, not an execution change."),
+                ("Safety Guards", "Entry freshness + SL", "Available", "Existing safeguards are described without modifying them."),
+                ("Risk Warning", "Always visible", "Available", "Crypto leverage trading is risky and not financial advice."),
+            ],
+        },
+        "notifications": {
+            "title": "Telegram + Text Notifications",
+            "eyebrow": "Delivery Center",
+            "status": "Beta",
+            "summary": "Shows notification channels and delivery status. SMS remains Coming Soon and has no backend here.",
+            "cards": [
+                ("Telegram", "Connected" if telegram_connected else "Not linked", "Available", "Uses the existing Telegram linking flow."),
+                ("Signal Delivery", "Active when bot is linked", "Available", "Existing Telegram delivery is unchanged."),
+                ("Outcome Delivery", "Tracked when enabled", "Beta", "Uses existing signal outcome tracking when available."),
+                ("Text / SMS", "Coming Soon", "Coming Soon", "No SMS backend is added."),
+            ],
+        },
+        "indicators": {
+            "title": "Advanced Indicators",
+            "eyebrow": "AI Inputs",
+            "status": "Available",
+            "summary": "Educational overview of the analysis concepts Nexora uses or presents in its signal methodology.",
+            "cards": [
+                ("EMA", "Trend structure", "Available", "Used to describe trend alignment."),
+                ("RSI", "Momentum quality", "Available", "Used as a momentum context indicator."),
+                ("ATR", "Volatility filter", "Available", "Helps explain low/high volatility rejection."),
+                ("Volume", "Confirmation", "Available", "Supports liquidity and breakout quality checks."),
+                ("Support / Resistance", "Targets and risk", "Available", "Used to explain safer entries and exits."),
+                ("Market Structure", "BOS / CHOCH", "Beta", "Displayed as professional analysis language."),
+                ("Liquidity Sweep", "Smart money context", "Beta", "Used as an educational concept."),
+                ("FVG", "Entry context", "Beta", "Presented as part of advanced methodology."),
+                ("MTF Confirmation", "4H / 1H / 15M / 5M", "Available", "Explains multi-timeframe decision quality."),
+            ],
+        },
+        "conditions": {
+            "title": "Conditions & Operators",
+            "eyebrow": "Rule Logic UI",
+            "status": "Available",
+            "summary": "Read-only condition explanations. Users cannot edit the production Signal Engine from this page.",
+            "cards": [
+                ("Trend Condition", "Direction quality", "Available", "Explains trend alignment requirements."),
+                ("Volume Condition", "Liquidity check", "Available", "Explains why thin markets can be skipped."),
+                ("Volatility Condition", "ATR band", "Available", "Explains no-trade behavior during poor volatility."),
+                ("MTF Condition", "Higher timeframe agreement", "Available", "Explains why conflict blocks signals."),
+                ("Risk / Reward", "Minimum quality", "Available", "Explains risk/reward filtering."),
+                ("Entry Freshness", "Chase protection", "Available", "Explains stale-entry protection."),
+            ],
+        },
+        "executions": {
+            "title": "Executions",
+            "eyebrow": "Delivery & Safety Logs",
+            "status": "Beta",
+            "summary": "Read-only execution overview using available trade/log data. It does not send Telegram messages or orders.",
+            "cards": [],
+        },
+        "marketplace": {
+            "title": "Marketplace Copy Trading",
+            "eyebrow": "Future Marketplace",
+            "status": "Coming Soon",
+            "summary": "A polished Coming Soon page for AI templates marketplace, verified strategies, and future copy trading.",
+            "cards": [
+                ("AI Templates Marketplace", "Planned", "Coming Soon", "No marketplace backend is active."),
+                ("Copy Top Strategies", "Planned", "Coming Soon", "No copy-trading execution is added."),
+                ("Verified Performance", "Proof-first", "Coming Soon", "Future marketplace should rely on verified performance only."),
+            ],
+        },
+        "academy": {
+            "title": "Training / Academy",
+            "eyebrow": "User Education",
+            "status": "Available",
+            "summary": "Educational hub that helps users understand Nexora, risk, Telegram setup, paper trading, and auto-trade safety.",
+            "cards": [
+                ("How Nexora AI Works", "Guide", "Available", "Explains AI-assisted analysis without profit guarantees."),
+                ("Risk Management", "Guide", "Available", "Teaches SL, RR, position sizing, and no-trade discipline."),
+                ("Reading Signals", "Guide", "Available", "Explains pair, direction, entry, targets, SL, confidence, and RR."),
+                ("Paper Trading", "Guide", "Available", "Encourages testing before real execution."),
+                ("Telegram Setup", "Guide", "Available", "Points users to the existing bot-link flow."),
+                ("Auto Trade Safety", "Guide", "Available", "Explains API keys, Bybit readiness, and safety checks."),
+            ],
+        },
+        "tradingview": {
+            "title": "TradingView Integration",
+            "eyebrow": "Chart Confirmation",
+            "status": "Available",
+            "summary": "Explains how the live chart supports review and confirmation. The landing TradingView widget is not duplicated here.",
+            "cards": [
+                ("Live Chart", "Landing terminal", "Available", "The main chart remains on the landing page."),
+                ("Trend Review", "Manual confirmation", "Available", "Users can compare signals against visible market structure."),
+                ("Signal Confirmation", "Education", "Available", "Encourages confirmation without changing signal delivery."),
+            ],
+        },
+        "execution-speed": {
+            "title": "Dedicated Server / Ultra Fast Execution",
+            "eyebrow": "Infrastructure",
+            "status": "Beta",
+            "summary": "Explains scanning, queue monitoring, and safety positioning without making unverified speed guarantees.",
+            "cards": [
+                ("Fast Scanning", "Optimized jobs", "Beta", "Scanning speed depends on data sources and hosting conditions."),
+                ("Railway Deployment", "Production hosting", "Available", "Current deployment model can be described to buyers."),
+                ("Queue Monitor", "Operational view", "Beta", "Read-only queue style presentation."),
+                ("Execution Safety", "Fill/deviation guards", "Available", "Safety is emphasized over chasing speed."),
+            ],
+        },
+        "defi": {
+            "title": "DeFi Trading Onchain",
+            "eyebrow": "Future Onchain",
+            "status": "Coming Soon",
+            "summary": "A safe Coming Soon page. No onchain trading, wallet signing, or DeFi backend is added.",
+            "cards": [
+                ("Onchain Signals", "Planned", "Coming Soon", "No DeFi execution exists in this release."),
+                ("Wallet Safety", "Research", "Coming Soon", "No wallet permissions are requested."),
+                ("DEX Routing", "Planned", "Coming Soon", "No smart contract integration is added."),
+            ],
+        },
+        "pricing": {
+            "title": "Pricing",
+            "eyebrow": "Plan Comparison",
+            "status": "Available",
+            "summary": "A SaaS-style plan feature comparison using clear Available / Beta / Coming Soon labels.",
+            "cards": [],
+            "pricing": True,
+        },
+    }
+
+
+def _feature_extra_data(page_key, user):
+    rows, source = _load_marketing_signals(str(user.get("chat_id") or "").strip(), 50) if user and user.get("chat_id") else ([], "not_connected")
+    performance = _build_performance_snapshot(rows)
+    cards = []
+    table = None
+    if page_key == "ai-optimizations":
+        cards = [
+            ("AI Optimization Credits", "Plan-based display", "Beta", "Credits are presented only; no billing or backend counter is added."),
+            ("Best Strategy", performance["best_strategy"], "Available" if performance["has_verified_history"] else "Beta", "Uses tracked history when available."),
+            ("Worst Strategy", "Not enough data yet", "Beta", "Requires more verified closed trades."),
+            ("Learning Score", "Not enough data yet" if not performance["has_verified_history"] else f"{performance['win_rate']}%", "Beta", "Derived from verified outcomes only when present."),
+            ("Last Optimization", "Not enough data yet", "Beta", "No fake optimization timestamp is shown."),
+        ]
+    elif page_key == "executions":
+        cards = [
+            ("Telegram Sends", len(rows), "Beta", "Uses tracked signals when available."),
+            ("Auto Trade Attempts", "Not enough data yet", "Beta", "Shown only if logs are available."),
+            ("Blocked Executions", "Not enough data yet", "Beta", "Safety rejections appear when logs expose them."),
+            ("Fill Price Warnings", "Not enough data yet", "Beta", "Fill warning logs can be reviewed by admins when recorded."),
+        ]
+        table = {
+            "headers": ["Pair", "Direction", "Status", "Confidence", "Time"],
+            "rows": [[r.get("pair") or "-", r.get("direction") or "-", r.get("status") or "Tracked", r.get("confidence") or "N/A", r.get("sent_at") or "-"] for r in rows[:12]],
+        }
+    return cards, table, rows, source, performance
+
+
+def _render_saas_feature(page_key):
+    user = _safe_current_user_snapshot()
+    if not user:
+        return redirect("/login")
+    pages = _product_feature_definitions(user)
+    page = pages.get(page_key)
+    if not page:
+        return redirect("/rules")
+    extra_cards, extra_table, signals, source, performance = _feature_extra_data(page_key, user)
+    page = dict(page)
+    if extra_cards:
+        page["cards"] = extra_cards
+    if extra_table:
+        page["table"] = extra_table
+    return render_template(
+        "saas_feature_page.html",
+        page_key=page_key,
+        page=page,
+        nav=SAAS_FEATURE_NAV,
+        user=user,
+        source=source,
+        performance=performance,
+        signals=signals,
+        plan_rows=PLAN_FEATURE_ROWS,
+    )
+
+
+@dashboard_bp.route("/rules")
+def rules_center_page():
+    return _render_saas_feature("rules")
+
+
+@dashboard_bp.route("/demo-rules")
+def demo_rules_page():
+    return _render_saas_feature("demo-rules")
+
+
+@dashboard_bp.route("/ai-optimizations")
+def ai_optimizations_page():
+    return _render_saas_feature("ai-optimizations")
+
+
+@dashboard_bp.route("/templates")
+def strategy_templates_page():
+    return _render_saas_feature("templates")
+
+
+@dashboard_bp.route("/exchanges")
+def connected_exchanges_page():
+    return _render_saas_feature("exchanges")
+
+
+@dashboard_bp.route("/leverage")
+def leverage_page():
+    return _render_saas_feature("leverage")
+
+
+@dashboard_bp.route("/notifications")
+def notifications_page():
+    return _render_saas_feature("notifications")
+
+
+@dashboard_bp.route("/indicators")
+def indicators_page():
+    return _render_saas_feature("indicators")
+
+
+@dashboard_bp.route("/conditions")
+def conditions_page():
+    return _render_saas_feature("conditions")
+
+
+@dashboard_bp.route("/executions")
+def executions_page():
+    return _render_saas_feature("executions")
+
+
+@dashboard_bp.route("/marketplace")
+def marketplace_page():
+    return _render_saas_feature("marketplace")
+
+
+@dashboard_bp.route("/academy")
+def academy_page():
+    return _render_saas_feature("academy")
+
+
+@dashboard_bp.route("/tradingview")
+def tradingview_page():
+    return _render_saas_feature("tradingview")
+
+
+@dashboard_bp.route("/execution-speed")
+def execution_speed_page():
+    return _render_saas_feature("execution-speed")
+
+
+@dashboard_bp.route("/defi")
+def defi_page():
+    return _render_saas_feature("defi")
+
+
+@dashboard_bp.route("/pricing")
+def pricing_page():
+    return _render_saas_feature("pricing")
+
+
 @dashboard_bp.route("/referrals")
 def referrals_page():
     return _dashboard_section("referrals")
@@ -2322,6 +2697,26 @@ def admin_ai_monitor_page():
         performance=performance,
         recent_signals=rows[:20],
     )
+
+
+@admin_bp.route("/admin/product-features")
+def admin_product_features_page():
+    if not session.get("user"):
+        return redirect("/login")
+    if not is_current_admin():
+        return "Forbidden", 403
+    pages = _product_feature_definitions({})
+    features = []
+    for label, href, nav_status in SAAS_FEATURE_NAV:
+        key = href.strip("/").replace("/", "-") or "rules"
+        page = pages.get(key, {})
+        features.append({
+            "label": label,
+            "href": href,
+            "status": _feature_badge(page.get("status") or nav_status),
+            "summary": page.get("summary") or "Product feature presentation page.",
+        })
+    return render_template("admin_product_features.html", features=features)
 
 
 # ================= SIMPLE DATA API =================

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Product Features Monitor | Nexora Admin</title>
+<link rel="stylesheet" href="/static/premium.css?v=saas-layer-1">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-marketing-page">
+<main class="nx-marketing-layout">
+  <aside class="nx-product-sidebar" aria-label="Admin navigation">
+    <a class="nx-product-brand" href="/admin">
+      <span>N</span>
+      <strong>Nexora Admin</strong>
+    </a>
+    <nav>
+      <a href="/admin">Admin Overview</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
+      <a href="/admin/payments">Payments</a>
+      <a href="/admin/manual-payments">Manual Payments</a>
+      <a href="/admin/system-health">System Health</a>
+      <a href="/admin/ai-monitor">AI Monitor</a>
+      <a class="active" href="/admin/product-features">Product Features</a>
+      <a href="/dashboard">Dashboard</a>
+    </nav>
+  </aside>
+
+  <section class="nx-product-main">
+    <header class="nx-product-topbar">
+      <div>
+        <span>Admin Only</span>
+        <h1>Product Features Monitor</h1>
+        <p>Read-only product status map for SaaS presentation pages. No trading, payment, Telegram, or auth behavior is changed here.</p>
+      </div>
+      <div class="nx-product-actions">
+        <button class="theme-toggle" type="button" aria-label="Toggle theme">Theme</button>
+        <a href="/admin">Back to Admin</a>
+      </div>
+    </header>
+
+    <section class="nx-metric-grid">
+      <article><span>Total Feature Pages</span><strong>{{ features|length }}</strong><small>Read-only GET pages</small></article>
+      <article><span>Available</span><strong>{{ features|selectattr('status', 'equalto', 'Available')|list|length }}</strong><small>Active or educational pages</small></article>
+      <article><span>Beta</span><strong>{{ features|selectattr('status', 'equalto', 'Beta')|list|length }}</strong><small>Limited/read-only presentation</small></article>
+      <article><span>Coming Soon</span><strong>{{ features|selectattr('status', 'equalto', 'Coming Soon')|list|length }}</strong><small>No active backend</small></article>
+    </section>
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Feature Status</h2>
+        <span>Available / Beta / Coming Soon</span>
+      </div>
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead><tr><th>Feature</th><th>Status</th><th>Route</th><th>Notes</th></tr></thead>
+          <tbody>
+          {% for item in features %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td><span class="nx-feature-status nx-status-{{ item.status|lower|replace(' ', '-') }}">{{ item.status }}</span></td>
+              <td><a href="{{ item.href }}">{{ item.href }}</a></td>
+              <td>{{ item.summary }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=saas-layer-1"></script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang }}" dir="{{ direction }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ page.title }} | Nexora AI Trader</title>
+<link rel="stylesheet" href="/static/premium.css?v=saas-layer-1">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
+</head>
+<body class="nexora-shell nx-marketing-page">
+<main class="nx-marketing-layout">
+  <aside class="nx-product-sidebar" aria-label="SaaS feature navigation">
+    <a class="nx-product-brand" href="/dashboard">
+      <span>N</span>
+      <strong>Nexora</strong>
+    </a>
+    <nav>
+      {% for label, href, status in nav %}
+      <a class="{% if href == '/' ~ page_key or (page_key == 'demo-rules' and href == '/demo-rules') or (page_key == 'execution-speed' and href == '/execution-speed') %}active{% endif %}" href="{{ href }}">
+        {{ label }} <small>{{ status }}</small>
+      </a>
+      {% endfor %}
+      <a href="/dashboard">Dashboard</a>
+      <a href="/performance">Performance</a>
+      <a href="/bot-check">Telegram Link</a>
+    </nav>
+  </aside>
+
+  <section class="nx-product-main">
+    <header class="nx-product-topbar">
+      <div>
+        <span>{{ page.eyebrow }} <b class="nx-feature-status nx-status-{{ page.status|lower|replace(' ', '-') }}">{{ page.status }}</b></span>
+        <h1>{{ page.title }}</h1>
+        <p>{{ page.summary }}</p>
+      </div>
+      <div class="nx-product-actions">
+        <button class="theme-toggle" type="button" aria-label="Toggle theme">Theme</button>
+        <a href="/dashboard">Back to Dashboard</a>
+      </div>
+    </header>
+
+    {% if page_key == 'pricing' %}
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Plan Feature Comparison</h2>
+        <span>Presentation only; plan IDs and payment flow are unchanged</span>
+      </div>
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead>
+            <tr>
+              <th>Plan</th>
+              <th>Signals / Month</th>
+              <th>Demo / Paper</th>
+              <th>AI Credits</th>
+              <th>Telegram</th>
+              <th>Auto Trade</th>
+              <th>Exchanges</th>
+              <th>Indicators</th>
+              <th>Academy</th>
+              <th>Support</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for row in plan_rows %}
+            <tr>
+              {% for cell in row %}
+              <td>{{ cell }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="nx-chip-row">
+        <span>Available = active product capability</span>
+        <span>Beta = presentational or limited read-only capability</span>
+        <span>Coming Soon = not active backend</span>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="nx-metric-grid">
+      {% for title, value, status, description in page.cards %}
+      <article>
+        <span>{{ title }}</span>
+        <strong>{{ value }}</strong>
+        <small class="nx-feature-status nx-status-{{ status|lower|replace(' ', '-') }}">{{ status }}</small>
+        <p>{{ description }}</p>
+      </article>
+      {% endfor %}
+    </section>
+
+    {% if page.table %}
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>{{ page.title }} Table</h2>
+        <span>Read-only</span>
+      </div>
+      {% if page.table.rows %}
+      <div class="nx-table-wrap">
+        <table class="nx-data-table">
+          <thead>
+            <tr>
+              {% for header in page.table.headers %}
+              <th>{{ header }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in page.table.rows %}
+            <tr>
+              {% for cell in row %}
+              <td>{{ cell }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="nx-empty-state">Not enough verified data yet.</div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if page_key in ['ai-optimizations', 'executions'] %}
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Verified Data Snapshot</h2>
+        <span>{{ source }}</span>
+      </div>
+      <div class="nx-guard-grid">
+        <article><span>Total Signals</span><strong>{{ performance.total_signals }}</strong></article>
+        <article><span>Win Rate</span><strong>{% if performance.win_rate is not none %}{{ performance.win_rate }}%{% else %}Not enough data{% endif %}</strong></article>
+        <article><span>Average RR</span><strong>{% if performance.average_rr is not none %}{{ performance.average_rr }}{% else %}Not enough data{% endif %}</strong></article>
+        <article><span>Best Pair</span><strong>{{ performance.best_pair }}</strong></article>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="nx-panel">
+      <div class="nx-panel-head">
+        <h2>Safety Note</h2>
+        <span>No backend behavior changed</span>
+      </div>
+      <p class="nx-readable">
+        This page is a product presentation layer. It does not edit strategies, does not execute trades,
+        does not send Telegram messages, and does not change payments, plans, or authentication.
+      </p>
+    </section>
+  </section>
+</main>
+<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+<script src="/static/i18n.js"></script>
+<script src="/static/nexora-ui.js?v=saas-layer-1"></script>
+</body>
+</html>

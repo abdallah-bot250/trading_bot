@@ -1460,3 +1460,50 @@ html[data-theme="light"] .nx-terminal-frame {
     grid-template-columns: 1fr;
   }
 }
+/* SaaS feature presentation layer */
+.nx-feature-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  border: 1px solid rgba(148, 163, 184, .22);
+  background: rgba(15, 23, 42, .64);
+  color: #dbeafe;
+}
+.nx-status-available {
+  color: #39f0a0;
+  border-color: rgba(57, 240, 160, .34);
+  background: rgba(34, 197, 94, .12);
+}
+.nx-status-beta {
+  color: #67e8f9;
+  border-color: rgba(103, 232, 249, .34);
+  background: rgba(8, 145, 178, .12);
+}
+.nx-status-coming-soon {
+  color: #fde68a;
+  border-color: rgba(253, 230, 138, .35);
+  background: rgba(202, 138, 4, .12);
+}
+.nx-product-sidebar nav a small {
+  margin-inline-start: auto;
+  font-size: 10px;
+  color: #8fb0c5;
+  font-weight: 800;
+}
+.nx-metric-grid article p,
+.nx-readable {
+  color: #adc0cf;
+  line-height: 1.75;
+  margin: 10px 0 0;
+}
+html[data-theme="light"] .nx-feature-status {
+  background: rgba(255, 255, 255, .82);
+  color: #0f172a;
+}
