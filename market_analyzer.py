@@ -34,6 +34,7 @@ LAST_DRY_RUN_SKIPS = []
 MIN_SPOT_FINAL_SCORE = 88
 MIN_FUTURES_FINAL_SCORE = 90
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
+STRICT_VOLATILITY_FILTER = os.environ.get("STRICT_VOLATILITY_FILTER", "true").strip().lower() not in {"0", "false", "no", "off"}
 EXPERT_QUALITY_MIN_PERCENT = float(os.environ.get("EXPERT_QUALITY_MIN_PERCENT", "90"))
 NEWS_BLACKOUT_MINUTES = int(os.environ.get("NEWS_BLACKOUT_MINUTES", "30"))
 ENTRY_MANAGER_MAX_UPDATE_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_UPDATE_PERCENT", "0.12"))
@@ -46,6 +47,7 @@ DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", 
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
 SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
+SIGNAL_SCAN_DIAGNOSTICS = {}
 ENTRY_MANAGER_LOG_CACHE = {}
 ENTRY_MANAGER_LOG_TTL_SECONDS = 300
 ALLOWED_DYNAMIC_BASE_ASSETS = {
@@ -53,6 +55,62 @@ ALLOWED_DYNAMIC_BASE_ASSETS = {
     "AVAX", "DOT", "LTC", "BCH", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ",
     "RUNE", "FET", "HBAR", "XLM", "ICP", "ETC", "FIL", "AAVE", "UNI", "SUI",
 }
+
+
+def reset_signal_scan_diagnostics():
+    SIGNAL_SCAN_DIAGNOSTICS.clear()
+    SIGNAL_SCAN_DIAGNOSTICS.update({
+        "scanned": 0,
+        "candidates_built": 0,
+        "rejected_low_volatility": 0,
+        "rejected_mtf": 0,
+        "rejected_liquidity": 0,
+        "rejected_fake_breakout": 0,
+        "rejected_quality": 0,
+        "rejected_entry": 0,
+        "final_signals": 0,
+    })
+
+
+def _scan_diag_inc(key, amount=1):
+    try:
+        if not SIGNAL_SCAN_DIAGNOSTICS:
+            reset_signal_scan_diagnostics()
+        SIGNAL_SCAN_DIAGNOSTICS[key] = int(SIGNAL_SCAN_DIAGNOSTICS.get(key, 0) or 0) + amount
+    except Exception:
+        pass
+
+
+def get_signal_scan_diagnostics(final_signals=None):
+    if not SIGNAL_SCAN_DIAGNOSTICS:
+        reset_signal_scan_diagnostics()
+    data = dict(SIGNAL_SCAN_DIAGNOSTICS)
+    if final_signals is not None:
+        data["final_signals"] = int(final_signals or 0)
+    return data
+
+
+def _record_scan_rejection(reason):
+    text = str(reason or "").upper()
+    if "LOW_VOLATILITY" in text or "ATR TOO LOW" in text:
+        _scan_diag_inc("rejected_low_volatility")
+    if "MTF" in text or "4H" in text or "1H" in text:
+        _scan_diag_inc("rejected_mtf")
+    if "LOW_LIQUIDITY" in text or "LOW_VOLUME_CHOP" in text or "LIQUIDITY" in text:
+        _scan_diag_inc("rejected_liquidity")
+    if "FAKE_BREAKOUT" in text or "FAKE BREAKOUT" in text:
+        _scan_diag_inc("rejected_fake_breakout")
+    if "QUALITY" in text or "CONFIDENCE" in text or "AI MODEL REJECTED" in text:
+        _scan_diag_inc("rejected_quality")
+    if "ENTRY" in text or "FRESHNESS" in text or "SELF REVIEW" in text or "FINAL" in text:
+        _scan_diag_inc("rejected_entry")
+
+
+def _large_cap_symbol(symbol):
+    base = str(symbol or "").upper()
+    if base.endswith("USDT"):
+        base = base[:-4]
+    return base in ALLOWED_DYNAMIC_BASE_ASSETS
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -1193,6 +1251,7 @@ def final_signal_score(signal, market_context, sr_targets, mtf_context, reversal
 
 def skip_signal(symbol, interval, reason):
     try:
+        _record_scan_rejection(reason)
         key = (symbol, interval, reason)
         now = time.time()
         if now - SIGNAL_SKIP_LOG_CACHE.get(key, 0) >= SIGNAL_SKIP_LOG_TTL_SECONDS:
@@ -1222,6 +1281,7 @@ def _signal_in_build_cooldown(symbol, interval):
 
 def _mark_signal_built(signal):
     try:
+        _scan_diag_inc("candidates_built")
         key = _signal_build_key(signal.get("pair"), signal.get("timeframe"))
         SIGNAL_BUILD_COOLDOWN_CACHE[key] = time.time()
         print(
@@ -2512,6 +2572,7 @@ def expert_self_review(signal, checklist):
 
 
 def _no_trade_reason(symbol, interval, reason):
+    _record_scan_rejection(reason)
     print(f"NO_TRADE_REASON symbol={symbol} timeframe={interval} reason={reason}")
     print(f"NO_TRADE_BETTER_THAN_BAD_TRADE symbol={symbol} timeframe={interval}")
 
@@ -2775,6 +2836,10 @@ def detect_symbol_market_regime(symbol, interval, df):
 
         volatility_state = expert_volatility_state(df)
         if volatility_state.get("state") == "LOW_VOLATILITY":
+            if not STRICT_VOLATILITY_FILTER and _large_cap_symbol(symbol):
+                base["volatility_filter_relaxed"] = True
+                base["volatility_filter_reason"] = volatility_state.get("reason")
+                return {**base, "regime": "CONSOLIDATION", "reason": f"LOW_VOLATILITY relaxed for large-cap: {volatility_state.get('reason')}"}
             return {**base, "regime": "LOW_VOLATILITY", "reason": volatility_state.get("reason")}
 
         fake_breakout_up = _safe_float(last["high"]) > prev_high and close < prev_high and upper_wick / candle_range >= 0.42
@@ -2989,16 +3054,31 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
     try:
         regime_info = detect_symbol_market_regime(symbol, interval, df)
         regime = regime_info.get("regime", "LOW_LIQUIDITY")
-        if regime in ["LOW_LIQUIDITY", "HIGH_VOLATILITY", "LOW_VOLATILITY", "LOW_VOLUME_CHOP", "FAKE_BREAKOUT", "HIGH_NEWS_RISK"]:
+        relaxed_low_volatility = (
+            regime == "LOW_VOLATILITY"
+            and not STRICT_VOLATILITY_FILTER
+            and _large_cap_symbol(symbol)
+        )
+        if regime in ["LOW_LIQUIDITY", "HIGH_VOLATILITY", "LOW_VOLATILITY", "LOW_VOLUME_CHOP", "FAKE_BREAKOUT", "HIGH_NEWS_RISK"] and not relaxed_low_volatility:
             reason = f"{regime}: {regime_info.get('reason')}"
             _no_trade_reason(symbol, interval, reason)
             return None, reason, regime_info
+        if relaxed_low_volatility:
+            regime_info = {**regime_info, "regime": "CONSOLIDATION", "volatility_filter_relaxed": True}
+            regime = "CONSOLIDATION"
 
         volatility_state = expert_volatility_state(df)
-        if not volatility_state.get("ok"):
+        relaxed_volatility_filter = (
+            volatility_state.get("state") == "LOW_VOLATILITY"
+            and not STRICT_VOLATILITY_FILTER
+            and _large_cap_symbol(symbol)
+        )
+        if not volatility_state.get("ok") and not relaxed_volatility_filter:
             reason = f"{volatility_state.get('state')}: {volatility_state.get('reason')}"
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, "volatility_filter": volatility_state}
+        if relaxed_volatility_filter:
+            regime_info = {**regime_info, "volatility_filter": volatility_state, "volatility_filter_relaxed": True}
 
         news_ok, news_reason = high_impact_news_guard()
         if not news_ok:
@@ -3272,6 +3352,7 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
 # ================= GENERATE PAID SIGNAL =================
 def generate_signal(symbol, interval="5m"):
+    _scan_diag_inc("scanned")
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 100:
         return None
@@ -3529,6 +3610,7 @@ def generate_signal(symbol, interval="5m"):
 
 # ================= GENERATE FREE SIGNAL =================
 def generate_free_signal(symbol, interval="5m"):
+    _scan_diag_inc("scanned")
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 60:
         return None

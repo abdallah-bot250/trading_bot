@@ -1,7 +1,13 @@
 import time
 import requests
 from datetime import datetime, timedelta
-from market_analyzer import get_top_free_signals, generate_signal, get_scan_symbols
+from market_analyzer import (
+    generate_signal,
+    get_scan_symbols,
+    get_signal_scan_diagnostics,
+    get_top_free_signals,
+    reset_signal_scan_diagnostics,
+)
 from ai_model import predict_trade
 from spot_futures_engine import record_trade_type, type_allowed_for_user
 import ccxt
@@ -17,6 +23,7 @@ ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower(
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 NEXORA_PROOF_MODE = os.environ.get("NEXORA_PROOF_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+MIN_DAILY_SIGNAL_TARGET = int(os.environ.get("MIN_DAILY_SIGNAL_TARGET", "0") or 0)
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -836,6 +843,87 @@ def signal_plan_block_reason(plan, signal):
         return f"unknown_plan display_conf={display_confidence} risk_score={risk_score}"
     except Exception as e:
         return f"plan_filter_error error={e}"
+
+
+def log_signal_scan_summary(final_count):
+    try:
+        summary = get_signal_scan_diagnostics(final_count)
+        log(
+            "SIGNAL_SCAN_SUMMARY "
+            f"scanned={summary.get('scanned', 0)} "
+            f"candidates_built={summary.get('candidates_built', 0)} "
+            f"rejected_low_volatility={summary.get('rejected_low_volatility', 0)} "
+            f"rejected_mtf={summary.get('rejected_mtf', 0)} "
+            f"rejected_liquidity={summary.get('rejected_liquidity', 0)} "
+            f"rejected_fake_breakout={summary.get('rejected_fake_breakout', 0)} "
+            f"rejected_quality={summary.get('rejected_quality', 0)} "
+            f"rejected_entry={summary.get('rejected_entry', 0)} "
+            f"final_signals={summary.get('final_signals', final_count)}"
+        )
+        if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
+            log(f"SIGNAL_SUPPLY_LOW target={MIN_DAILY_SIGNAL_TARGET} actual={int(final_count or 0)}")
+        return summary
+    except Exception as e:
+        log(f"SIGNAL_SCAN_SUMMARY_ERROR error={e}")
+        return {}
+
+
+def log_plan_delivery_diag(email, plan, chat_id, eligible, reason_if_not_sent):
+    try:
+        log(
+            "PLAN_DELIVERY_DIAG "
+            f"email={email or ''} "
+            f"plan={plan or ''} "
+            f"chat_id_exists={bool(chat_id)} "
+            f"eligible={bool(eligible)} "
+            f"reason_if_not_sent={reason_if_not_sent or ''}"
+        )
+    except Exception:
+        pass
+
+
+def log_pro_2y_block(plan, reason):
+    try:
+        if str(plan or "").strip().lower() == "pro_2y":
+            log(f"PRO_2Y_DELIVERY_BLOCKED reason={reason}")
+    except Exception:
+        pass
+
+
+def unpack_delivery_user(user):
+    chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
+    return {
+        "chat_id": chat_id,
+        "plan": plan,
+        "expiry": expiry,
+        "api_key": api_key,
+        "api_secret": api_secret,
+        "trade_amount": trade_amount,
+        "trade_type": trade_type,
+        "trades": trades,
+        "profit": profit,
+        "bot_active": bot_active,
+        "is_paid": is_paid,
+        "spot_enabled": int(type_flags[0]) if len(type_flags) > 0 else 1,
+        "futures_enabled": int(type_flags[1]) if len(type_flags) > 1 else 1,
+        "email": type_flags[2] if len(type_flags) > 2 else "",
+        "spot_auto_trade_enabled": int(type_flags[3]) if len(type_flags) > 3 else 0,
+        "futures_auto_trade_enabled": int(type_flags[4]) if len(type_flags) > 4 else 0,
+        "stop_loss_required": int(type_flags[5]) if len(type_flags) > 5 else 1,
+    }
+
+
+def delivery_access_status(user_info):
+    plan = user_info.get("plan")
+    if not user_info.get("chat_id"):
+        return False, "missing_chat_id"
+    if plan == "trial":
+        if not is_trial_allowed(user_info.get("trades")):
+            return False, "trial_limit_reached"
+        return True, "eligible"
+    if not is_paid_plan_active(plan, user_info.get("expiry"), user_info.get("is_paid")):
+        return False, "subscription_inactive"
+    return True, "eligible"
 # ================= EXCHANGE =================
 def get_exchange(api_key, api_secret, trade_type):
     """Return the configured exchange for real auto-trading.
@@ -1537,6 +1625,7 @@ def get_monster_signals():
     المدفوع: نضيف paid 15m القوية
     """
     try:
+        reset_signal_scan_diagnostics()
         signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
 
         # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
@@ -1617,9 +1706,11 @@ def get_monster_signals():
             reverse=True
         )
 
+        log_signal_scan_summary(len(final_signals))
         return final_signals
     except Exception as e:
         log(f"get_monster_signals error: {e}")
+        log_signal_scan_summary(0)
         return []
     
 def should_notify_no_signal(chat_id):
@@ -1720,6 +1811,21 @@ def run():
 
             if not signals:
                 log("No signals found")
+                for user in users:
+                    try:
+                        user_info = unpack_delivery_user(user)
+                        eligible, reason = delivery_access_status(user_info)
+                        if eligible:
+                            reason = "no_final_signals"
+                        log_plan_delivery_diag(
+                            user_info.get("email"),
+                            user_info.get("plan"),
+                            user_info.get("chat_id"),
+                            eligible,
+                            reason,
+                        )
+                    except Exception as diag_e:
+                        log(f"PLAN_DELIVERY_DIAG_ERROR reason=no_signal_cycle error={diag_e}")
 
     # ===== Notify users market is not safe now =====
                 notify_users_no_signal(users)
@@ -1733,55 +1839,94 @@ def run():
                 display_confidence = signal_display_confidence(signal)
                 if display_confidence < 70:
                     log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
+                    for user in users:
+                        try:
+                            user_info = unpack_delivery_user(user)
+                            eligible, _ = delivery_access_status(user_info)
+                            log_plan_delivery_diag(
+                                user_info.get("email"),
+                                user_info.get("plan"),
+                                user_info.get("chat_id"),
+                                False,
+                                "low_display_confidence",
+                            )
+                            log_pro_2y_block(user_info.get("plan"), "low_display_confidence")
+                        except Exception as diag_e:
+                            log(f"PLAN_DELIVERY_DIAG_ERROR reason=low_display_confidence error={diag_e}")
                     continue
 
                 for user in users:
-                    chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
-                    spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
-                    futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
-                    email = type_flags[2] if len(type_flags) > 2 else ""
-                    spot_auto_trade_enabled = int(type_flags[3]) if len(type_flags) > 3 else 0
-                    futures_auto_trade_enabled = int(type_flags[4]) if len(type_flags) > 4 else 0
-                    stop_loss_required = int(type_flags[5]) if len(type_flags) > 5 else 1
+                    user_info = unpack_delivery_user(user)
+                    chat_id = user_info["chat_id"]
+                    plan = user_info["plan"]
+                    expiry = user_info["expiry"]
+                    api_key = user_info["api_key"]
+                    api_secret = user_info["api_secret"]
+                    trade_amount = user_info["trade_amount"]
+                    trade_type = user_info["trade_type"]
+                    trades = user_info["trades"]
+                    profit = user_info["profit"]
+                    bot_active = user_info["bot_active"]
+                    is_paid = user_info["is_paid"]
+                    spot_enabled = user_info["spot_enabled"]
+                    futures_enabled = user_info["futures_enabled"]
+                    email = user_info["email"]
+                    spot_auto_trade_enabled = user_info["spot_auto_trade_enabled"]
+                    futures_auto_trade_enabled = user_info["futures_auto_trade_enabled"]
+                    stop_loss_required = user_info["stop_loss_required"]
 
                     if not chat_id:
                         log_unlinked_user_once(email)
+                        log_plan_delivery_diag(email, plan, chat_id, False, "missing_chat_id")
+                        log_pro_2y_block(plan, "missing_chat_id")
                         continue
 
                     # ===== ACCESS CHECK =====
                     if plan == "trial":
                         if not is_trial_allowed(trades):
+                            log_plan_delivery_diag(email, plan, chat_id, False, "trial_limit_reached")
                             continue
                     else:
                         if not is_paid_plan_active(plan, expiry, is_paid):
+                            log_plan_delivery_diag(email, plan, chat_id, False, "subscription_inactive")
+                            log_pro_2y_block(plan, "subscription_inactive")
                             continue
 
                     # ===== PLAN FILTER =====
                     if not signal_allowed_for_plan(plan, signal):
+                        block_reason = signal_plan_block_reason(plan, signal)
                         log(
                             f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
                             f"display_conf={display_confidence} risk_score={signal.get('risk_score')} "
-                            f"reason={signal_plan_block_reason(plan, signal)}"
+                            f"reason={block_reason}"
                         )
+                        log_plan_delivery_diag(email, plan, chat_id, False, f"plan_filter:{block_reason}")
+                        log_pro_2y_block(plan, block_reason)
                         continue
 
                     if not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
+                        reason = "signal_type_disabled"
                         log(
                             f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
                             f"display_conf={display_confidence} risk_score={signal.get('risk_score')} "
-                            f"reason=signal_type_disabled"
+                            f"reason={reason}"
                         )
+                        log_plan_delivery_diag(email, plan, chat_id, False, reason)
+                        log_pro_2y_block(plan, reason)
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
                     if plan == "vip":
                         if not elite_trade_filter(signal):
                             log(f"Elite filter rejected: {signal['pair']}")
+                            log_plan_delivery_diag(email, plan, chat_id, False, "elite_filter_rejected")
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
                     if not signal_is_fresh(signal):
                         log(f"SIGNAL_SEND_BLOCKED_STALE pair={signal.get('pair')} direction={signal.get('direction')}")
+                        log_plan_delivery_diag(email, plan, chat_id, False, "stale_before_send")
+                        log_pro_2y_block(plan, "stale_before_send")
                         continue
 
                     # ===== SEND SIGNAL =====
@@ -1790,6 +1935,7 @@ def run():
 
                     if sent_ok:
                         signal_sent_users += 1
+                        log_plan_delivery_diag(email, plan, chat_id, True, "sent")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")
                         record_sent_signal(chat_id, plan, signal)
 
@@ -1797,6 +1943,8 @@ def run():
                             increment_trade(chat_id)
                     else:
                         log(f"SIGNAL_SEND_FAILED chat_id={chat_id} pair={signal.get('pair')}")
+                        log_plan_delivery_diag(email, plan, chat_id, False, "telegram_send_failed")
+                        log_pro_2y_block(plan, "telegram_send_failed")
 
                     # ===== AUTO TRADE FOR VIP =====
                     if plan in AUTO_TRADE_PLANS and bot_active == 1 and api_key and api_secret:
