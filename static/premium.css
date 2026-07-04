@@ -1507,3 +1507,51 @@ html[data-theme="light"] .nx-feature-status {
   background: rgba(255, 255, 255, .82);
   color: #0f172a;
 }
+
+.nx-saas-platform{
+  width:min(96vw,1680px);
+  margin:64px auto;
+  padding:36px;
+  border:1px solid rgba(32,214,138,.22);
+  border-radius:32px;
+  background:linear-gradient(135deg,rgba(10,18,35,.92),rgba(4,10,20,.96));
+  box-shadow:0 28px 90px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.nx-feature-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:16px;
+  margin-top:28px;
+}
+.nx-feature-card{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  min-height:118px;
+  padding:20px;
+  border-radius:22px;
+  text-decoration:none;
+  color:#e8fff5;
+  background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.09);
+  transition:.22s ease;
+}
+.nx-feature-card b{
+  font-size:1.05rem;
+}
+.nx-feature-card span{
+  color:rgba(232,255,245,.68);
+  line-height:1.45;
+}
+.nx-feature-card:hover{
+  transform:translateY(-4px);
+  border-color:rgba(32,214,138,.55);
+  box-shadow:0 18px 45px rgba(32,214,138,.12);
+}
+@media(max-width:1100px){
+  .nx-feature-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media(max-width:640px){
+  .nx-saas-platform{padding:22px;margin:36px auto;}
+  .nx-feature-grid{grid-template-columns:1fr;}
+}
