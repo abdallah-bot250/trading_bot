@@ -182,8 +182,12 @@ COMPANY_PAGES = {
         "eyebrow": "Support",
         "summary": "Need help with access, Telegram linking, payments, billing, or your dashboard? Start here.",
         "sections": [
-            ("Support Channels", [
-                "Use the official bot-check page before trusting any Telegram link.",
+            ("Official Support Channels", [
+                "WhatsApp support: 0568869313.",
+                "Facebook page: https://www.facebook.com/profile.php?id=61591117963149.",
+                "Use the official bot-check page before trusting any Telegram link."
+            ]),
+            ("Support Details", [
                 "For account support, include your registered email, Telegram username if available, and a short description of the issue.",
                 "For payment issues, include invoice ID, payment ID, plan, amount, and payment time."
             ]),
@@ -192,7 +196,7 @@ COMPANY_PAGES = {
                 "Never send your exchange password, private keys, seed phrase, or withdrawal credentials."
             ])
         ],
-        "cta": {"label": "Check Official Bot", "href": "/bot-check"}
+        "cta": {"label": "Chat on WhatsApp", "href": "https://wa.me/971568869313"}
     },
     "about": {
         "title": "About Nexora AI Trader",
@@ -215,6 +219,11 @@ COMPANY_PAGES = {
         "eyebrow": "Help",
         "summary": "Fast answers for account access, Telegram linking, subscriptions, payments, and signals.",
         "sections": [
+            ("Direct Support", [
+                "WhatsApp support: 0568869313.",
+                "Facebook page: https://www.facebook.com/profile.php?id=61591117963149.",
+                "Send your registered email and a clear description of the issue so support can help faster."
+            ]),
             ("Account Access", [
                 "Use password reset if you cannot log in.",
                 "Verify your email if the platform requests verification before sensitive actions."
@@ -232,7 +241,7 @@ COMPANY_PAGES = {
                 "If both spot and futures are disabled, the system will restore defaults to avoid blocking delivery."
             ])
         ],
-        "cta": {"label": "Open Dashboard", "href": "/dashboard"}
+        "cta": {"label": "Chat on WhatsApp", "href": "https://wa.me/971568869313"}
     },
     "docs": {
         "title": "Documentation",
@@ -1676,7 +1685,7 @@ def manual_payment(plan):
         price=PLAN_PRICES[plan],
         original_price=PLAN_ORIGINAL_PRICES.get(plan, PLAN_PRICES[plan]),
         discount_percent=int(round((1 - (PLAN_PRICES[plan] / max(PLAN_ORIGINAL_PRICES.get(plan, PLAN_PRICES[plan]), 1))) * 100)),
-        support_link=os.environ.get("SUPPORT_LINK", BOT_LINK),
+        support_link=os.environ.get("SUPPORT_LINK", "https://wa.me/971568869313"),
         manual_wallet=os.environ.get("MANUAL_PAYMENT_WALLET", "TSiwGKuanfvay6RMem1zJ8QqcDFQKTXVF1"),
         manual_network=os.environ.get("MANUAL_PAYMENT_NETWORK", "USDT TRC20 / Binance"),
         bank_name="Abu Dhabi Commercial Bank PJSC",

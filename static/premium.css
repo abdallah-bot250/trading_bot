@@ -2822,3 +2822,73 @@ html[data-theme="light"] .nx-product-logo {
     padding: 20px;
   }
 }
+
+/* === NEXORA SUPPORT CHANNELS v20260704 === */
+.nx-support-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+.nx-support-strip a,
+.nx-side-support,
+.nx-support-mini a {
+  border: 1px solid rgba(245, 184, 75, .24);
+  background: linear-gradient(145deg, rgba(10, 21, 34, .84), rgba(4, 12, 22, .72));
+  box-shadow: 0 18px 48px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.05);
+  border-radius: 18px;
+  text-decoration: none;
+}
+.nx-support-strip a {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+.nx-support-strip span,
+.nx-support-mini span {
+  color: #94a3b8;
+  font-weight: 800;
+  font-size: 13px;
+}
+.nx-support-strip strong,
+.nx-support-mini strong {
+  color: #f8d675;
+  font-weight: 950;
+}
+.nx-side-support {
+  padding: 16px;
+  margin-top: 14px;
+}
+.nx-side-support h4 {
+  margin: 0 0 10px;
+  color: #fff;
+}
+.nx-side-support a {
+  display: block;
+  color: #20d68a;
+  font-weight: 900;
+  margin: 8px 0;
+}
+.nx-product-grid-three {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, .7fr) minmax(320px, .85fr);
+}
+.nx-support-mini {
+  display: grid;
+  gap: 12px;
+}
+.nx-support-mini a {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+.nx-support-mini a:hover,
+.nx-support-strip a:hover {
+  border-color: rgba(32, 214, 138, .44);
+  transform: translateY(-2px);
+}
+@media (max-width: 1100px) {
+  .nx-product-grid-three,
+  .nx-support-strip {
+    grid-template-columns: 1fr;
+  }
+}

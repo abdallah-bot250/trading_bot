@@ -24,6 +24,7 @@
       <a href="/invoice-history">Invoices</a>
       <a class="{% if page.title == 'Profile' %}active{% endif %}" href="/profile">Profile</a>
       <a class="{% if page.title == 'Settings' %}active{% endif %}" href="/settings">Settings</a>
+      <a href="/support">Support</a>
     </nav>
     <div class="nx-product-side-card">
       <span>Account</span>
@@ -42,6 +43,7 @@
       <div class="nx-product-header-actions">
         <button class="theme-toggle nx-theme-pill" type="button" aria-label="Toggle theme"><span class="dark-icon">Dark</span><span class="light-icon">Light</span></button>
         <a href="/bot-check">Telegram Check</a>
+        <a href="/support">Support</a>
       </div>
     </header>
 
@@ -68,7 +70,7 @@
       {% endfor %}
     </section>
 
-    <section class="nx-product-grid">
+    <section class="nx-product-grid nx-product-grid-three">
       <article class="nx-product-panel">
         <div class="nx-panel-head">
           <div>
@@ -80,6 +82,19 @@
           {% for label, href in page.actions %}
           <a href="{{ href }}">{{ label }} <span>Open</span></a>
           {% endfor %}
+        </div>
+      </article>
+
+      <article class="nx-product-panel">
+        <div class="nx-panel-head">
+          <div>
+            <span>Support Desk</span>
+            <h3>Need help?</h3>
+          </div>
+        </div>
+        <div class="nx-support-mini">
+          <a href="https://wa.me/971568869313" target="_blank" rel="noopener"><strong>WhatsApp</strong><span>0568869313</span></a>
+          <a href="https://www.facebook.com/profile.php?id=61591117963149" target="_blank" rel="noopener"><strong>Facebook</strong><span>Nexora page</span></a>
         </div>
       </article>
 

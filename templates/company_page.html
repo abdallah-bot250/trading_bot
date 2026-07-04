@@ -305,10 +305,26 @@
                 <h1>{{ page.title }}</h1>
                 <p class="summary">{{ page.summary }}</p>
                 <div class="actions">
-                    <a class="btn primary" href="{{ page.cta.href if page.cta is defined else '/register' }}">{{ page.cta.label if page.cta is defined else 'Create Account' }}</a>
+                    <a class="btn primary" href="{{ page.cta.href if page.cta is defined else '/register' }}" {% if page.cta is defined and page.cta.href.startswith('http') %}target="_blank" rel="noopener"{% endif %}>{{ page.cta.label if page.cta is defined else 'Create Account' }}</a>
                     <a class="btn" href="/risk-disclaimer">Risk Disclaimer</a>
                     <a class="btn" href="/privacy-policy">Privacy Policy</a>
                 </div>
+                {% if page.title in ['Support Center', 'Contact'] %}
+                <div class="nx-support-strip" aria-label="Official support channels">
+                    <a href="https://wa.me/971568869313" target="_blank" rel="noopener">
+                        <span>WhatsApp Support</span>
+                        <strong>0568869313</strong>
+                    </a>
+                    <a href="https://www.facebook.com/profile.php?id=61591117963149" target="_blank" rel="noopener">
+                        <span>Facebook Page</span>
+                        <strong>Nexora AI Trader</strong>
+                    </a>
+                    <a href="/bot-check">
+                        <span>Official Bot</span>
+                        <strong>Verify Telegram</strong>
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </section>
 
@@ -337,6 +353,11 @@
                 <a href="/about"><span>About</span><strong>→</strong></a>
                 <a href="/support"><span>Support Center</span><strong>→</strong></a>
                 <a href="/docs"><span>Documentation</span><strong>→</strong></a>
+                <div class="nx-side-support">
+                    <h4>Official Support</h4>
+                    <a href="https://wa.me/971568869313" target="_blank" rel="noopener">WhatsApp: 0568869313</a>
+                    <a href="https://www.facebook.com/profile.php?id=61591117963149" target="_blank" rel="noopener">Facebook Page</a>
+                </div>
                 <div class="notice">
                     Trading involves risk. Nexora AI Trader provides tools and information, not guaranteed financial outcomes.
                 </div>
