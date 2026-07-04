@@ -687,7 +687,7 @@ input, select {
 @media(max-width:900px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid,.nx-kv{grid-template-columns:1fr}.nx-table-card{overflow-x:auto}}
 
 </style>
-<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="stylesheet" href="/static/premium.css?v=dashboard-hard-ui-20260704">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
 <meta name="theme-color" content="#20D68A">
@@ -744,7 +744,31 @@ input, select {
 </script>
 </head>
 
-<body class="nexora-shell">
+<body class="nexora-shell nx-page-dashboard nx-has-sidebar nx-dashboard-hard-ui">
+<!-- NEXORA HARD DASHBOARD SAAS SHELL 2026-07-04 -->
+<aside class="nx-final-sidebar nx-hard-sidebar" aria-label="Nexora dashboard navigation">
+  <div class="nx-final-brand"><strong>NEXORA</strong><span>TRADING CONSOLE</span></div>
+  <nav class="nx-final-nav">
+    <a href="/dashboard" class="active">Dashboard</a>
+    <a href="/my-plan">My Plan</a>
+    <a href="/signals">Signals</a>
+    <a href="/auto-trading">Auto Trading</a>
+    <a href="/referrals">Referrals</a>
+    <a href="/payments">Payments</a>
+    <a href="/invoice-history">Invoices</a>
+    <a href="/profile">Profile</a>
+    <a href="/settings">Settings</a>
+    <a href="/logout">Logout</a>
+  </nav>
+</aside>
+<section class="nx-final-marketbar nx-hard-marketbar" aria-label="Live crypto market prices">
+  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin btc">₿</span><span class="nx-symbol">BTC/USDT</span></div><strong class="nx-price">60,023.52</strong><span class="nx-change down">-0.19%</span></article>
+  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin eth">Ξ</span><span class="nx-symbol">ETH/USDT</span></div><strong class="nx-price">1,579.37</strong><span class="nx-change">+0.47%</span></article>
+  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin sol">S</span><span class="nx-symbol">SOL/USDT</span></div><strong class="nx-price">72.23</strong><span class="nx-change">+2.05%</span></article>
+  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin bnb">B</span><span class="nx-symbol">BNB/USDT</span></div><strong class="nx-price">553.41</strong><span class="nx-change down">-0.43%</span></article>
+  <div class="nx-market-meta"><span>LIVE</span><span class="nx-dot"></span><small>Market Open</small></div>
+</section>
+
 <div class="language-switcher" aria-label="Language switcher">
 <button class="theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
