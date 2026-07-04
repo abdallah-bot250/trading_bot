@@ -65,7 +65,7 @@
     body.classList.add("nx-has-sidebar");
     const sidebar=document.createElement("aside"); sidebar.className="nx-final-sidebar";
     const links=kind==="admin"?adminLinks:dashboardLinks;
-    sidebar.innerHTML=`<div class="nx-final-brand"><strong>NEXORA</strong><span>${kind==="admin"?"Control Center":"AI Signal Hunter"}</span></div><nav class="nx-final-nav">${links.map(([label,href],i)=>`<a href="${href}" class="${i===0?"active":""}">${label}</a>`).join("")}</nav><div class="nx-sidebar-note"><strong>${kind==="admin"?"Admin Tools":"Account Console"}</strong><br>${kind==="admin"?"Monitor users, payments and system status.":"Track subscription, Telegram and signal status."}</div>`;
+    sidebar.innerHTML=`<div class="nx-final-brand"><strong>NEXORA</strong><span>${kind==="admin"?"CONTROL CENTER":"TRADING CONSOLE"}</span></div><nav class="nx-final-nav">${links.map(([label,href],i)=>`<a href="${href}" class="${i===0?"active":""}">${label}</a>`).join("")}</nav><div class="nx-sidebar-note"><strong>${kind==="admin"?"Admin Tools":"Account Console"}</strong><br>${kind==="admin"?"Monitor users, payments and system status.":"Track subscription, Telegram and signal status."}</div>`;
     document.body.prepend(sidebar);
   }
   buildSidebar(isAdmin?"admin":"dashboard");
