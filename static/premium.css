@@ -471,7 +471,7 @@ body.nx-page-dashboard .hero h1 {
 }
 
 body.nx-page-dashboard .hero h1::after {
-  content: " 👋";
+  content: " ðŸ‘‹";
 }
 
 /* account health + visual sections injected by JS */
@@ -536,7 +536,7 @@ html[data-theme="light"] .nx-health-ring::before { background: #f8fbff; }
 }
 
 .nx-check-list span::before {
-  content: "✓";
+  content: "âœ“";
   display: inline-grid;
   place-items: center;
   width: 18px;
@@ -981,7 +981,7 @@ html[data-theme="light"] body:not(.nx-page-auth):not(.nx-page-admin):not(.nx-pag
   backdrop-filter: blur(14px);
 }
 .nx-dashboard-return::before {
-  content: "↩";
+  content: "â†©";
   font-size: 16px;
 }
 .nx-dashboard-return:hover {
@@ -2267,5 +2267,558 @@ body.nx-dashboard-hard-ui .nx-status-tile span {
 @media (max-width: 520px) {
   body.nx-dashboard-hard-ui .nx-final-marketbar {
     grid-template-columns: 1fr !important;
+  }
+}
+
+/* === NEXORA INTERNAL PRODUCT PAGES POLISH v20260704 === */
+body.nx-product-console-page {
+  min-height: 100vh !important;
+  margin: 0 !important;
+  color: #f8fafc !important;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(245, 184, 75, .20), transparent 30rem),
+    radial-gradient(circle at 72% 16%, rgba(32, 214, 138, .15), transparent 34rem),
+    linear-gradient(135deg, #030910 0%, #071321 44%, #03070d 100%) !important;
+  font-family: "Cairo", "Segoe UI", Tahoma, Arial, sans-serif !important;
+  overflow-x: hidden !important;
+}
+body.nx-product-console-page::before {
+  content: "" !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: -3 !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(90deg, rgba(3, 7, 13, .94), rgba(3, 10, 18, .58), rgba(3, 7, 13, .88)),
+    url('/static/nexora-global-bg.png') center top / cover no-repeat !important;
+  opacity: .82 !important;
+  filter: saturate(1.15) contrast(1.1) !important;
+}
+body.nx-product-console-page::after {
+  content: "" !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: -2 !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(90deg, rgba(245, 184, 75, .07) 0 1px, transparent 1px 96px),
+    linear-gradient(0deg, rgba(32, 214, 138, .045) 0 1px, transparent 1px 96px),
+    radial-gradient(circle at 20% 30%, rgba(245, 184, 75, .11), transparent 24rem);
+}
+.nx-product-console-page .nx-product-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 280px;
+  z-index: 20;
+  padding: 28px 18px;
+  background: linear-gradient(180deg, rgba(2, 8, 15, .96), rgba(2, 10, 18, .92));
+  border-right: 1px solid rgba(245, 184, 75, .22);
+  box-shadow: 32px 0 80px rgba(0, 0, 0, .34);
+  overflow-y: auto;
+}
+html[dir="rtl"] .nx-product-console-page .nx-product-sidebar {
+  inset: 0 0 0 auto;
+  border-right: 0;
+  border-left: 1px solid rgba(245, 184, 75, .22);
+}
+.nx-product-logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  color: #fff;
+  padding: 6px 4px 28px;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+  margin-bottom: 22px;
+}
+.nx-product-logo span {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: #0b0b05;
+  font-weight: 950;
+  font-size: 32px;
+  background: linear-gradient(135deg, #fff0a8, #d69f20);
+  box-shadow: 0 0 38px rgba(245, 184, 75, .30);
+}
+.nx-product-logo strong {
+  display: block;
+  font-size: 27px;
+  line-height: 1;
+  letter-spacing: .06em;
+}
+.nx-product-logo small {
+  display: block;
+  color: #94a3b8;
+  font-size: 11px;
+  letter-spacing: .23em;
+  margin-top: 7px;
+  text-transform: uppercase;
+}
+.nx-product-nav {
+  display: grid;
+  gap: 8px;
+}
+.nx-product-nav a {
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 14px;
+  color: #cbd5e1;
+  text-decoration: none;
+  font-weight: 900;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, color .18s ease;
+}
+.nx-product-nav a:hover,
+.nx-product-nav a.active {
+  color: #fff;
+  border-color: rgba(245, 184, 75, .54);
+  background: linear-gradient(135deg, rgba(245, 184, 75, .18), rgba(32, 214, 138, .08));
+  transform: translateX(3px);
+}
+html[dir="rtl"] .nx-product-nav a:hover,
+html[dir="rtl"] .nx-product-nav a.active {
+  transform: translateX(-3px);
+}
+.nx-product-side-card {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(245, 184, 75, .32);
+  background: linear-gradient(145deg, rgba(245, 184, 75, .16), rgba(7, 18, 31, .74));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 22px 48px rgba(0,0,0,.25);
+}
+.nx-product-side-card span,
+.nx-product-side-card small {
+  display: block;
+  color: #a8b5c5;
+  font-weight: 800;
+}
+.nx-product-side-card strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 22px;
+  margin: 8px 0;
+}
+.nx-product-main {
+  position: relative;
+  z-index: 1;
+  margin-left: 280px;
+  width: calc(100% - 280px);
+  padding: 28px clamp(18px, 3vw, 44px) 48px;
+}
+html[dir="rtl"] .nx-product-main {
+  margin-left: 0;
+  margin-right: 280px;
+}
+.nx-product-header {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.nx-product-header p {
+  margin: 0 0 7px;
+  color: #f5b84b;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  font-size: 12px;
+}
+.nx-product-header h1 {
+  margin: 0;
+  font-size: clamp(34px, 4vw, 58px);
+  line-height: 1.02;
+  color: #fff;
+}
+.nx-product-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.nx-product-header-actions a,
+.nx-theme-pill {
+  min-height: 42px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .20);
+  color: #e5edf6 !important;
+  background: rgba(10, 21, 34, .72);
+  text-decoration: none;
+  font-weight: 900;
+  backdrop-filter: blur(14px);
+}
+.nx-product-hero,
+.nx-product-panel,
+.nx-product-metric {
+  border: 1px solid rgba(148, 163, 184, .18);
+  background: linear-gradient(145deg, rgba(10, 21, 34, .86), rgba(4, 12, 22, .78));
+  box-shadow: 0 24px 72px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(18px);
+}
+.nx-product-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 340px);
+  gap: 18px;
+  align-items: stretch;
+  padding: clamp(24px, 3vw, 38px);
+  border-radius: 26px;
+  overflow: hidden;
+}
+.nx-product-hero h2 {
+  margin: 14px 0 10px;
+  color: #fff;
+  font-size: clamp(26px, 3vw, 42px);
+  line-height: 1.18;
+  max-width: 980px;
+}
+.nx-product-hero p {
+  margin: 0;
+  color: #a9b7c7;
+  max-width: 820px;
+  line-height: 1.8;
+}
+.nx-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #072015;
+  background: linear-gradient(135deg, #37e994, #f5d26a);
+  font-weight: 950;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.nx-status-gold {
+  background: linear-gradient(135deg, #f8d675, #b7791f);
+}
+.nx-product-health {
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  border-radius: 22px;
+  padding: 22px;
+  border: 1px solid rgba(32, 214, 138, .24);
+  background:
+    radial-gradient(circle at 84% 24%, rgba(32, 214, 138, .22), transparent 10rem),
+    rgba(5, 16, 26, .68);
+}
+.nx-product-health strong {
+  color: #36e994;
+  font-size: 32px;
+}
+.nx-product-health span {
+  color: #fff;
+  font-weight: 950;
+}
+.nx-product-health small {
+  color: #9aa9b8;
+  line-height: 1.6;
+}
+.nx-product-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.nx-product-metric {
+  min-height: 154px;
+  border-radius: 22px;
+  padding: 22px;
+  position: relative;
+  overflow: hidden;
+}
+.nx-product-metric::after {
+  content: "";
+  position: absolute;
+  inset: auto 18px 18px auto;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 184, 75, .30), transparent 70%);
+}
+.nx-product-metric span {
+  display: block;
+  color: #f5b84b;
+  font-weight: 950;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.nx-product-metric strong {
+  display: block;
+  margin: 12px 0 8px;
+  color: #fff;
+  font-size: clamp(22px, 3vw, 34px);
+  overflow-wrap: anywhere;
+}
+.nx-product-metric small {
+  color: #94a3b8;
+  line-height: 1.5;
+}
+.nx-product-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+  gap: 18px;
+}
+.nx-product-panel {
+  border-radius: 24px;
+  padding: 22px;
+}
+.nx-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.nx-panel-head span {
+  color: #f5b84b;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.nx-panel-head h3 {
+  margin: 5px 0 0;
+  color: #fff;
+  font-size: 24px;
+}
+.nx-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.nx-action-grid a {
+  min-height: 86px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 18px;
+  color: #fff;
+  text-decoration: none;
+  font-weight: 950;
+  border: 1px solid rgba(148, 163, 184, .16);
+  background: linear-gradient(145deg, rgba(15, 29, 45, .82), rgba(8, 19, 31, .76));
+}
+.nx-action-grid a:hover {
+  border-color: rgba(245, 184, 75, .50);
+  transform: translateY(-2px);
+}
+.nx-action-grid a span {
+  color: #36e994;
+  font-size: 12px;
+}
+.nx-check-list {
+  display: grid;
+  gap: 12px;
+}
+.nx-check-list div {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: rgba(8, 19, 31, .68);
+  border: 1px solid rgba(148, 163, 184, .12);
+}
+.nx-check-list span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #36e994;
+  box-shadow: 0 0 18px rgba(54, 233, 148, .6);
+}
+.nx-check-list strong {
+  color: #e8eef6;
+}
+.nx-check-list em {
+  color: #94a3b8;
+  font-style: normal;
+  font-weight: 800;
+  text-align: right;
+}
+.nx-admin-console-page .nx-product-logo span,
+.nx-admin-console-page .nx-status-pill,
+.nx-admin-console-page .nx-product-metric::after {
+  background: linear-gradient(135deg, #f8d675, #b7791f);
+}
+.nx-admin-console-page .nx-product-health {
+  border-color: rgba(245, 184, 75, .32);
+  background:
+    radial-gradient(circle at 84% 24%, rgba(245, 184, 75, .20), transparent 10rem),
+    rgba(5, 16, 26, .68);
+}
+.nx-admin-console-page .nx-product-health strong {
+  color: #f8d675;
+}
+body.nx-page-admin,
+body.nx-admin-premium-page {
+  background:
+    radial-gradient(circle at 16% 0%, rgba(245, 184, 75, .16), transparent 28rem),
+    radial-gradient(circle at 88% 8%, rgba(32, 214, 138, .13), transparent 32rem),
+    linear-gradient(135deg, #030910, #061320 50%, #03070d) !important;
+}
+body.nx-admin-premium-page .admin-shell {
+  width: min(1500px, calc(100% - 32px)) !important;
+}
+body.nx-admin-premium-page .topbar {
+  background: rgba(3, 9, 16, .72) !important;
+  border-bottom: 1px solid rgba(245, 184, 75, .18) !important;
+  backdrop-filter: blur(18px) !important;
+}
+body.nx-admin-premium-page .hero,
+body.nx-admin-premium-page .section,
+body.nx-admin-premium-page .ops-panel,
+body.nx-admin-premium-page .overview-card,
+body.nx-admin-premium-page .metric-card,
+body.nx-admin-premium-page .nx-admin-card,
+body.nx-admin-premium-page .nx-admin-table,
+body.nx-admin-premium-page .health-panel,
+body.nx-admin-premium-page .quick-card {
+  border-color: rgba(245, 184, 75, .20) !important;
+  background: linear-gradient(145deg, rgba(10, 21, 34, .88), rgba(4, 12, 22, .76)) !important;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255,255,255,.05) !important;
+  backdrop-filter: blur(18px) !important;
+}
+body.nx-admin-premium-page .nx-admin-kpi {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+body.nx-admin-premium-page .table-wrap,
+body.nx-admin-premium-page .nx-admin-table {
+  overflow-x: auto !important;
+}
+body.nx-admin-premium-page table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+body.nx-admin-premium-page th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(8, 18, 30, .96) !important;
+  color: #f8d675 !important;
+}
+body.nx-admin-premium-page td,
+body.nx-admin-premium-page th {
+  border-bottom: 1px solid rgba(148, 163, 184, .11) !important;
+}
+body.nx-admin-premium-page .search,
+body.nx-admin-premium-page .filter,
+body.nx-admin-premium-page input,
+body.nx-admin-premium-page select {
+  background: rgba(6, 16, 28, .80) !important;
+  border: 1px solid rgba(148, 163, 184, .20) !important;
+  color: #f8fafc !important;
+  border-radius: 12px !important;
+}
+body.nx-admin-premium-page .btn {
+  border-radius: 12px !important;
+  font-weight: 950 !important;
+}
+html[data-theme="light"] body.nx-product-console-page {
+  color: #0f172a !important;
+  background: linear-gradient(135deg, #f8fbff, #edf4ff) !important;
+}
+html[data-theme="light"] body.nx-product-console-page::before {
+  opacity: .18 !important;
+  filter: saturate(1.08) contrast(1.02) !important;
+}
+html[data-theme="light"] body.nx-product-console-page::after {
+  background:
+    radial-gradient(circle at 20% 30%, rgba(245, 184, 75, .10), transparent 24rem),
+    linear-gradient(90deg, rgba(255,255,255,.72), rgba(255,255,255,.50)) !important;
+}
+html[data-theme="light"] .nx-product-sidebar,
+html[data-theme="light"] .nx-product-hero,
+html[data-theme="light"] .nx-product-panel,
+html[data-theme="light"] .nx-product-metric,
+html[data-theme="light"] .nx-product-health,
+html[data-theme="light"] .nx-action-grid a,
+html[data-theme="light"] .nx-check-list div {
+  background: rgba(255,255,255,.84) !important;
+  color: #0f172a !important;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, .10) !important;
+}
+html[data-theme="light"] .nx-product-header h1,
+html[data-theme="light"] .nx-product-hero h2,
+html[data-theme="light"] .nx-panel-head h3,
+html[data-theme="light"] .nx-product-metric strong,
+html[data-theme="light"] .nx-action-grid a,
+html[data-theme="light"] .nx-check-list strong,
+html[data-theme="light"] .nx-product-logo {
+  color: #0f172a !important;
+}
+@media (max-width: 1180px) {
+  .nx-product-console-page .nx-product-sidebar {
+    position: relative;
+    width: auto;
+    inset: auto;
+    display: block;
+    border-right: 0;
+    border-left: 0;
+    border-bottom: 1px solid rgba(245, 184, 75, .20);
+  }
+  .nx-product-main,
+  html[dir="rtl"] .nx-product-main {
+    width: 100%;
+    margin: 0;
+  }
+  .nx-product-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .nx-product-hero,
+  .nx-product-grid {
+    grid-template-columns: 1fr;
+  }
+  .nx-product-metrics,
+  body.nx-admin-premium-page .nx-admin-kpi {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 620px) {
+  .nx-product-main {
+    padding: 18px 12px 36px;
+  }
+  .nx-product-header {
+    display: grid;
+  }
+  .nx-product-header-actions {
+    justify-content: stretch;
+  }
+  .nx-product-header-actions a,
+  .nx-theme-pill {
+    flex: 1;
+  }
+  .nx-product-nav,
+  .nx-product-metrics,
+  .nx-action-grid,
+  body.nx-admin-premium-page .nx-admin-kpi {
+    grid-template-columns: 1fr !important;
+  }
+  .nx-product-logo strong {
+    font-size: 22px;
+  }
+  .nx-product-hero {
+    padding: 20px;
   }
 }

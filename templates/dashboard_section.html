@@ -4,34 +4,103 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ page.title }} | Nexora AI Trader</title>
-<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="stylesheet" href="/static/premium.css?v=20260704_pages1">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
 </head>
-<body class="nexora-shell nx-simple-dashboard-page">
-<main class="nx-section-shell">
-  <a class="nx-back-link" href="/dashboard">Back to Dashboard</a>
-  <section class="nx-section-hero">
-    <span>{{ page.eyebrow }}</span>
-    <h1>{{ page.title }}</h1>
-    <p>{{ page.summary }}</p>
-  </section>
-  <section class="nx-section-card-grid">
-    {% for label, value in page.cards %}
-    <article class="nx-section-card">
-      <span>{{ label }}</span>
-      <strong>{{ value }}</strong>
-    </article>
-    {% endfor %}
-  </section>
-  <section class="nx-section-actions">
-    {% for label, href in page.actions %}
-    <a href="{{ href }}">{{ label }}</a>
-    {% endfor %}
-  </section>
-</main>
-<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
-<script src="/static/i18n.js"></script>
-<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+<body class="nexora-shell nx-product-console-page">
+  <aside class="nx-product-sidebar" aria-label="Dashboard navigation">
+    <a class="nx-product-logo" href="/dashboard">
+      <span>N</span>
+      <strong>NEXORA<small>Trading Console</small></strong>
+    </a>
+    <nav class="nx-product-nav">
+      <a href="/dashboard">Dashboard</a>
+      <a class="{% if page.title == 'My Plan' %}active{% endif %}" href="/my-plan">My Plan</a>
+      <a class="{% if page.title == 'Signals' %}active{% endif %}" href="/signals">Signals</a>
+      <a class="{% if page.title == 'Auto Trading' %}active{% endif %}" href="/auto-trading">Auto Trading</a>
+      <a class="{% if page.title == 'Referrals' %}active{% endif %}" href="/referrals">Referrals</a>
+      <a class="{% if page.title == 'Payments' %}active{% endif %}" href="/payments">Payments</a>
+      <a href="/invoice-history">Invoices</a>
+      <a class="{% if page.title == 'Profile' %}active{% endif %}" href="/profile">Profile</a>
+      <a class="{% if page.title == 'Settings' %}active{% endif %}" href="/settings">Settings</a>
+    </nav>
+    <div class="nx-product-side-card">
+      <span>Account</span>
+      <strong>{{ user.plan_label or 'Free Trial' }}</strong>
+      <small>{% if user.chat_id %}Telegram linked{% else %}Telegram not linked{% endif %}</small>
+    </div>
+  </aside>
+
+  <main class="nx-product-main">
+    <header class="nx-product-header">
+      <div>
+        <a class="nx-back-link" href="/dashboard">Back to Dashboard</a>
+        <p>{{ page.eyebrow }}</p>
+        <h1>{{ page.title }}</h1>
+      </div>
+      <div class="nx-product-header-actions">
+        <button class="theme-toggle nx-theme-pill" type="button" aria-label="Toggle theme"><span class="dark-icon">Dark</span><span class="light-icon">Light</span></button>
+        <a href="/bot-check">Telegram Check</a>
+      </div>
+    </header>
+
+    <section class="nx-product-hero">
+      <div>
+        <span class="nx-status-pill">Live account data</span>
+        <h2>{{ page.summary }}</h2>
+        <p>No backend behavior is changed here. This page reflects your current account state and links to the existing safe actions.</p>
+      </div>
+      <div class="nx-product-health">
+        <strong>{% if user.chat_id %}Connected{% else %}Action needed{% endif %}</strong>
+        <span>Telegram Status</span>
+        <small>{% if user.chat_id %}Signals can be delivered to your linked bot chat.{% else %}Open the bot check page to connect Telegram.{% endif %}</small>
+      </div>
+    </section>
+
+    <section class="nx-product-metrics" aria-label="{{ page.title }} metrics">
+      {% for label, value in page.cards %}
+      <article class="nx-product-metric">
+        <span>{{ label }}</span>
+        <strong>{{ value }}</strong>
+        <small>{% if label in ['Premium', 'Spot Signals', 'Futures Signals', 'Spot Auto', 'Futures Auto'] %}Current saved account state{% else %}Read-only dashboard value{% endif %}</small>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section class="nx-product-grid">
+      <article class="nx-product-panel">
+        <div class="nx-panel-head">
+          <div>
+            <span>Operational Controls</span>
+            <h3>{{ page.title }} actions</h3>
+          </div>
+        </div>
+        <div class="nx-action-grid">
+          {% for label, href in page.actions %}
+          <a href="{{ href }}">{{ label }} <span>Open</span></a>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="nx-product-panel">
+        <div class="nx-panel-head">
+          <div>
+            <span>Account Safety</span>
+            <h3>Production status</h3>
+          </div>
+        </div>
+        <div class="nx-check-list">
+          <div><span></span><strong>Plan</strong><em>{{ user.plan_label or 'Free Trial' }}</em></div>
+          <div><span></span><strong>Premium</strong><em>{% if user.is_paid %}Enabled{% else %}Free access{% endif %}</em></div>
+          <div><span></span><strong>Telegram</strong><em>{% if user.chat_id %}Linked{% else %}Not linked{% endif %}</em></div>
+          <div><span></span><strong>Bot</strong><em>{% if user.bot_active %}Active{% else %}Paused{% endif %}</em></div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/nexora-ui.js?v=20260704_pages1"></script>
 </body>
 </html>

@@ -4,33 +4,102 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ title }} | Nexora Admin</title>
-<link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
+<link rel="stylesheet" href="/static/premium.css?v=20260704_pages1">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
 </head>
-<body class="nexora-shell nx-simple-admin-page">
-<main class="nx-section-shell">
-  <a class="nx-back-link" href="{{ back_href }}">Back to Admin Overview</a>
-  <section class="nx-section-hero">
-    <span>Admin Control Center</span>
-    <h1>{{ title }}</h1>
-    <p>{{ summary }}</p>
-  </section>
-  <section class="nx-section-card-grid">
-    <article class="nx-section-card"><span>Status</span><strong>Protected</strong></article>
-    <article class="nx-section-card"><span>Access</span><strong>Admin Only</strong></article>
-    <article class="nx-section-card"><span>Mode</span><strong>Read Safe</strong></article>
-    <article class="nx-section-card"><span>Navigation</span><strong>Linked</strong></article>
-  </section>
-  <section class="nx-section-actions">
-    <a href="/admin">Open Full Admin</a>
-    <a href="/admin/ai-monitor">AI Monitor</a>
-    <a href="/admin/system-health">System Health</a>
-    <a href="/dashboard">Dashboard</a>
-  </section>
-</main>
-<script>window.NEXORA_LANG = "{{ current_lang }}";</script>
-<script src="/static/i18n.js"></script>
-<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+<body class="nexora-shell nx-product-console-page nx-admin-console-page">
+  <aside class="nx-product-sidebar" aria-label="Admin navigation">
+    <a class="nx-product-logo" href="/admin">
+      <span>N</span>
+      <strong>NEXORA<small>Admin Control</small></strong>
+    </a>
+    <nav class="nx-product-nav">
+      <a href="/admin">Admin Overview</a>
+      <a href="/admin/users">Users</a>
+      <a href="/admin/subscriptions">Subscriptions</a>
+      <a href="/admin/payments">Payments</a>
+      <a href="/admin/manual-payments">Manual Payments</a>
+      <a href="/admin/repair-pro-2y">Repair Pro 2Y</a>
+      <a href="/admin/system-health">System Health</a>
+      <a href="/admin/ai-monitor">AI Monitor</a>
+      <a href="/admin/product-features">Product Features</a>
+      <a href="/admin/settings">Settings</a>
+    </nav>
+    <div class="nx-product-side-card nx-admin-side-card">
+      <span>Access</span>
+      <strong>Admin Only</strong>
+      <small>Protected operational console</small>
+    </div>
+  </aside>
+
+  <main class="nx-product-main">
+    <header class="nx-product-header">
+      <div>
+        <a class="nx-back-link" href="{{ back_href }}">Back to Admin Overview</a>
+        <p>Admin Control Center</p>
+        <h1>{{ title }}</h1>
+      </div>
+      <div class="nx-product-header-actions">
+        <button class="theme-toggle nx-theme-pill" type="button" aria-label="Toggle theme"><span class="dark-icon">Dark</span><span class="light-icon">Light</span></button>
+        <a href="/dashboard">Dashboard</a>
+      </div>
+    </header>
+
+    <section class="nx-product-hero nx-admin-hero-panel">
+      <div>
+        <span class="nx-status-pill nx-status-gold">Protected module</span>
+        <h2>{{ summary }}</h2>
+        <p>This admin page is read-safe unless an existing admin action is explicitly submitted.</p>
+      </div>
+      <div class="nx-product-health">
+        <strong>Operational</strong>
+        <span>Admin module</span>
+        <small>All navigation points to existing protected routes.</small>
+      </div>
+    </section>
+
+    <section class="nx-product-metrics nx-admin-metrics" aria-label="Admin status metrics">
+      <article class="nx-product-metric"><span>Status</span><strong>Protected</strong><small>Admin login required</small></article>
+      <article class="nx-product-metric"><span>Access</span><strong>Admin Only</strong><small>Current route is guarded</small></article>
+      <article class="nx-product-metric"><span>Mode</span><strong>Read Safe</strong><small>No automatic write operation</small></article>
+      <article class="nx-product-metric"><span>Navigation</span><strong>Linked</strong><small>No dead buttons</small></article>
+    </section>
+
+    <section class="nx-product-grid">
+      <article class="nx-product-panel">
+        <div class="nx-panel-head">
+          <div>
+            <span>Admin Actions</span>
+            <h3>Control shortcuts</h3>
+          </div>
+        </div>
+        <div class="nx-action-grid">
+          <a href="/admin">Open Full Admin <span>Overview</span></a>
+          <a href="/admin/ai-monitor">AI Monitor <span>Monitor</span></a>
+          <a href="/admin/system-health">System Health <span>Health</span></a>
+          <a href="/dashboard">Dashboard <span>User view</span></a>
+        </div>
+      </article>
+
+      <article class="nx-product-panel">
+        <div class="nx-panel-head">
+          <div>
+            <span>Safety Layer</span>
+            <h3>Production guardrails</h3>
+          </div>
+        </div>
+        <div class="nx-check-list">
+          <div><span></span><strong>Authentication</strong><em>Admin session</em></div>
+          <div><span></span><strong>Database</strong><em>No schema changes</em></div>
+          <div><span></span><strong>Payments</strong><em>Existing flow</em></div>
+          <div><span></span><strong>Telegram</strong><em>Existing flow</em></div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/nexora-ui.js?v=20260704_pages1"></script>
 </body>
 </html>
