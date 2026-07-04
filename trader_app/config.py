@@ -2,8 +2,19 @@ import os
 from datetime import timedelta
 
 
+def _get_secret_key():
+    secret = os.environ.get("SECRET_KEY", "").strip()
+    flask_env = os.environ.get("FLASK_ENV", "").strip().lower()
+    app_env = os.environ.get("APP_ENV", os.environ.get("ENV", "")).strip().lower()
+    is_production = flask_env == "production" or app_env == "production"
+    weak_values = {"", "secret", "change_this_secret_key", "your_secret_key"}
+    if is_production and secret in weak_values:
+        raise RuntimeError("SECRET_KEY must be set to a strong non-default value in production")
+    return secret or "dev-only-secret-key"
+
+
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "secret")
+    SECRET_KEY = _get_secret_key()
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() in ["1", "true", "yes"]

@@ -1,3 +1,4 @@
+import os
 from flask import Blueprint
 from urllib.parse import quote_plus, urlparse
 from trader_app.extensions import limiter
@@ -1016,7 +1017,8 @@ def save_settings():
         trade_type = request.form.get("trade_type", "futures").strip().lower()
         spot_enabled = 1 if request.form.get("spot_enabled") == "1" else 0
         futures_enabled = 1 if request.form.get("futures_enabled") == "1" else 0
-        spot_auto_trade_enabled = 1 if request.form.get("spot_auto_trade_enabled") == "1" else 0
+        enable_spot_auto_trade = os.environ.get("ENABLE_SPOT_AUTO_TRADE", "false").strip().lower() in {"1", "true", "yes", "on"}
+        spot_auto_trade_enabled = 1 if (enable_spot_auto_trade and request.form.get("spot_auto_trade_enabled") == "1") else 0
         futures_auto_trade_enabled = 1 if request.form.get("futures_auto_trade_enabled") == "1" else 0
         stop_loss_required = 1 if request.form.get("stop_loss_required", "1") == "1" else 0
         max_trade_size = request.form.get("max_trade_size", trade_amount)

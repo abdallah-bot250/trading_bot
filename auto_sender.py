@@ -19,6 +19,8 @@ load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 AUTO_TRADE_EXCHANGE = os.environ.get("AUTO_TRADE_EXCHANGE", "bybit").strip().lower()
+ENABLE_SPOT_AUTO_TRADE = os.environ.get("ENABLE_SPOT_AUTO_TRADE", "false").strip().lower() in {"1", "true", "yes", "on"}
+MAX_AUTO_TRADE_NOTIONAL_PERCENT = float(os.environ.get("MAX_AUTO_TRADE_NOTIONAL_PERCENT", "0.95") or 0.95)
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
@@ -1117,12 +1119,60 @@ def validate_symbol_amount(exchange, symbol, amount):
     except Exception as e:
         return False, str(e)
 
-def calculate_amount(usdt_balance, risk_percent, entry_price):
-    capital = usdt_balance * risk_percent
-    if entry_price <= 0:
+def calculate_amount(usdt_balance, risk_percent, entry_price, stop_loss_price=None):
+    """Return position amount using true risk at the stop-loss.
+
+    Previous logic used risk capital as notional size. That does not control the
+    real loss when SL is hit. This version risks `usdt_balance * risk_percent`
+    and divides it by the absolute entry-to-SL distance, then caps notional size
+    so a tight SL cannot create an oversized order.
+    """
+    try:
+        usdt_balance = float(usdt_balance or 0)
+        risk_percent = float(risk_percent or 0)
+        entry_price = float(entry_price or 0)
+        stop_loss_price = float(stop_loss_price or 0)
+    except Exception:
         return 0
-    amount = capital / entry_price
-    return round(amount, 6)
+
+    if usdt_balance <= 0 or risk_percent <= 0 or entry_price <= 0 or stop_loss_price <= 0:
+        return 0
+
+    loss_per_unit = abs(entry_price - stop_loss_price)
+    if loss_per_unit <= 0:
+        return 0
+
+    risk_usdt = usdt_balance * risk_percent
+    risk_based_amount = risk_usdt / loss_per_unit
+
+    max_notional = usdt_balance * max(0.0, min(MAX_AUTO_TRADE_NOTIONAL_PERCENT, 1.0))
+    max_amount_by_balance = max_notional / entry_price
+    amount = min(risk_based_amount, max_amount_by_balance)
+    return round(max(amount, 0), 6)
+
+
+def emergency_close_position(exchange, symbol, side, amount, trade_type, reason="protection_failed"):
+    """Best-effort immediate close for an unsafe auto-trade.
+
+    This must be called whenever the market order is submitted but protection is
+    missing, fill data is unsafe, or validation fails after execution.
+    """
+    try:
+        opposite_side = "sell" if side == "buy" else "buy"
+        params = {"reduceOnly": True} if str(trade_type or "").lower() == "futures" else {}
+        close_order = exchange.create_order(
+            symbol=symbol,
+            type="market",
+            side=opposite_side,
+            amount=amount,
+            price=None,
+            params=params,
+        )
+        log(f"AUTO_TRADE_EMERGENCY_CLOSE symbol={symbol} side={opposite_side} amount={amount} reason={reason} close_id={close_order.get('id') if isinstance(close_order, dict) else None}")
+        return True, close_order
+    except Exception as close_error:
+        log(f"AUTO_TRADE_EMERGENCY_CLOSE_FAILED symbol={symbol} amount={amount} reason={reason} error={close_error}")
+        return False, None
 
 def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, trade_type):
     """Place protective TP/SL where the selected exchange supports it.
@@ -1138,7 +1188,7 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
         trade_type = str(trade_type or "spot").lower()
 
         if trade_type != "futures":
-            return True, "Spot order executed; TP/SL should be managed manually or by exchange tools."
+            return False, "Spot auto-trade protection is not implemented safely. Use Spot signals only until OCO/bracket exits are added."
 
         if exchange_id == "bybit":
             # Bybit supports TP/SL params on USDT perpetual positions. We attach
@@ -1201,6 +1251,9 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         raw_symbol = signal["pair"]
         symbol = normalize_symbol_for_ccxt(raw_symbol, trade_type=trade_type, exchange_name=AUTO_TRADE_EXCHANGE)
 
+        if str(trade_type or "spot").lower() == "spot" and not ENABLE_SPOT_AUTO_TRADE:
+            return None, "Spot auto-trading is disabled for safety until exchange OCO/SL protection is implemented. Spot signals remain enabled."
+
         balance = exchange.fetch_balance()
         usdt_balance = (
             balance.get("USDT", {}).get("free")
@@ -1239,7 +1292,12 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if signal["direction"] == "SHORT" and live_price < entry * (1 - chase):
             return None, "تم رفض الصفقة: السعر سبق نقطة الدخول للبيع"
 
-        amount = calculate_amount(usdt_balance, risk_percent, live_price)
+        if signal["direction"] == "LONG" and sl >= live_price:
+            return None, "Auto trade rejected: invalid stop loss for LONG"
+        if signal["direction"] == "SHORT" and sl <= live_price:
+            return None, "Auto trade rejected: invalid stop loss for SHORT"
+
+        amount = calculate_amount(usdt_balance, risk_percent, live_price, sl)
         if amount <= 0:
             return None, "كمية الصفقة غير صالحة"
 
@@ -1272,10 +1330,15 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         if not order or not order.get("id"):
             return None, "فشل تنفيذ أمر السوق"
 
+        if not protection_ok:
+            emergency_close_position(exchange, symbol, side, amount, trade_type, reason=f"protection_failed:{protection_msg}")
+            return None, f"Auto trade rejected: protection failed and emergency close was attempted: {protection_msg}"
+
         actual_entry_price = extract_actual_fill_price(order)
         if actual_entry_price is None:
             log(f"AUTO_TRADE_FILL_PRICE_UNAVAILABLE pair={raw_symbol} order_id={order.get('id')} exchange={exchange_id}")
-            return None, "Auto trade submitted but fill price unavailable; trade was not recorded as safely executed"
+            emergency_close_position(exchange, symbol, side, amount, trade_type, reason="fill_price_unavailable")
+            return None, "Auto trade submitted but fill price unavailable; emergency close was attempted and trade was not recorded as OPEN"
 
         fill_deviation = abs(float(actual_entry_price) - entry) / entry * 100
         if fill_deviation > MAX_ENTRY_DEVIATION_PERCENT:
@@ -1283,10 +1346,8 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
                 f"AUTO_TRADE_FILL_DEVIATION_TOO_HIGH pair={raw_symbol} order_id={order.get('id')} "
                 f"signal_entry={entry} actual_entry={actual_entry_price} deviation={round(fill_deviation, 4)}"
             )
-            return None, "Auto trade fill deviation too high; trade was not recorded as safely executed"
-
-        if trade_type == "futures" and not protection_ok:
-            log(f"AUTO_TRADE_PROTECTION_WARNING pair={raw_symbol} exchange={exchange_id} reason={protection_msg}")
+            emergency_close_position(exchange, symbol, side, amount, trade_type, reason="fill_deviation_too_high")
+            return None, "Auto trade fill deviation too high; emergency close was attempted and trade was not recorded as OPEN"
 
         conn = db()
         c = conn.cursor()
@@ -1963,8 +2024,8 @@ def run():
                                 continue
 
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
-                            if signal_trade_type == "spot" and spot_auto_trade_enabled != 1:
-                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=spot_auto_disabled")
+                            if signal_trade_type == "spot" and (spot_auto_trade_enabled != 1 or not ENABLE_SPOT_AUTO_TRADE):
+                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=spot_auto_disabled_or_unprotected")
                                 continue
                             if signal_trade_type == "futures" and futures_auto_trade_enabled != 1:
                                 log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=futures_auto_disabled")
