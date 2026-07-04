@@ -311,7 +311,7 @@ def about_page():
 @public_bp.route("/support")
 @public_bp.route("/support-center")
 def support_center():
-    return render_template("company_page.html", page=COMPANY_PAGES["support"])
+    return render_template("support.html")
 
 
 @public_bp.route("/docs")
