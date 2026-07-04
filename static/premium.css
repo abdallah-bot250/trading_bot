@@ -3258,3 +3258,119 @@ html[data-theme="light"] .nx-process-line strong {
     font-size: 42px;
   }
 }
+
+/* === NEXORA FREE EARN UNLOCK v20260704 === */
+.nx-unlock-page {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(32, 214, 138, .18), transparent 28rem),
+    radial-gradient(circle at 80% 0%, rgba(245, 184, 75, .18), transparent 30rem),
+    linear-gradient(135deg, #02070d, #071525 55%, #02070d);
+  font-family: "Cairo", "Segoe UI", Tahoma, Arial, sans-serif;
+}
+.nx-unlock-wrap {
+  width: min(560px, calc(100% - 28px));
+}
+.nx-unlock-card {
+  text-align: center;
+  padding: clamp(28px, 6vw, 46px);
+  border-radius: 30px;
+  border: 1px solid rgba(245, 184, 75, .26);
+  background: linear-gradient(145deg, rgba(10, 21, 34, .9), rgba(4, 12, 22, .82));
+  box-shadow: 0 30px 100px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06);
+  backdrop-filter: blur(18px);
+}
+.nx-unlock-card img {
+  border-radius: 18px;
+  box-shadow: 0 0 34px rgba(245, 184, 75, .28);
+}
+.nx-unlock-card span {
+  display: inline-flex;
+  margin-top: 18px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: #07130e;
+  background: linear-gradient(135deg, #32e78f, #f8d675);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.nx-unlock-card h1 {
+  margin: 18px 0 10px;
+  color: #fff;
+  font-size: clamp(34px, 8vw, 58px);
+  line-height: 1;
+}
+.nx-unlock-card p,
+.nx-unlock-card small {
+  color: #aebdca;
+  line-height: 1.8;
+}
+.nx-unlock-button {
+  width: 100%;
+  min-height: 54px;
+  margin: 24px 0 12px;
+  border: 0;
+  border-radius: 16px;
+  color: #06120d;
+  background: linear-gradient(135deg, #34e994, #f8d675);
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 22px 50px rgba(32, 214, 138, .22);
+}
+.nx-unlock-button:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+.nx-unlock-status {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 16px;
+  font-weight: 900;
+  line-height: 1.6;
+}
+.nx-unlock-status.success {
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, .32);
+  background: rgba(34, 197, 94, .10);
+}
+.nx-unlock-status.warn {
+  color: #fde68a;
+  border: 1px solid rgba(245, 184, 75, .32);
+  background: rgba(245, 184, 75, .10);
+}
+.nx-free-earn-card {
+  margin: 18px 0;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(245, 184, 75, .26);
+  background: linear-gradient(145deg, rgba(245,184,75,.13), rgba(10,21,34,.78));
+  box-shadow: 0 18px 55px rgba(0,0,0,.22);
+}
+.nx-free-earn-card span {
+  color: #f8d675;
+  font-weight: 950;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.nx-free-earn-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #fff;
+  font-size: 24px;
+}
+.nx-free-earn-card p {
+  color: #aebdca;
+  line-height: 1.7;
+}
+.nx-free-earn-card a {
+  color: #34e994;
+  font-weight: 950;
+  text-decoration: none;
+}

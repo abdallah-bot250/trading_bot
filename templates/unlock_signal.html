@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang|default('en') }}" dir="{{ direction|default('ltr') }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unlock Signal | Nexora AI Trader</title>
+<link rel="stylesheet" href="/static/premium.css?v=20260704_freeearn1">
+<link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+</head>
+<body class="nexora-shell nx-unlock-page">
+  <main class="nx-unlock-wrap">
+    <section class="nx-unlock-card">
+      <img src="/static/brand/favicon.svg" alt="" width="58" height="58">
+      <span>Free Earn Mode</span>
+      <h1>Premium signal locked</h1>
+      <p>Watch a rewarded ad to unlock this qualified signal for free. Signal details stay hidden until unlock succeeds.</p>
+
+      {% if status %}
+        {% if status.ok %}
+          <div class="nx-unlock-status success">Signal unlocked and sent to your Telegram.</div>
+        {% elif status.reason in ['ads_not_configured'] %}
+          <div class="nx-unlock-status warn">Rewarded ads are not configured yet.</div>
+        {% elif status.reason in ['expired_credit_granted', 'stale_credit_granted'] %}
+          <div class="nx-unlock-status warn">This signal is no longer fresh. Unlock credit saved for the next qualified signal.</div>
+        {% elif status.reason == 'already_used' %}
+          <div class="nx-unlock-status warn">This unlock link was already used.</div>
+        {% else %}
+          <div class="nx-unlock-status warn">Unlock unavailable: {{ status.reason }}.</div>
+        {% endif %}
+      {% endif %}
+
+      {% if rewarded_ad_provider == 'none' and not demo_mode %}
+        <button class="nx-unlock-button" type="button" disabled>Rewarded ads are not configured yet</button>
+      {% else %}
+        <form method="POST">
+          <button class="nx-unlock-button" type="submit">Watch Ad & Unlock</button>
+        </form>
+      {% endif %}
+
+      {% if demo_mode %}
+      <small>Demo unlock mode is enabled for development testing.</small>
+      {% else %}
+      <small>Link expires in about {{ ttl_minutes }} minutes. Crypto trading is risky. Not financial advice.</small>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

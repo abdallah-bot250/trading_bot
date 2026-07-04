@@ -1,4 +1,6 @@
 import time
+import json
+import secrets
 import requests
 from datetime import datetime, timedelta
 from market_analyzer import (
@@ -26,6 +28,11 @@ SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower(
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 NEXORA_PROOF_MODE = os.environ.get("NEXORA_PROOF_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 MIN_DAILY_SIGNAL_TARGET = int(os.environ.get("MIN_DAILY_SIGNAL_TARGET", "0") or 0)
+FREE_EARN_MODE = os.environ.get("FREE_EARN_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+REWARDED_AD_PROVIDER = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lower()
+FREE_SIGNALS_LIFETIME = int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2)
+LOCKED_SIGNAL_TTL_MINUTES = int(os.environ.get("LOCKED_SIGNAL_TTL_MINUTES", "10") or 10)
+FREE_UNLOCK_DEMO_MODE = os.environ.get("FREE_UNLOCK_DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -44,7 +51,7 @@ ENTRY_CHASE_TOLERANCE_PERCENT = float(os.environ.get("ENTRY_CHASE_TOLERANCE_PERC
 MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("MAX_TP1_PROGRESS_PERCENT", "45"))
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
-FREE_SIGNALS_LIMIT = 2
+FREE_SIGNALS_LIMIT = FREE_SIGNALS_LIFETIME
 
 # ===== QUALITY CONTROL =====
 MAX_SIGNALS_PER_CYCLE = 2
@@ -222,6 +229,52 @@ def send(chat_id, text):
         log(f"TELEGRAM_SEND_FAILED exception chat_id={chat_id} error={e}")
         return False
     
+
+
+def send_unlock_prompt(chat_id, unlock_url):
+    try:
+        if not TOKEN:
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED token_missing chat_id={chat_id}")
+            return False
+        payload = {
+            "chat_id": chat_id,
+            "text": "🔒 New premium signal is ready.\nWatch a short rewarded ad to unlock it for free.",
+            "reply_markup": {
+                "inline_keyboard": [[
+                    {"text": "Unlock Signal", "url": unlock_url}
+                ]]
+            }
+        }
+        r = requests.post(
+            f"https://api.telegram.org/bot{TOKEN}/sendMessage",
+            json=payload,
+            timeout=12
+        )
+        if r.status_code != 200:
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED chat_id={chat_id} status={r.status_code} response={(r.text or '')[:300]}")
+            return False
+        data = r.json()
+        if not data.get("ok"):
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED api_not_ok chat_id={chat_id} response={data}")
+            return False
+        return True
+    except Exception as e:
+        log(f"TELEGRAM_UNLOCK_PROMPT_FAILED exception chat_id={chat_id} error={e}")
+        return False
+
+def free_earn_base_url():
+    raw = (
+        os.environ.get("BASE_URL")
+        or os.environ.get("CANONICAL_DOMAIN")
+        or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+        or ""
+    ).strip()
+    if not raw:
+        return ""
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    return raw.rstrip("/")
+
 def send_channel(text):
     try:
         if not TOKEN:
@@ -563,6 +616,32 @@ def init_trade_tables():
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_enabled INTEGER DEFAULT 1")
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS futures_enabled INTEGER DEFAULT 1")
 
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS free_signal_unlocks (
+        id SERIAL PRIMARY KEY,
+        token TEXT UNIQUE NOT NULL,
+        chat_id TEXT NOT NULL,
+        plan TEXT DEFAULT 'trial',
+        signal_payload TEXT NOT NULL,
+        unlocked INTEGER DEFAULT 0,
+        credit_granted INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        unlocked_at TIMESTAMP
+    )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_token ON free_signal_unlocks (token)")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_chat_created ON free_signal_unlocks (chat_id, created_at)")
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
+        chat_id TEXT PRIMARY KEY,
+        credits INTEGER DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
     conn.commit()
     conn.close()
     log("Trade tables initialized")
@@ -624,6 +703,241 @@ def record_sent_signal(chat_id, plan, signal):
     except Exception as e:
         log(f"record_sent_signal error: {e}")
         return None
+
+
+
+# ================= FREE EARN UNLOCK =================
+def _free_signal_payload(signal):
+    allowed = {
+        "pair", "type", "direction", "timeframe", "entry", "tp", "tp1", "tp2", "tp3", "sl",
+        "display_confidence", "confidence", "risk_reward", "market_regime", "adaptive_regime",
+        "strategy_name", "setup_type", "signal_quality_reason", "reason", "created_at",
+        "expires_at", "risk_score", "score", "volume", "engine_confidence"
+    }
+    return {key: signal.get(key) for key in allowed if key in signal}
+
+def ensure_free_earn_tables():
+    conn = db()
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS free_signal_unlocks (
+        id SERIAL PRIMARY KEY,
+        token TEXT UNIQUE NOT NULL,
+        chat_id TEXT NOT NULL,
+        plan TEXT DEFAULT 'trial',
+        signal_payload TEXT NOT NULL,
+        unlocked INTEGER DEFAULT 0,
+        credit_granted INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        unlocked_at TIMESTAMP
+    )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_token ON free_signal_unlocks (token)")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_chat_created ON free_signal_unlocks (chat_id, created_at)")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
+        chat_id TEXT PRIMARY KEY,
+        credits INTEGER DEFAULT 0,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.commit()
+    conn.close()
+
+def free_unlock_credits(chat_id):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        c.execute("SELECT COALESCE(credits, 0) FROM free_signal_unlock_credits WHERE chat_id = %s", (str(chat_id),))
+        row = c.fetchone()
+        conn.close()
+        return int(row[0]) if row else 0
+    except Exception as e:
+        log(f"FREE_UNLOCK_CREDIT_READ_FAILED chat_id={chat_id} error={e}")
+        return 0
+
+def add_free_unlock_credit(chat_id):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO free_signal_unlock_credits (chat_id, credits, updated_at)
+            VALUES (%s, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT (chat_id)
+            DO UPDATE SET credits = free_signal_unlock_credits.credits + 1,
+                          updated_at = CURRENT_TIMESTAMP
+        """, (str(chat_id),))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"FREE_UNLOCK_CREDIT_GRANT_FAILED chat_id={chat_id} error={e}")
+        return False
+
+def consume_free_unlock_credit(chat_id):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        c.execute("SELECT COALESCE(credits, 0) FROM free_signal_unlock_credits WHERE chat_id = %s FOR UPDATE", (str(chat_id),))
+        row = c.fetchone()
+        credits = int(row[0]) if row else 0
+        if credits <= 0:
+            conn.rollback()
+            conn.close()
+            return False
+        c.execute("""
+            UPDATE free_signal_unlock_credits
+            SET credits = credits - 1,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE chat_id = %s
+        """, (str(chat_id),))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        log(f"FREE_UNLOCK_CREDIT_CONSUME_FAILED chat_id={chat_id} error={e}")
+        return False
+
+def create_pending_locked_signal(chat_id, plan, signal):
+    try:
+        ensure_free_earn_tables()
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now() + timedelta(minutes=max(1, LOCKED_SIGNAL_TTL_MINUTES))
+        payload = json.dumps(_free_signal_payload(signal), separators=(",", ":"), default=str)
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO free_signal_unlocks (token, chat_id, plan, signal_payload, expires_at)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (token, str(chat_id), str(plan or "trial"), payload, expires_at))
+        conn.commit()
+        conn.close()
+        return token
+    except Exception as e:
+        log(f"FREE_LOCKED_SIGNAL_CREATE_FAILED chat_id={chat_id} pair={signal.get('pair')} error={e}")
+        return None
+
+def free_unlock_attempt_allowed(chat_id):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        since = datetime.now() - timedelta(minutes=2)
+        c.execute("""
+            SELECT COUNT(*) FROM free_signal_unlocks
+            WHERE chat_id = %s AND unlocked_at >= %s
+        """, (str(chat_id), since))
+        row = c.fetchone()
+        conn.close()
+        return int(row[0] or 0) < 3
+    except Exception:
+        return True
+
+def process_free_unlock_token(token, demo_allowed=False):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, chat_id, plan, signal_payload, unlocked, credit_granted, expires_at
+            FROM free_signal_unlocks
+            WHERE token = %s
+            FOR UPDATE
+        """, (str(token),))
+        row = c.fetchone()
+        if not row:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "invalid_token"}
+        unlock_id, chat_id, plan, payload, unlocked, credit_granted, expires_at = row
+        if int(unlocked or 0) == 1:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "already_used"}
+        if datetime.now() > expires_at:
+            if int(credit_granted or 0) != 1:
+                c.execute("UPDATE free_signal_unlocks SET credit_granted = 1 WHERE id = %s", (unlock_id,))
+                conn.commit()
+                conn.close()
+                add_free_unlock_credit(chat_id)
+                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
+                return {"ok": False, "reason": "expired_credit_granted"}
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "expired"}
+        if not free_unlock_attempt_allowed(chat_id):
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "rate_limited"}
+        if REWARDED_AD_PROVIDER == "none" and not demo_allowed:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "ads_not_configured"}
+        if demo_allowed:
+            log("FREE_UNLOCK_DEMO_USED")
+        signal = json.loads(payload or "{}")
+        if not signal_is_fresh(signal):
+            c.execute("UPDATE free_signal_unlocks SET credit_granted = 1 WHERE id = %s", (unlock_id,))
+            conn.commit()
+            conn.close()
+            add_free_unlock_credit(chat_id)
+            log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
+            return {"ok": False, "reason": "stale_credit_granted"}
+        msg = format_signal(signal, plan)
+        sent_ok = send(chat_id, msg)
+        if not sent_ok:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "telegram_send_failed"}
+        c.execute("""
+            UPDATE free_signal_unlocks
+            SET unlocked = 1,
+                unlocked_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (unlock_id,))
+        conn.commit()
+        conn.close()
+        record_sent_signal(chat_id, plan, signal)
+        increment_trade(chat_id)
+        write_log(chat_id, "INFO", f"Free earned signal unlocked {signal.get('pair')} {signal.get('direction')}")
+        log(f"FREE_SIGNAL_UNLOCKED_AND_SENT chat_id={chat_id} pair={signal.get('pair')}")
+        return {"ok": True, "reason": "sent"}
+    except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        log(f"FREE_UNLOCK_PROCESS_FAILED token_present={bool(token)} error={e}")
+        return {"ok": False, "reason": "error"}
+
+def maybe_handle_free_earn_delivery(chat_id, plan, trades, signal):
+    if str(plan or "trial").lower() != "trial":
+        return "not_free"
+    if not FREE_EARN_MODE:
+        return "free_earn_disabled"
+    if is_trial_allowed(trades):
+        return "direct_free"
+    credits = free_unlock_credits(chat_id)
+    if credits > 0 and consume_free_unlock_credit(chat_id):
+        return "credit_used"
+    token = create_pending_locked_signal(chat_id, plan, signal)
+    if not token:
+        return "lock_create_failed"
+    base_url = free_earn_base_url()
+    if not base_url:
+        log(f"FREE_LOCKED_SIGNAL_NO_BASE_URL chat_id={chat_id}")
+        return "lock_no_base_url"
+    unlock_url = f"{base_url}/unlock-signal/{token}"
+    if send_unlock_prompt(chat_id, unlock_url):
+        log(f"FREE_LOCKED_SIGNAL_CREATED chat_id={chat_id} pair={signal.get('pair')} ttl_minutes={LOCKED_SIGNAL_TTL_MINUTES}")
+        write_log(chat_id, "INFO", f"Locked premium signal ready {signal.get('pair')}")
+        return "locked_prompt_sent"
+    return "lock_prompt_failed"
 
 # ================= USERS =================
 def get_users():
@@ -1943,18 +2257,15 @@ def run():
                         continue
 
                     # ===== ACCESS CHECK =====
-                    if plan == "trial":
-                        if not is_trial_allowed(trades):
-                            log_plan_delivery_diag(email, plan, chat_id, False, "trial_limit_reached")
-                            continue
-                    else:
+                    if plan != "trial":
                         if not is_paid_plan_active(plan, expiry, is_paid):
                             log_plan_delivery_diag(email, plan, chat_id, False, "subscription_inactive")
                             log_pro_2y_block(plan, "subscription_inactive")
                             continue
 
                     # ===== PLAN FILTER =====
-                    if not signal_allowed_for_plan(plan, signal):
+                    plan_filter_required = not (plan == "trial" and FREE_EARN_MODE and not is_trial_allowed(trades))
+                    if plan_filter_required and not signal_allowed_for_plan(plan, signal):
                         block_reason = signal_plan_block_reason(plan, signal)
                         log(
                             f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
@@ -1990,7 +2301,17 @@ def run():
                         log_pro_2y_block(plan, "stale_before_send")
                         continue
 
-                    # ===== SEND SIGNAL =====
+                    # ===== FREE EARN / SEND SIGNAL =====
+                    free_earn_state = maybe_handle_free_earn_delivery(chat_id, plan, trades, signal)
+                    if free_earn_state == "locked_prompt_sent":
+                        log_plan_delivery_diag(email, plan, chat_id, False, "free_earn_locked")
+                        continue
+                    if free_earn_state in {"lock_create_failed", "lock_no_base_url", "lock_prompt_failed"}:
+                        log_plan_delivery_diag(email, plan, chat_id, False, free_earn_state)
+                        continue
+                    if free_earn_state == "credit_used":
+                        log(f"FREE_UNLOCK_CREDIT_USED chat_id={chat_id} pair={signal.get('pair')}")
+
                     msg = format_signal(signal, plan)
                     sent_ok = send(chat_id, msg)
 

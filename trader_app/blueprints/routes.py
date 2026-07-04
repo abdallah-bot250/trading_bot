@@ -38,6 +38,33 @@ def landing():
     return render_template("landing.html")
 
 
+
+
+@public_bp.route("/unlock-signal/<token>", methods=["GET", "POST"])
+def unlock_signal(token):
+    from auto_sender import (
+        FREE_UNLOCK_DEMO_MODE,
+        REWARDED_AD_PROVIDER,
+        LOCKED_SIGNAL_TTL_MINUTES,
+        process_free_unlock_token,
+    )
+
+    status = None
+    if request.method == "POST":
+        if REWARDED_AD_PROVIDER == "none" and not FREE_UNLOCK_DEMO_MODE:
+            status = {"ok": False, "reason": "ads_not_configured"}
+        else:
+            status = process_free_unlock_token(token, demo_allowed=FREE_UNLOCK_DEMO_MODE)
+    return render_template(
+        "unlock_signal.html",
+        token=token,
+        status=status,
+        rewarded_ad_provider=REWARDED_AD_PROVIDER,
+        demo_mode=FREE_UNLOCK_DEMO_MODE,
+        ttl_minutes=LOCKED_SIGNAL_TTL_MINUTES,
+    )
+
+
 @public_bp.route("/how-signals-work")
 def how_signals_work():
     return render_template("signal_methodology.html")
@@ -1524,6 +1551,44 @@ def dashboard():
                 conn.rollback()
                 log(f"dashboard chart unavailable: {chart_error}")
 
+
+
+        free_earn_stats = {
+            "enabled": os.environ.get("FREE_EARN_MODE", "false").strip().lower() in {"1", "true", "yes", "on"},
+            "free_limit": int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2),
+            "unlock_credits": 0,
+            "locked_pending": 0,
+            "successful_unlocks": 0,
+        }
+        if chat_id:
+            try:
+                c.execute("SELECT COALESCE(credits, 0) AS credits FROM free_signal_unlock_credits WHERE chat_id = %s", (str(chat_id),))
+                credit_row = c.fetchone()
+                if credit_row:
+                    free_earn_stats["unlock_credits"] = int(credit_row.get("credits", 0) if hasattr(credit_row, "get") else credit_row[0] or 0)
+            except Exception as credit_error:
+                conn.rollback()
+                log(f"dashboard free earn credits unavailable: {credit_error}")
+            try:
+                c.execute("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE COALESCE(unlocked, 0) = 0 AND expires_at >= NOW()) AS locked_pending,
+                        COUNT(*) FILTER (WHERE COALESCE(unlocked, 0) = 1) AS successful_unlocks
+                    FROM free_signal_unlocks
+                    WHERE chat_id = %s
+                """, (str(chat_id),))
+                unlock_row = c.fetchone()
+                if unlock_row:
+                    if hasattr(unlock_row, "get"):
+                        free_earn_stats["locked_pending"] = int(unlock_row.get("locked_pending") or 0)
+                        free_earn_stats["successful_unlocks"] = int(unlock_row.get("successful_unlocks") or 0)
+                    else:
+                        free_earn_stats["locked_pending"] = int(unlock_row[0] or 0)
+                        free_earn_stats["successful_unlocks"] = int(unlock_row[1] or 0)
+            except Exception as unlock_error:
+                conn.rollback()
+                log(f"dashboard free earn unlocks unavailable: {unlock_error}")
+
         log("DASHBOARD_METRICS_LOADED ok=True")
         is_linked = True if user.get("chat_id") else False
         telegram_link_token = create_telegram_link_token(c, user.get("email"))
@@ -1652,6 +1717,7 @@ def dashboard():
             signal_performance=signal_performance,
             recent_signals=recent_signals,
             performance_chart=performance_chart,
+            free_earn_stats=free_earn_stats,
             bot_link=current_bot_link(),
             telegram_connect_link=telegram_connect_link
         )
@@ -3324,6 +3390,12 @@ def admin_dashboard():
         telegram_delivery_rate = round((linked_users / total_users) * 100, 2) if total_users else 0
         queue_monitor = payments_pending + pending_withdrawals + signals_open
 
+        free_earn_locked = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE COALESCE(unlocked, 0) = 0 AND expires_at >= NOW()", default=0) or 0)
+        free_earn_unlocks = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE COALESCE(unlocked, 0) = 1", default=0) or 0)
+        free_earn_credits = int(safe_scalar("SELECT COALESCE(SUM(credits), 0) FROM free_signal_unlock_credits", default=0) or 0)
+        free_earn_users = int(safe_scalar("SELECT COUNT(DISTINCT chat_id) FROM free_signal_unlocks", default=0) or 0)
+
+
         admin_overview = {
             "revenue": revenue,
             "revenue_7d": revenue_7d,
@@ -3374,6 +3446,10 @@ def admin_dashboard():
             "signal_success_rate": signal_win_rate,
             "ai_engine_health": "healthy" if ai_score >= 65 else "warming_up",
             "queue_monitor": queue_monitor,
+            "free_earn_locked": free_earn_locked,
+            "free_earn_unlocks": free_earn_unlocks,
+            "free_earn_credits": free_earn_credits,
+            "free_earn_users": free_earn_users,
         }
 
         user_rows = safe_rows("""
