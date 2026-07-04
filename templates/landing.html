@@ -660,6 +660,38 @@ html[data-theme="light"] .premium-market-pill strong{color:#0f172a !important}
   background:linear-gradient(145deg,rgba(15,31,56,.78),rgba(12,24,44,.58)) !important;
   border-color:rgba(125,211,252,.2) !important;
 }
+.nx-competitive-wrap{display:grid;grid-template-columns:.9fr 1.1fr;gap:22px;align-items:stretch}
+.nx-position-card{padding:28px;border-radius:18px;background:linear-gradient(145deg,rgba(15,31,56,.82),rgba(12,24,44,.58));border:1px solid rgba(125,211,252,.2);box-shadow:var(--shadow)}
+.nx-position-card h3{font-size:clamp(1.65rem,3vw,2.35rem);margin:10px 0 12px;line-height:1.15}
+.nx-position-card p{color:var(--muted);line-height:1.85;margin:0 0 18px}
+.nx-position-list{display:grid;gap:10px;margin-top:18px}
+.nx-position-list span{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(148,163,184,.13);color:#dbeafe;font-weight:800}
+.nx-position-list span:before{content:"";width:9px;height:9px;margin-top:7px;border-radius:50%;background:linear-gradient(135deg,#60a5fa,#22d3ee);box-shadow:0 0 18px rgba(34,211,238,.5);flex:0 0 auto}
+.nx-compare-table{display:grid;gap:10px}
+.nx-compare-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:12px;border-radius:14px;background:rgba(12,24,44,.58);border:1px solid rgba(148,163,184,.14)}
+.nx-compare-row.head{background:linear-gradient(90deg,rgba(37,99,235,.22),rgba(124,58,237,.14));font-weight:950;color:#f8fbff}
+.nx-compare-row span{color:#cbd5e1;line-height:1.55}
+.nx-compare-row strong{color:#fff}
+.nx-status-chip{display:inline-flex;align-items:center;width:max-content;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:950;margin-top:6px}
+.nx-status-chip.available{background:rgba(34,211,238,.14);color:#7dd3fc;border:1px solid rgba(125,211,252,.26)}
+.nx-status-chip.soon{background:rgba(251,191,36,.12);color:#fde68a;border:1px solid rgba(251,191,36,.26)}
+.nx-status-chip.diff{background:rgba(167,139,250,.13);color:#ddd6fe;border:1px solid rgba(167,139,250,.26)}
+.nx-platform-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+.nx-platform-strip a{padding:18px;border-radius:16px;background:linear-gradient(145deg,rgba(15,31,56,.72),rgba(12,24,44,.52));border:1px solid rgba(125,211,252,.18);box-shadow:0 18px 60px rgba(2,8,23,.18);transition:transform .18s ease,border-color .18s ease}
+.nx-platform-strip a:hover{transform:translateY(-3px);border-color:rgba(125,211,252,.42)}
+.nx-platform-strip b{display:block;color:#f8fbff;margin-bottom:8px}
+.nx-platform-strip span{color:var(--muted);font-size:14px;line-height:1.6}
+html[data-theme="light"] .nx-position-card,
+html[data-theme="light"] .nx-compare-row,
+html[data-theme="light"] .nx-platform-strip a{background:linear-gradient(145deg,rgba(255,255,255,.9),rgba(239,246,255,.68));box-shadow:0 22px 70px rgba(37,99,235,.10)}
+html[data-theme="light"] .nx-position-list span,
+html[data-theme="light"] .nx-compare-row span,
+html[data-theme="light"] .nx-platform-strip span{color:#475569}
+html[data-theme="light"] .nx-compare-row strong,
+html[data-theme="light"] .nx-position-card h3,
+html[data-theme="light"] .nx-platform-strip b{color:#0f172a}
+@media(max-width:980px){.nx-competitive-wrap{grid-template-columns:1fr}.nx-platform-strip{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.nx-compare-row{grid-template-columns:1fr}.nx-platform-strip{grid-template-columns:1fr}}
 
 </style>
 <!-- TikTok Pixel Code Start -->
@@ -855,6 +887,44 @@ html[data-theme="light"] .premium-market-pill strong{color:#0f172a !important}
     <a href="/pricing" class="nx-feature-card"><b>Pricing</b><span>Compare all plans</span></a>
   </div>
 </section>
+
+  <section class="section" id="platform-positioning">
+    <div class="container">
+      <div class="section-head">
+        <span class="badge">SaaS positioning</span>
+        <h2>Built to feel like a trading automation platform, positioned around safer AI signal delivery.</h2>
+        <p>Large automation platforms focus on configurable bots, marketplaces, copy trading, and exchange automation. Nexora presents those product layers clearly while keeping the core promise focused: high-quality AI-assisted signals, Telegram delivery, risk/reward, and transparent dashboard tracking.</p>
+      </div>
+      <div class="nx-competitive-wrap">
+        <article class="nx-position-card">
+          <span class="eyebrow">Nexora difference</span>
+          <h3>Signal-first AI fund-manager experience.</h3>
+          <p>Nexora is not trying to look like a random alert website. The UI now frames it as a complete SaaS workspace while being honest about what is live, beta, or coming soon.</p>
+          <div class="nx-position-list">
+            <span>AI signal workflow with Entry, TP, SL, confidence, RR, and risk warning.</span>
+            <span>Telegram-first delivery for users who want action-ready alerts without building bots.</span>
+            <span>Rules, templates, paper mode, academy, exchanges, and execution pages are visible product layers.</span>
+            <span>Coming Soon labels protect credibility instead of pretending every backend exists today.</span>
+          </div>
+        </article>
+        <div class="nx-compare-table" aria-label="Nexora platform comparison">
+          <div class="nx-compare-row head"><strong>Capability</strong><strong>Full bot platforms</strong><strong>Nexora positioning</strong></div>
+          <div class="nx-compare-row"><span>Trading bots</span><span>Configurable strategy bots and automation marketplaces</span><span>Signal-first AI workflow with optional guarded auto-trade presentation <em class="nx-status-chip available">Available / Beta</em></span></div>
+          <div class="nx-compare-row"><span>Paper trading</span><span>Virtual balances and simulated bot execution</span><span>Paper Rules page is product-ready UI only until a ledger backend exists <em class="nx-status-chip soon">Coming Soon</em></span></div>
+          <div class="nx-compare-row"><span>Strategy design</span><span>Drag-and-drop rules, indicators, conditions, backtesting</span><span>Rules, Conditions, Indicators, and Templates pages explain the Nexora method without editing the engine <em class="nx-status-chip diff">Read-only</em></span></div>
+          <div class="nx-compare-row"><span>Marketplace / copy trading</span><span>Copy top templates and sell strategies</span><span>Marketplace is shown as a roadmap feature only, avoiding fake performance claims <em class="nx-status-chip soon">Coming Soon</em></span></div>
+          <div class="nx-compare-row"><span>User experience</span><span>Power-user bot builder</span><span>Simpler buyer-friendly path: website, Telegram bot, dashboard, signal tracking <em class="nx-status-chip available">Available</em></span></div>
+          <div class="nx-compare-row"><span>Trust layer</span><span>Exchange integrations, social proof, academy, support</span><span>Official bot check, proof page, risk disclaimer, invoices, academy, and admin monitor <em class="nx-status-chip available">Available</em></span></div>
+        </div>
+      </div>
+      <div class="nx-platform-strip" aria-label="Product capability shortcuts">
+        <a href="/rules"><b>Rules Center</b><span>Show buyers a bot-platform style control layer.</span></a>
+        <a href="/templates"><b>Strategy Templates</b><span>Present a template catalog without modifying signals.</span></a>
+        <a href="/executions"><b>Execution Monitor</b><span>Explain sends, blocks, and safety rejections.</span></a>
+        <a href="/academy"><b>Academy</b><span>Educate users like a serious international SaaS.</span></a>
+      </div>
+    </div>
+  </section>
 
 <section class="section" id="pricing">
     <div class="container">
