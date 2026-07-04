@@ -84,7 +84,7 @@
   }
   addAdminAnchors();
 
-  const marketFallback={BTCUSDT:{label:"BTC/USDT",icon:"₿",cls:"btc",price:"60,023.52",change:"-0.19"},ETHUSDT:{label:"ETH/USDT",icon:"Ξ",cls:"eth",price:"1,579.37",change:"+0.47"},SOLUSDT:{label:"SOL/USDT",icon:"S",cls:"sol",price:"72.23",change:"+2.05"},BNBUSDT:{label:"BNB/USDT",icon:"B",cls:"bnb",price:"553.41",change:"-0.43"}};
+  const marketFallback={BTCUSDT:{label:"BTC/USDT",icon:"BTC",cls:"btc",price:"60,023.52",change:"-0.19"},ETHUSDT:{label:"ETH/USDT",icon:"ETH",cls:"eth",price:"1,579.37",change:"+0.47"},SOLUSDT:{label:"SOL/USDT",icon:"SOL",cls:"sol",price:"72.23",change:"+2.05"},BNBUSDT:{label:"BNB/USDT",icon:"BNB",cls:"bnb",price:"553.41",change:"-0.43"},XRPUSDT:{label:"XRP/USDT",icon:"XRP",cls:"xrp",price:"0.5284",change:"+1.02"},ADAUSDT:{label:"ADA/USDT",icon:"ADA",cls:"ada",price:"0.3987",change:"+0.71"},DOGEUSDT:{label:"DOGE/USDT",icon:"DOGE",cls:"doge",price:"0.1152",change:"-0.65"}};
   const symbols=Object.keys(marketFallback); const cache=new Map();
   function formatPrice(value){const n=Number(value);if(!Number.isFinite(n))return value||"--";return n>=1000?n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}):n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}
   function renderMarketBar(){

@@ -761,12 +761,30 @@ input, select {
     <a href="/logout">Logout</a>
   </nav>
 </aside>
+<header class="nx-dashboard-head" aria-label="Dashboard header">
+  <div class="nx-dashboard-titlebar">
+    <span class="nx-menu-dot">☰</span>
+    <div>
+      <strong>Dashboard</strong>
+      <small>Nexora premium trading console</small>
+    </div>
+  </div>
+  <div class="nx-dashboard-user">
+    <span class="nx-user-avatar">N</span>
+    <div>
+      <strong>Nexora Trader</strong>
+      <small>{{ plan_label|default("Premium User") }}</small>
+    </div>
+  </div>
+</header>
 <section class="nx-final-marketbar nx-hard-marketbar" aria-label="Live crypto market prices">
   <article class="nx-market-card" data-nx-symbol="BTCUSDT"><div class="nx-market-left"><span class="nx-coin btc">BTC</span><span class="nx-symbol">BTC/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
   <article class="nx-market-card" data-nx-symbol="ETHUSDT"><div class="nx-market-left"><span class="nx-coin eth">ETH</span><span class="nx-symbol">ETH/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
   <article class="nx-market-card" data-nx-symbol="SOLUSDT"><div class="nx-market-left"><span class="nx-coin sol">SOL</span><span class="nx-symbol">SOL/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
   <article class="nx-market-card" data-nx-symbol="BNBUSDT"><div class="nx-market-left"><span class="nx-coin bnb">BNB</span><span class="nx-symbol">BNB/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
-  <div class="nx-market-meta"><span>LIVE</span><span class="nx-dot"></span><small>Market Open</small></div>
+  <article class="nx-market-card" data-nx-symbol="XRPUSDT"><div class="nx-market-left"><span class="nx-coin xrp">XRP</span><span class="nx-symbol">XRP/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
+  <article class="nx-market-card" data-nx-symbol="ADAUSDT"><div class="nx-market-left"><span class="nx-coin ada">ADA</span><span class="nx-symbol">ADA/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
+  <article class="nx-market-card" data-nx-symbol="DOGEUSDT"><div class="nx-market-left"><span class="nx-coin doge">DOGE</span><span class="nx-symbol">DOGE/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
 </section>
 
 <div class="language-switcher" aria-label="Language switcher">
