@@ -687,7 +687,7 @@ input, select {
 @media(max-width:900px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid,.nx-kv{grid-template-columns:1fr}.nx-table-card{overflow-x:auto}}
 
 </style>
-<link rel="stylesheet" href="/static/premium.css?v=dashboard-hard-ui-20260704">
+<link rel="stylesheet" href="/static/premium.css?v=20260704_ui3">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
 <meta name="theme-color" content="#20D68A">
@@ -762,10 +762,10 @@ input, select {
   </nav>
 </aside>
 <section class="nx-final-marketbar nx-hard-marketbar" aria-label="Live crypto market prices">
-  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin btc">₿</span><span class="nx-symbol">BTC/USDT</span></div><strong class="nx-price">60,023.52</strong><span class="nx-change down">-0.19%</span></article>
-  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin eth">Ξ</span><span class="nx-symbol">ETH/USDT</span></div><strong class="nx-price">1,579.37</strong><span class="nx-change">+0.47%</span></article>
-  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin sol">S</span><span class="nx-symbol">SOL/USDT</span></div><strong class="nx-price">72.23</strong><span class="nx-change">+2.05%</span></article>
-  <article class="nx-market-card"><div class="nx-market-left"><span class="nx-coin bnb">B</span><span class="nx-symbol">BNB/USDT</span></div><strong class="nx-price">553.41</strong><span class="nx-change down">-0.43%</span></article>
+  <article class="nx-market-card" data-nx-symbol="BTCUSDT"><div class="nx-market-left"><span class="nx-coin btc">BTC</span><span class="nx-symbol">BTC/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
+  <article class="nx-market-card" data-nx-symbol="ETHUSDT"><div class="nx-market-left"><span class="nx-coin eth">ETH</span><span class="nx-symbol">ETH/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
+  <article class="nx-market-card" data-nx-symbol="SOLUSDT"><div class="nx-market-left"><span class="nx-coin sol">SOL</span><span class="nx-symbol">SOL/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
+  <article class="nx-market-card" data-nx-symbol="BNBUSDT"><div class="nx-market-left"><span class="nx-coin bnb">BNB</span><span class="nx-symbol">BNB/USDT</span></div><strong class="nx-price">--</strong><span class="nx-change">Live</span></article>
   <div class="nx-market-meta"><span>LIVE</span><span class="nx-dot"></span><small>Market Open</small></div>
 </section>
 
@@ -828,7 +828,7 @@ input, select {
 {% endif %}
 
     <h1>🚀 Nexora AI Trader</h1>
-    <p>Smart Trading • AI Powered • Passive Income</p>
+    <p>AI-assisted trading console for signals, risk controls, and Telegram delivery.</p>
 
     <div class="status-strip">
         <div class="status-pill">
@@ -1667,6 +1667,6 @@ window.NEXORA_LANG = "{{ current_lang }}";
 </script>
 <script src="/static/i18n.js"></script>
 
-<script src="/static/nexora-ui.js?v=final-sale-4"></script>
+<script src="/static/nexora-ui.js?v=20260704_ui3"></script>
 </body>
 </html>
