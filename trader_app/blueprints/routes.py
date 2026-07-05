@@ -141,6 +141,8 @@ def unlock_signal(token):
         adsgram_platform_id=ADSGRAM_PLATFORM_ID,
         adsgram_block_id=ADSGRAM_BLOCK_ID,
         reward_url=f"{current_base_url()}/adsgram/reward?user_id=[userId]",
+        social_facebook_url=os.environ.get("SOCIAL_FACEBOOK_URL", "https://www.facebook.com/profile.php?id=61591117963149").strip(),
+        social_instagram_url=os.environ.get("SOCIAL_INSTAGRAM_URL", "https://www.instagram.com/nexora_ai_trader/").strip(),
     )
 
 

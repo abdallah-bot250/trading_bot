@@ -32,17 +32,35 @@
       {% endif %}
 
       {% if rewarded_ad_provider == 'adsgram' %}
-        <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}" data-block-id="{{ adsgram_block_id|default('37291') }}">
+        <div class="nx-social-unlock-gate" id="nxSocialUnlockGate">
+          <strong>Support Nexora first</strong>
+          <p>Follow our official pages, then watch the rewarded video to unlock this signal for free. Following does not unlock the signal by itself; AdsGram reward completion is still required.</p>
+          <div class="nx-social-follow-grid">
+            <a class="nx-social-follow facebook" href="{{ social_facebook_url }}" target="_blank" rel="noopener" data-social-follow="facebook">
+              <span>f</span>
+              <strong>Follow Facebook</strong>
+              <small>Official Nexora page</small>
+            </a>
+            <a class="nx-social-follow instagram" href="{{ social_instagram_url }}" target="_blank" rel="noopener" data-social-follow="instagram">
+              <span>◎</span>
+              <strong>Follow Instagram</strong>
+              <small>Open profile</small>
+            </a>
+          </div>
+          <button class="nx-social-confirm" id="nxSocialConfirm" type="button" disabled>I followed both pages</button>
+          <small class="nx-social-gate-status" id="nxSocialGateStatus">Open both social links to enable the rewarded video.</small>
+        </div>
+        <div class="nx-adsgram-panel is-social-pending" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}" data-block-id="{{ adsgram_block_id|default('37291') }}">
           <strong>AdsGram Reward</strong>
-          <p>Open this page inside Telegram, then watch the rewarded video. Nexora binds your Telegram user to this locked signal before AdsGram calls the Reward URL.</p>
-          <button class="nx-unlock-button" id="nxAdsgramBind" type="button">Watch Video & Unlock</button>
+          <p>Open this page inside Telegram, complete the social step, then watch the rewarded video. Nexora binds your Telegram user to this locked signal before AdsGram calls the Reward URL.</p>
+          <button class="nx-unlock-button" id="nxAdsgramBind" type="button" disabled>Watch Video & Unlock</button>
           <small>Reward URL registered in AdsGram: {{ reward_url }}</small>
-          <small class="nx-adsgram-bind-status" id="nxAdsgramStatus">Waiting for Telegram Mini App user verification.</small>
+          <small class="nx-adsgram-bind-status" id="nxAdsgramStatus">Complete the social follow step first.</small>
         </div>
         <div class="nx-unlock-links">
           <a href="/pricing">Upgrade: No Ads</a>
-          <a href="https://www.facebook.com/profile.php?id=61591117963149" target="_blank" rel="noopener">Follow Facebook</a>
-          <a href="#" aria-disabled="true">Follow Instagram</a>
+          <a href="{{ social_facebook_url }}" target="_blank" rel="noopener">Facebook</a>
+          <a href="{{ social_instagram_url }}" target="_blank" rel="noopener">Instagram</a>
         </div>
       {% elif rewarded_ad_provider == 'none' and not demo_mode %}
         <button class="nx-unlock-button" type="button" disabled>Rewarded ads are not configured yet</button>
@@ -66,9 +84,44 @@
   var button = document.getElementById('nxAdsgramBind');
   var status = document.getElementById('nxAdsgramStatus');
   if (!panel || !button || !status) return;
+  var socialGate = document.getElementById('nxSocialUnlockGate');
+  var socialConfirm = document.getElementById('nxSocialConfirm');
+  var socialStatus = document.getElementById('nxSocialGateStatus');
+  var socialClicks = {facebook: false, instagram: false};
   function setStatus(text, ok) {
     status.textContent = text;
     status.classList.toggle('is-ok', !!ok);
+  }
+  function setSocialStatus(text, ok) {
+    if (!socialStatus) return;
+    socialStatus.textContent = text;
+    socialStatus.classList.toggle('is-ok', !!ok);
+  }
+  function refreshSocialGate() {
+    var ready = socialClicks.facebook && socialClicks.instagram;
+    if (socialConfirm) socialConfirm.disabled = !ready;
+    if (ready) setSocialStatus('Social step opened. Confirm when you are done.', true);
+  }
+  document.querySelectorAll('[data-social-follow]').forEach(function (link) {
+    link.addEventListener('click', function () {
+      socialClicks[link.dataset.socialFollow] = true;
+      link.classList.add('is-opened');
+      refreshSocialGate();
+    });
+  });
+  if (socialConfirm) {
+    socialConfirm.addEventListener('click', function () {
+      if (!(socialClicks.facebook && socialClicks.instagram)) {
+        setSocialStatus('Please open both social pages first.', false);
+        return;
+      }
+      socialConfirm.disabled = true;
+      if (socialGate) socialGate.classList.add('is-complete');
+      panel.classList.remove('is-social-pending');
+      button.disabled = false;
+      setStatus('Social step complete. You can now watch the rewarded video.', true);
+      setSocialStatus('Done. Rewarded video is now available.', true);
+    });
   }
   button.addEventListener('click', function () {
     var tg = window.Telegram && window.Telegram.WebApp;
