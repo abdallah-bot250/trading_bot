@@ -90,6 +90,8 @@ def main():
         "smart_money_entry_zone": m.smart_money_entry_zone,
         "trend_exhaustion_filter": m.trend_exhaustion_filter,
         "adaptive_learning_weight": m.adaptive_learning_weight,
+        "adaptive_mtf_playbook_context": m.adaptive_mtf_playbook_context,
+        "btc_market_context": m.btc_market_context,
     }
 
     try:
@@ -166,6 +168,13 @@ def main():
             "short_mtf": {"state": "CONFLICT", "score": 0, "reason": "diagnostic"},
         }
         m.detect_symbol_market_regime = lambda symbol, interval, df: dict(good_regime)
+        m.adaptive_mtf_playbook_context = lambda symbol, interval, df: {
+            "state": "BULL_CONFIRMED", "reason": "diagnostic 4H/1H bull",
+            "major": "BULL", "confirm": "BULL", "frames": {},
+        }
+        m.btc_market_context = lambda: {
+            "btc_context": "STRONG_BULL", "btc_risk_mode": "NORMAL", "btc_alignment_score": 70,
+        }
         m.expert_volatility_state = lambda df: {
             "state": "NORMAL_VOLATILITY",
             "ok": True,

@@ -2963,7 +2963,480 @@ def _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5):
     }
 
 
+
+ADAPTIVE_MARKET_MEMORY = {}
+ADAPTIVE_WATCHLIST = []
+ADAPTIVE_MEMORY_TTL_SECONDS = int(os.environ.get("ADAPTIVE_MEMORY_TTL_SECONDS", "7200"))
+ADAPTIVE_OPPORTUNITY_MIN_SCORE = float(os.environ.get("ADAPTIVE_OPPORTUNITY_MIN_SCORE", "70"))
+
+
+def _adaptive_log(event, **kwargs):
+    try:
+        parts = [event]
+        for key, value in kwargs.items():
+            safe = str(value).replace("\n", " ")[:140]
+            parts.append(f"{key}={safe}")
+        print(" ".join(parts))
+    except Exception:
+        pass
+
+
+def adaptive_liquidity_map(df, regime_info=None):
+    try:
+        regime_info = regime_info or {}
+        if df is None or len(df) < 40:
+            return {
+                "liquidity_context": "INSUFFICIENT_DATA",
+                "liquidity_score": 0,
+                "liquidity_reason": "not enough candles for liquidity map",
+            }
+        recent = df.tail(36)
+        close = _safe_float(df["close"].iloc[-1])
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+        recent_high = _safe_float(recent["high"].max())
+        recent_low = _safe_float(recent["low"].min())
+        atr_val = max(_safe_float(regime_info.get("atr")), close * 0.003 if close else 0.0)
+        tolerance = max(close * 0.0025, atr_val * 0.22)
+        highs = [float(v) for v in recent["high"].tail(20).values]
+        lows = [float(v) for v in recent["low"].tail(20).values]
+        equal_highs = sum(1 for value in highs if abs(value - recent_high) <= tolerance) >= 2
+        equal_lows = sum(1 for value in lows if abs(value - recent_low) <= tolerance) >= 2
+        high_sweep = _safe_float(last["high"]) > recent_high and close < recent_high
+        low_sweep = _safe_float(last["low"]) < recent_low and close > recent_low
+        reclaim_after_low_sweep = low_sweep and close > _safe_float(prev["close"])
+        rejection_after_high_sweep = high_sweep and close < _safe_float(prev["close"])
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        upper_wick = _safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))
+        lower_wick = min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])
+        upper_rejection = upper_wick / candle_range >= 0.42
+        lower_rejection = lower_wick / candle_range >= 0.42
+
+        score = 35
+        context = []
+        if equal_highs:
+            score += 8
+            context.append("equal_highs")
+        if equal_lows:
+            score += 8
+            context.append("equal_lows")
+        if reclaim_after_low_sweep:
+            score += 22
+            context.append("sell_side_sweep_reclaim")
+        elif low_sweep:
+            score += 8
+            context.append("sell_side_sweep_waiting_reclaim")
+        if rejection_after_high_sweep:
+            score += 22
+            context.append("buy_side_sweep_rejection")
+        elif high_sweep:
+            score += 8
+            context.append("buy_side_sweep_waiting_rejection")
+        if upper_rejection or lower_rejection:
+            score += 8
+            context.append("rejection_wick")
+        failed_sweep = (high_sweep and not rejection_after_high_sweep) or (low_sweep and not reclaim_after_low_sweep)
+        if failed_sweep:
+            score -= 18
+            context.append("sweep_without_confirmation")
+        score = int(_bounded(score, 0, 100))
+        reason = ", ".join(context) if context else "no nearby liquidity event"
+        return {
+            "liquidity_context": "+".join(context) if context else "NEUTRAL",
+            "liquidity_score": score,
+            "liquidity_reason": reason,
+            "equal_highs": equal_highs,
+            "equal_lows": equal_lows,
+            "liquidity_sweep": reclaim_after_low_sweep or rejection_after_high_sweep,
+            "sweep_failed": failed_sweep,
+            "stop_hunt_zone": bool(equal_highs or equal_lows or high_sweep or low_sweep),
+            "reclaim_after_sweep": reclaim_after_low_sweep,
+            "rejection_wick": bool(upper_rejection or lower_rejection),
+        }
+    except Exception as e:
+        return {
+            "liquidity_context": "ERROR",
+            "liquidity_score": 0,
+            "liquidity_reason": f"liquidity map error: {e}",
+        }
+
+
+def adaptive_market_memory_update(symbol, regime, setup_stage, rejection_reason=None):
+    try:
+        key = str(symbol or "").upper()
+        now = time.time()
+        old = ADAPTIVE_MARKET_MEMORY.get(key, {})
+        old_regime = old.get("regime")
+        stability = int(old.get("stability", 0) or 0)
+        if old_regime == regime:
+            stability = min(5, stability + 1)
+        else:
+            stability = 1 if stability <= 1 else stability - 1
+        ADAPTIVE_MARKET_MEMORY[key] = {
+            "time": now,
+            "regime": regime,
+            "setup_stage": setup_stage,
+            "last_rejection_reason": rejection_reason,
+            "stability": stability,
+        }
+        _adaptive_log("MARKET_MEMORY_UPDATED", symbol=key, regime=regime, stability=stability)
+        return ADAPTIVE_MARKET_MEMORY[key]
+    except Exception:
+        return {}
+
+
+def adaptive_mtf_playbook_context(symbol, interval, df):
+    frames = {}
+    try:
+        for tf in ["4h", "1h", "15m", "5m"]:
+            frame = df if tf == interval else cached_market_data(symbol, tf, 220)
+            frames[tf] = {
+                "direction": _expert_tf_direction(frame),
+                "available": frame is not None and len(frame) >= 80,
+            }
+        major = frames.get("4h", {}).get("direction", "UNKNOWN")
+        confirm = frames.get("1h", {}).get("direction", "UNKNOWN")
+        if major == "UNKNOWN" or confirm == "UNKNOWN":
+            state = "UNCONFIRMED"
+            reason = "4H/1H data unavailable"
+        elif major == confirm == "BULL":
+            state = "BULL_CONFIRMED"
+            reason = "4H and 1H bullish"
+        elif major == confirm == "BEAR":
+            state = "BEAR_CONFIRMED"
+            reason = "4H and 1H bearish"
+        elif major == confirm == "RANGE":
+            state = "RANGE_CONFIRMED"
+            reason = "4H and 1H range"
+        elif major in ["BULL", "BEAR"] and confirm == "RANGE":
+            state = "SOFT_CONFLICT"
+            reason = f"4H {major} with 1H RANGE"
+        elif major == "RANGE" and confirm in ["BULL", "BEAR"]:
+            state = "RANGE_WITH_LOWER_TF_TREND"
+            reason = f"4H RANGE with 1H {confirm}"
+        else:
+            state = "HARD_CONFLICT"
+            reason = f"4H {major} conflicts with 1H {confirm}"
+        return {"state": state, "reason": reason, "frames": frames, "major": major, "confirm": confirm}
+    except Exception as e:
+        return {"state": "UNCONFIRMED", "reason": f"adaptive MTF error: {e}", "frames": frames}
+
+
+def btc_market_context():
+    try:
+        btc_df = cached_market_data("BTCUSDT", "1h", 220)
+        if btc_df is None or len(btc_df) < 80:
+            return {"btc_context": "UNAVAILABLE", "btc_risk_mode": "CAUTION", "btc_alignment_score": 45}
+        info = detect_symbol_market_regime("BTCUSDT", "1h", btc_df)
+        regime = info.get("regime", "RANGE")
+        vol = expert_volatility_state(btc_df)
+        if regime in ["FAKE_BREAKOUT", "HIGH_VOLATILITY", "LOW_VOLUME_CHOP"] or not vol.get("ok", False):
+            risk = "DEFENSIVE"
+            score = 35
+        elif regime in ["STRONG_BULL", "STRONG_BEAR", "WEAK_BULL", "WEAK_BEAR"]:
+            risk = "NORMAL"
+            score = 70
+        else:
+            risk = "CAUTION"
+            score = 55
+        return {
+            "btc_context": regime,
+            "btc_volatility_state": vol.get("state"),
+            "btc_trend_direction": "BULL" if "BULL" in regime else "BEAR" if "BEAR" in regime else "RANGE",
+            "btc_risk_mode": risk,
+            "btc_alignment_score": score,
+        }
+    except Exception as e:
+        return {"btc_context": "ERROR", "btc_risk_mode": "CAUTION", "btc_alignment_score": 45, "btc_reason": str(e)}
+
+
+def adaptive_dynamic_risk_brain(regime_info, btc_context_info, liquidity_info, mtf_info):
+    try:
+        reasons = []
+        regime = regime_info.get("regime", "RANGE")
+        risk_mode = "NORMAL"
+        if regime in ["LOW_VOLUME_CHOP", "FAKE_BREAKOUT", "HIGH_NEWS_RISK", "LOW_LIQUIDITY"]:
+            risk_mode = "NO_TRADE"
+            reasons.append(regime)
+        if btc_context_info.get("btc_risk_mode") == "DEFENSIVE":
+            risk_mode = "DEFENSIVE" if risk_mode != "NO_TRADE" else risk_mode
+            reasons.append("BTC defensive")
+        if mtf_info.get("state") == "HARD_CONFLICT":
+            risk_mode = "NO_TRADE"
+            reasons.append(mtf_info.get("reason"))
+        if regime in ["HIGH_VOLATILITY", "LOW_VOLATILITY"] and risk_mode == "NORMAL":
+            risk_mode = "CAUTION"
+            reasons.append(regime)
+        if liquidity_info.get("sweep_failed"):
+            risk_mode = "NO_TRADE"
+            reasons.append("failed liquidity sweep")
+        if liquidity_info.get("liquidity_score", 0) < 35 and risk_mode == "NORMAL":
+            risk_mode = "CAUTION"
+            reasons.append("weak liquidity context")
+        return {
+            "risk_mode": risk_mode,
+            "risk_mode_reason": "; ".join([str(r) for r in reasons if r]) or "normal adaptive risk",
+        }
+    except Exception as e:
+        return {"risk_mode": "CAUTION", "risk_mode_reason": f"risk brain error: {e}"}
+
+
+def adaptive_setup_lifecycle(symbol, stage, reason, setup=None):
+    try:
+        if stage == "WATCHING":
+            _adaptive_log("SETUP_WATCHING", symbol=symbol, reason=reason)
+        elif stage == "ARMED":
+            _adaptive_log("SETUP_ARMED", symbol=symbol, reason=reason)
+        elif stage == "CONFIRMED":
+            _adaptive_log("SETUP_CONFIRMED", symbol=symbol, setup=setup or "adaptive")
+        else:
+            _adaptive_log("SETUP_INVALIDATED", symbol=symbol, reason=reason)
+        if stage in {"WATCHING", "ARMED"}:
+            ADAPTIVE_WATCHLIST.append({
+                "time": datetime.utcnow().isoformat(),
+                "symbol": symbol,
+                "stage": stage,
+                "reason": reason,
+            })
+            del ADAPTIVE_WATCHLIST[:-100]
+            _adaptive_log("WATCHLIST_SETUP", symbol=symbol, stage=stage, reason=reason)
+    except Exception:
+        pass
+
+
+def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=None, btc_context_info=None):
+    liquidity_info = liquidity_info or {}
+    btc_context_info = btc_context_info or {}
+    regime = regime_info.get("regime", "RANGE")
+    close = _safe_float(regime_info.get("close"))
+    support = regime_info.get("support")
+    resistance = regime_info.get("resistance")
+    range_pos = _safe_float(regime_info.get("close_position"), 0.5)
+    rsi_now = _safe_float(regime_info.get("rsi"), 50)
+    volume_score = _safe_float(regime_info.get("volume_score"), 0)
+    rr_min = 1.5
+    confidence_cap = None
+    mtf = adaptive_mtf_playbook_context(symbol, interval, df)
+
+    def rejected(reason, stage="INVALIDATED"):
+        adaptive_setup_lifecycle(symbol, stage, reason)
+        _adaptive_log("PLAYBOOK_REJECTED", symbol=symbol, reason=reason)
+        return {"ok": False, "reason": reason, "stage": stage, "mtf": mtf}
+
+    if regime in ["LOW_VOLUME_CHOP", "FAKE_BREAKOUT", "HIGH_NEWS_RISK", "LOW_LIQUIDITY"]:
+        return rejected(f"{regime} no trade", "WATCHING" if regime == "LOW_VOLUME_CHOP" else "INVALIDATED")
+    if mtf.get("state") == "HARD_CONFLICT":
+        return rejected(f"hard MTF conflict: {mtf.get('reason')}")
+
+    if regime in ["STRONG_BULL", "WEAK_BULL", "BULL_TREND"]:
+        if mtf.get("state") != "BULL_CONFIRMED":
+            if mtf.get("state") == "SOFT_CONFLICT" and range_pos <= 0.45 and liquidity_info.get("reclaim_after_sweep"):
+                setup = "trend_pullback_reclaim"
+                reason = "4H bull, 1H range, discount reclaim confirmed"
+            else:
+                return rejected(f"trend LONG requires strict 4H/1H BULL MTF: {mtf.get('reason')}", "ARMED")
+        else:
+            setup = "trend_pullback_continuation"
+            reason = "4H and 1H bull trend continuation"
+        return {
+            "ok": True,
+            "direction": "LONG",
+            "strategy_name": setup,
+            "reasons": [reason, regime_info.get("reason")],
+            "rr_min": 1.5,
+            "confidence_cap": confidence_cap,
+            "mtf": mtf,
+            "playbook": "STRONG_TREND",
+        }
+
+    if regime in ["STRONG_BEAR", "WEAK_BEAR", "BEAR_TREND"]:
+        if mtf.get("state") != "BEAR_CONFIRMED":
+            if mtf.get("state") == "SOFT_CONFLICT" and range_pos >= 0.55 and liquidity_info.get("rejection_wick"):
+                setup = "trend_rejection_continuation"
+                reason = "4H bear, 1H range, premium rejection confirmed"
+            else:
+                return rejected(f"trend SHORT requires strict 4H/1H BEAR MTF: {mtf.get('reason')}", "ARMED")
+        else:
+            setup = "trend_following_confirmed"
+            reason = "4H and 1H bear trend continuation"
+        return {
+            "ok": True,
+            "direction": "SHORT",
+            "strategy_name": setup,
+            "reasons": [reason, regime_info.get("reason")],
+            "rr_min": 1.5,
+            "confidence_cap": confidence_cap,
+            "mtf": mtf,
+            "playbook": "STRONG_TREND",
+        }
+
+    if regime in ["RANGE", "CONSOLIDATION"]:
+        if mtf.get("state") not in ["RANGE_CONFIRMED", "RANGE_WITH_LOWER_TF_TREND"]:
+            return rejected(f"range setup requires 4H/1H range context: {mtf.get('reason')}", "WATCHING")
+        if support and close and range_pos <= 0.18 and (rsi_now <= 48 or liquidity_info.get("rejection_wick")):
+            return {
+                "ok": True,
+                "direction": "LONG",
+                "strategy_name": "range_edge_bounce",
+                "reasons": ["range support edge bounce", regime_info.get("reason")],
+                "rr_min": 1.6,
+                "confidence_cap": 78,
+                "mtf": mtf,
+                "playbook": "RANGE",
+            }
+        if resistance and close and range_pos >= 0.82 and (rsi_now >= 52 or liquidity_info.get("rejection_wick")):
+            return {
+                "ok": True,
+                "direction": "SHORT",
+                "strategy_name": "range_edge_bounce",
+                "reasons": ["range resistance edge rejection", regime_info.get("reason")],
+                "rr_min": 1.6,
+                "confidence_cap": 78,
+                "mtf": mtf,
+                "playbook": "RANGE",
+            }
+        return rejected(f"mid-range no trade position={round(range_pos, 2)}", "WATCHING")
+
+    if regime == "ACCUMULATION":
+        if volume_score < 45:
+            return rejected("ACCUMULATION needs volume_score >= 45", "ARMED")
+        if liquidity_info.get("reclaim_after_sweep") or liquidity_info.get("liquidity_sweep"):
+            return {
+                "ok": True,
+                "direction": "LONG",
+                "strategy_name": "accumulation_reclaim",
+                "reasons": ["accumulation reclaim after liquidity sweep", regime_info.get("reason")],
+                "rr_min": 1.7,
+                "confidence_cap": 82,
+                "mtf": mtf,
+                "playbook": "ACCUMULATION",
+            }
+        return rejected("ACCUMULATION waiting for sweep/reclaim confirmation", "ARMED")
+
+    if regime == "DISTRIBUTION":
+        if volume_score < 45:
+            return rejected("DISTRIBUTION needs volume_score >= 45", "ARMED")
+        if liquidity_info.get("rejection_wick") or liquidity_info.get("liquidity_sweep"):
+            return {
+                "ok": True,
+                "direction": "SHORT",
+                "strategy_name": "distribution_rejection",
+                "reasons": ["distribution rejection at resistance", regime_info.get("reason")],
+                "rr_min": 1.7,
+                "confidence_cap": 82,
+                "mtf": mtf,
+                "playbook": "DISTRIBUTION",
+            }
+        return rejected("DISTRIBUTION waiting for resistance sweep/rejection", "ARMED")
+
+    if regime in ["BREAKOUT", "EXPANSION"]:
+        if liquidity_info.get("sweep_failed"):
+            return rejected("FAKE_BREAKOUT no trade")
+        direction = regime_info.get("breakout_direction") or ("LONG" if range_pos >= 0.55 else "SHORT")
+        smart = smart_money_entry_zone(df, direction, regime_info)
+        if not smart.get("ok") or "Retest" not in str(smart.get("setup", "")):
+            return rejected("breakout chase blocked; waiting for break and retest", "ARMED")
+        return {
+            "ok": True,
+            "direction": direction,
+            "strategy_name": "break_and_retest",
+            "reasons": ["breakout accepted only after retest", regime_info.get("reason")],
+            "rr_min": 1.6,
+            "confidence_cap": None,
+            "mtf": mtf,
+            "playbook": "BREAKOUT_EXPANSION",
+        }
+
+    return rejected(f"no adaptive playbook for {regime}", "WATCHING")
+
+
+def apply_adaptive_confidence_cap(signal, cap, reason):
+    try:
+        if cap is None:
+            return signal
+        old_conf = _safe_float(signal.get("confidence"), 0)
+        old_display = _safe_float(signal.get("display_confidence", old_conf), old_conf)
+        if old_conf > cap:
+            signal["confidence"] = int(cap)
+        if old_display > cap:
+            signal["display_confidence"] = int(cap)
+        if signal.get("quality_report"):
+            signal["quality_report"]["display_confidence"] = signal.get("display_confidence")
+            signal["quality_report"]["confidence_cap_reason"] = reason
+        signal["confidence_cap_reason"] = reason
+    except Exception:
+        pass
+    return signal
+
+
+def adaptive_opportunity_score(signal):
+    try:
+        display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence")), 0)
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        risk_score = _safe_float(signal.get("risk_score"), 50)
+        liquidity_score = _safe_float(signal.get("liquidity_score"), 45)
+        rs_score = _safe_float(signal.get("relative_strength_score"), 50)
+        btc_score = _safe_float(signal.get("btc_alignment_score"), 50)
+        freshness = 100 if signal.get("entry_manager", {}).get("updated") or signal.get("entry") else 80
+        setup_validity = _safe_float(signal.get("setup_validity_score"), display_conf)
+        entry_grade = _safe_float(signal.get("entry_location_grade"), 70)
+        performance = _safe_float(signal.get("learning_adjustment"), 0)
+        score = (
+            setup_validity * 0.18
+            + entry_grade * 0.14
+            + liquidity_score * 0.12
+            + rs_score * 0.10
+            + min(rr * 22, 100) * 0.12
+            + display_conf * 0.16
+            + max(0, 100 - risk_score) * 0.08
+            + freshness * 0.05
+            + btc_score * 0.04
+            + (50 + performance) * 0.01
+        )
+        score = int(_bounded(round(score), 0, 100))
+        signal["opportunity_score"] = score
+        signal["ranking_reason"] = (
+            f"setup={round(setup_validity, 1)} entry={round(entry_grade, 1)} "
+            f"liq={round(liquidity_score, 1)} rs={round(rs_score, 1)} rr={rr} btc={round(btc_score, 1)}"
+        )
+        _adaptive_log("OPPORTUNITY_RANKED", symbol=signal.get("pair"), score=score, reason=signal.get("ranking_reason"))
+        return score
+    except Exception as e:
+        signal["opportunity_score"] = 0
+        signal["ranking_reason"] = f"opportunity score error: {e}"
+        return 0
+
+
+def relative_strength_context(symbol, signal, market_candidates=None):
+    try:
+        direction = signal.get("direction")
+        score = 50
+        if signal.get("pair") == "BTCUSDT":
+            score = 55
+        else:
+            btc_align = _safe_float(signal.get("btc_alignment_score"), 50)
+            momentum = _safe_float(signal.get("display_confidence", signal.get("confidence")), 50)
+            volume = _safe_float(signal.get("volume_score"), 50)
+            score = (momentum * 0.45) + (volume * 0.25) + (btc_align * 0.30)
+            if direction == "SHORT":
+                score = 100 - min(score, 100) if score > 60 else score
+        score = int(_bounded(score, 0, 100))
+        signal["relative_strength_score"] = score
+        signal["btc_relative_score"] = score
+        signal["momentum_rank"] = score
+        signal["volume_rank"] = int(_bounded(_safe_float(signal.get("volume_score"), 50), 0, 100))
+        _adaptive_log("RELATIVE_STRENGTH_RANK", symbol=symbol, rank=signal.get("momentum_rank"), score=score)
+        return signal
+    except Exception:
+        signal["relative_strength_score"] = 50
+        return signal
+
+
 def _strategy_for_regime(regime_info):
+    playbook = regime_info.get("adaptive_playbook")
+    if isinstance(playbook, dict) and playbook.get("ok"):
+        return playbook.get("direction"), playbook.get("strategy_name"), list(playbook.get("reasons") or [])
+
     regime = regime_info.get("regime")
     close = _safe_float(regime_info.get("close"))
     support = regime_info.get("support")
@@ -3085,15 +3558,37 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             _no_trade_reason(symbol, interval, news_reason)
             return None, news_reason, {**regime_info, "regime": "HIGH_NEWS_RISK", "reason": news_reason}
 
+        liquidity_info = adaptive_liquidity_map(df, regime_info)
+        btc_info = btc_market_context()
+        playbook = adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info, btc_info)
+        adaptive_market_memory_update(symbol, regime, playbook.get("stage", "EVALUATED"), playbook.get("reason"))
+        if not playbook.get("ok"):
+            reason = playbook.get("reason", "adaptive playbook rejected")
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook}
+        _adaptive_log("PLAYBOOK_SELECTED", symbol=symbol, regime=regime, playbook=playbook.get("playbook"))
+        adaptive_setup_lifecycle(symbol, "CONFIRMED", "playbook confirmed", playbook.get("strategy_name"))
+        regime_info = {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_mtf_playbook": playbook.get("mtf")}
+
+        risk_brain = adaptive_dynamic_risk_brain(regime_info, btc_info, liquidity_info, playbook.get("mtf", {}))
+        regime_info.update(risk_brain)
+        if risk_brain.get("risk_mode") == "NO_TRADE":
+            reason = f"risk brain no trade: {risk_brain.get('risk_mode_reason')}"
+            _no_trade_reason(symbol, interval, reason)
+            return None, reason, regime_info
+
         direction, strategy_name, reasons = _strategy_for_regime(regime_info)
         if not direction or not strategy_name:
             return None, "no adaptive strategy matched", regime_info
 
         expert_mtf = expert_multi_timeframe_context(symbol, direction, df if interval == "5m" else None)
-        if expert_mtf.get("state") != "CONFIRMED":
+        mtf_override_ok = playbook.get("playbook") in {"RANGE", "ACCUMULATION", "DISTRIBUTION", "BREAKOUT_EXPANSION"} and playbook.get("mtf", {}).get("state") in {"RANGE_CONFIRMED", "RANGE_WITH_LOWER_TF_TREND", "SOFT_CONFLICT"}
+        if expert_mtf.get("state") != "CONFIRMED" and not mtf_override_ok:
             reason = f"MTF rejected: {expert_mtf.get('reason')}"
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, "expert_mtf": expert_mtf}
+        if mtf_override_ok:
+            expert_mtf = {**expert_mtf, "state": "CONFIRMED", "score": max(_safe_float(expert_mtf.get("score"), 0), 80), "reason": f"playbook override: {playbook.get('mtf', {}).get('reason')}"}
 
         smart_entry = smart_money_entry_zone(df, direction, regime_info)
         if not smart_entry.get("ok"):
@@ -3108,11 +3603,11 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 
         entry = _safe_float(regime_info.get("close"))
         atr_val = _safe_float(regime_info.get("atr"))
-        levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=1.5)
+        levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=playbook.get("rr_min", 1.5))
         if not levels:
             return None, "not enough room to nearest support/resistance for safe RR", regime_info
-        if levels["risk_reward"] < 1.5:
-            return None, f"RR {levels['risk_reward']} below 1.5", regime_info
+        if levels["risk_reward"] < playbook.get("rr_min", 1.5):
+            return None, f"RR {levels['risk_reward']} below {playbook.get('rr_min', 1.5)}", regime_info
         if not signal_levels_valid(levels["entry"], levels["tp"], levels["sl"], direction):
             return None, "invalid LONG/SHORT level geometry", regime_info
 
@@ -3167,7 +3662,23 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "entry_location_reason": regime_info.get("reason", "adaptive setup"),
             "management_note": "Protect the trade after TP1 or +0.6R; reduce exposure in high volatility.",
             "breakeven_trigger_r": 0.6,
+            "adaptive_playbook": playbook.get("playbook"),
+            "setup_lifecycle": "CONFIRMED",
+            "liquidity_context": liquidity_info.get("liquidity_context"),
+            "liquidity_score": liquidity_info.get("liquidity_score"),
+            "liquidity_reason": liquidity_info.get("liquidity_reason"),
+            "btc_context": btc_info.get("btc_context"),
+            "btc_risk_mode": btc_info.get("btc_risk_mode"),
+            "btc_alignment_score": btc_info.get("btc_alignment_score"),
+            "risk_mode": risk_brain.get("risk_mode"),
+            "risk_mode_reason": risk_brain.get("risk_mode_reason"),
+            "entry_location_grade": 86 if smart_entry.get("ok") else 45,
+            "setup_validity_score": confidence,
         }
+        apply_adaptive_confidence_cap(signal, playbook.get("confidence_cap"), f"{playbook.get('playbook')} confidence cap")
+        relative_strength_context(symbol, signal)
+        adaptive_opportunity_score(signal)
+        _adaptive_log("PLAYBOOK_SIGNAL_BUILT", symbol=symbol, setup=strategy_name, conf=signal.get("display_confidence", signal.get("confidence")), rr=signal.get("risk_reward"))
         return signal, None, regime_info
     except Exception as e:
         return None, f"adaptive candidate error: {e}", {"regime": "ERROR"}
@@ -3881,12 +4392,17 @@ def get_top_free_signals(limit=2):
                 signal = generate_free_signal(symbol, tf)
                 if signal:
                     display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)))
+                    opportunity = adaptive_opportunity_score(signal)
                     signal["ranking_score"] = (
                         display_conf
                         + abs(signal["score"] * 2)
                         + max(0, 20 - int(signal.get("risk_score", 50) / 4))
                         + (_safe_float(signal.get("engine_confidence", display_conf)) * 0.18)
                         + (signal.get("multi_timeframe_score", 50) * 0.12)
+                        + (signal.get("liquidity_score", 45) * 0.08)
+                        + (signal.get("relative_strength_score", 50) * 0.08)
+                        + (signal.get("btc_alignment_score", 50) * 0.05)
+                        + (opportunity * 0.20)
                         + (6 if signal["volume"] == "STRONG" else 0)
                         + (6 if signal["trend_power"] in ["STRONG_BULL", "STRONG_BEAR"] else 0)
                         + (5 if signal["timeframe"] == "15m" else 0)
