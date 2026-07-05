@@ -63,18 +63,32 @@ def _adsgram_extract_token():
         or payload.get("state")
         or payload.get("payload")
         or payload.get("custom_id")
-        or payload.get("user_id")
         or ""
     )
-    return str(token or "").strip(), payload
+    user_id = payload.get("user_id") or payload.get("userId") or payload.get("telegram_user_id") or ""
+    return str(token or "").strip(), str(user_id or "").strip(), payload
+
+
+@public_bp.route("/adsgram/bind-user", methods=["POST"])
+def adsgram_bind_user():
+    from auto_sender import bind_adsgram_user_to_unlock
+
+    payload = request.get_json(silent=True) or {}
+    result = bind_adsgram_user_to_unlock(
+        payload.get("token"),
+        payload.get("user_id") or payload.get("userId"),
+        payload.get("init_data") or payload.get("initData"),
+    )
+    status_code = 200 if result.get("ok") else 400
+    return jsonify({"ok": bool(result.get("ok")), "reason": result.get("reason")}), status_code
 
 
 @public_bp.route("/adsgram/reward", methods=["GET", "POST"])
 def adsgram_reward():
     from auto_sender import process_adsgram_reward
 
-    token, payload = _adsgram_extract_token()
-    result = process_adsgram_reward(token, payload_keys=list(payload.keys()))
+    token, user_id, payload = _adsgram_extract_token()
+    result = process_adsgram_reward(token=token, adsgram_user_id=user_id, payload_keys=list(payload.keys()))
     status_code = 200 if result.get("ok") else 400
     return jsonify({"ok": bool(result.get("ok")), "reason": result.get("reason")}), status_code
 
@@ -85,9 +99,9 @@ def adsgram_reward_url_info():
         return "غير مصرح", 403
     provider = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lower()
     platform_id = os.environ.get("ADSGRAM_PLATFORM_ID", "35044").strip()
-    block_id = os.environ.get("ADSGRAM_BLOCK_ID", "").strip()
+    block_id = os.environ.get("ADSGRAM_BLOCK_ID", "37291").strip()
     signature_required = os.environ.get("ADSGRAM_REQUIRE_SIGNATURE", "false").strip().lower() in {"1", "true", "yes", "on"}
-    reward_url = f"{current_base_url()}/adsgram/reward"
+    reward_url = f"{current_base_url()}/adsgram/reward?user_id=[userId]"
     return render_template(
         "adsgram_reward_info.html",
         reward_url=reward_url,
@@ -126,7 +140,7 @@ def unlock_signal(token):
         ttl_minutes=LOCKED_SIGNAL_TTL_MINUTES,
         adsgram_platform_id=ADSGRAM_PLATFORM_ID,
         adsgram_block_id=ADSGRAM_BLOCK_ID,
-        reward_url=f"{current_base_url()}/adsgram/reward",
+        reward_url=f"{current_base_url()}/adsgram/reward?user_id=[userId]",
     )
 
 

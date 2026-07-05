@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unlock Signal | Nexora AI Trader</title>
-<link rel="stylesheet" href="/static/premium.css?v=20260705_adsgram1">
+<link rel="stylesheet" href="/static/premium.css?v=20260705_adsgram2">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body class="nexora-shell nx-unlock-page">
   <main class="nx-unlock-wrap">
@@ -30,11 +31,12 @@
       {% endif %}
 
       {% if rewarded_ad_provider == 'adsgram' %}
-        <div class="nx-adsgram-panel" data-token="{{ token }}" data-reward-url="{{ reward_url }}">
+        <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}">
           <strong>AdsGram Reward</strong>
-          <p>Watch the rewarded video from the Telegram Mini App. AdsGram will call the secure Reward URL after completion.</p>
-          <button class="nx-unlock-button" type="button">Watch Video & Unlock</button>
-          <small>Reward URL: {{ reward_url }}</small>
+          <p>Open this page inside Telegram, then watch the rewarded video. Nexora binds your Telegram user to this locked signal before AdsGram calls the Reward URL.</p>
+          <button class="nx-unlock-button" id="nxAdsgramBind" type="button">Watch Video & Unlock</button>
+          <small>Reward URL registered in AdsGram: {{ reward_url }}</small>
+          <small class="nx-adsgram-bind-status" id="nxAdsgramStatus">Waiting for Telegram Mini App user verification.</small>
         </div>
         <div class="nx-unlock-links">
           <a href="/pricing">Upgrade: No Ads</a>
@@ -56,5 +58,47 @@
       {% endif %}
     </section>
   </main>
+{% if rewarded_ad_provider == 'adsgram' %}
+<script>
+(function () {
+  var panel = document.querySelector('.nx-adsgram-panel');
+  var button = document.getElementById('nxAdsgramBind');
+  var status = document.getElementById('nxAdsgramStatus');
+  if (!panel || !button || !status) return;
+  function setStatus(text, ok) {
+    status.textContent = text;
+    status.classList.toggle('is-ok', !!ok);
+  }
+  button.addEventListener('click', function () {
+    var tg = window.Telegram && window.Telegram.WebApp;
+    var user = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+    if (!tg || !user || !user.id || !tg.initData) {
+      setStatus('Open this page from the Telegram bot Mini App to verify your AdsGram user.', false);
+      return;
+    }
+    button.disabled = true;
+    setStatus('Binding AdsGram user to this locked signal...', false);
+    fetch(panel.dataset.bindUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        token: panel.dataset.token,
+        user_id: String(user.id),
+        init_data: tg.initData
+      })
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (!res.ok || !data.ok) throw new Error(data.reason || 'bind_failed');
+        console.info('ADSGRAM_BIND_READY');
+        setStatus('Verified. Watch the AdsGram reward ad, then the signal will be sent in Telegram.', true);
+      });
+    }).catch(function (err) {
+      button.disabled = false;
+      setStatus('Verification failed: ' + err.message, false);
+    });
+  });
+})();
+</script>
+{% endif %}
 </body>
 </html>

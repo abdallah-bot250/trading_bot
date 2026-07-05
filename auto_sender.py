@@ -2,6 +2,9 @@ import time
 import json
 import secrets
 import requests
+import hmac
+import hashlib
+from urllib.parse import parse_qsl
 from datetime import datetime, timedelta
 from market_analyzer import (
     generate_signal,
@@ -34,7 +37,7 @@ FREE_SIGNALS_LIFETIME = int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2)
 LOCKED_SIGNAL_TTL_MINUTES = int(os.environ.get("LOCKED_SIGNAL_TTL_MINUTES", "10") or 10)
 FREE_UNLOCK_DEMO_MODE = os.environ.get("FREE_UNLOCK_DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 ADSGRAM_REWARD_SECRET = os.environ.get("ADSGRAM_REWARD_SECRET", "").strip()
-ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "").strip()
+ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "37291").strip()
 ADSGRAM_PLATFORM_ID = os.environ.get("ADSGRAM_PLATFORM_ID", "35044").strip()
 ADSGRAM_REQUIRE_SIGNATURE = os.environ.get("ADSGRAM_REQUIRE_SIGNATURE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -642,6 +645,9 @@ def init_trade_tables():
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_provider TEXT")
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_payload_keys TEXT")
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS rewarded_at TIMESTAMP")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS adsgram_user_id TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS adsgram_bound_at TIMESTAMP")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_adsgram_user ON free_signal_unlocks (adsgram_user_id)")
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
@@ -749,6 +755,9 @@ def ensure_free_earn_tables():
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_provider TEXT")
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_payload_keys TEXT")
     c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS rewarded_at TIMESTAMP")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS adsgram_user_id TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS adsgram_bound_at TIMESTAMP")
+    c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_adsgram_user ON free_signal_unlocks (adsgram_user_id)")
     c.execute("""
     CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
         chat_id TEXT PRIMARY KEY,
@@ -948,6 +957,126 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
 
 
 
+
+def verify_telegram_webapp_init_data(init_data):
+    if not TOKEN:
+        return False, "", "telegram_token_missing"
+    if not init_data:
+        return False, "", "missing_init_data"
+    try:
+        parsed = dict(parse_qsl(str(init_data), keep_blank_values=True))
+        received_hash = parsed.pop("hash", "")
+        if not received_hash:
+            return False, "", "missing_hash"
+        data_check = "\n".join(f"{key}={parsed[key]}" for key in sorted(parsed))
+        secret_key = hmac.new(b"WebAppData", TOKEN.encode("utf-8"), hashlib.sha256).digest()
+        calculated = hmac.new(secret_key, data_check.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calculated, received_hash):
+            return False, "", "bad_signature"
+        user_data = json.loads(parsed.get("user") or "{}")
+        user_id = str(user_data.get("id") or "").strip()
+        if not user_id:
+            return False, "", "missing_user_id"
+        return True, user_id, "ok"
+    except Exception as e:
+        log(f"ADSGRAM_BIND_VERIFY_FAILED error={e}")
+        return False, "", "verify_error"
+
+def bind_adsgram_user_to_unlock(token, adsgram_user_id, init_data):
+    try:
+        ensure_free_earn_tables()
+        token = str(token or "").strip()
+        requested_user_id = str(adsgram_user_id or "").strip()
+        verified, verified_user_id, verify_reason = verify_telegram_webapp_init_data(init_data)
+        if not token:
+            return {"ok": False, "reason": "missing_token"}
+        if not requested_user_id:
+            return {"ok": False, "reason": "missing_user_id"}
+        if not verified:
+            log(f"ADSGRAM_BIND_REJECTED reason={verify_reason}")
+            return {"ok": False, "reason": verify_reason}
+        if requested_user_id != verified_user_id:
+            log("ADSGRAM_BIND_REJECTED reason=user_id_mismatch")
+            return {"ok": False, "reason": "user_id_mismatch"}
+
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, chat_id, unlocked, credit_granted, expires_at, COALESCE(ad_rewarded, 0)
+            FROM free_signal_unlocks
+            WHERE token = %s
+            FOR UPDATE
+        """, (token,))
+        row = c.fetchone()
+        if not row:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "invalid_token"}
+        unlock_id, chat_id, unlocked, credit_granted, expires_at, ad_rewarded = row
+        if int(unlocked or 0) == 1 or int(ad_rewarded or 0) == 1:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "already_used"}
+        if datetime.now() > expires_at:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "expired"}
+        if str(chat_id) != verified_user_id:
+            conn.rollback()
+            conn.close()
+            log("ADSGRAM_BIND_REJECTED reason=token_user_mismatch")
+            return {"ok": False, "reason": "token_user_mismatch"}
+
+        c.execute("""
+            UPDATE free_signal_unlocks
+            SET adsgram_user_id = NULL,
+                adsgram_bound_at = NULL
+            WHERE adsgram_user_id = %s
+              AND token <> %s
+              AND COALESCE(unlocked, 0) = 0
+              AND COALESCE(ad_rewarded, 0) = 0
+        """, (verified_user_id, token))
+        c.execute("""
+            UPDATE free_signal_unlocks
+            SET adsgram_user_id = %s,
+                adsgram_bound_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (verified_user_id, unlock_id))
+        conn.commit()
+        conn.close()
+        log("ADSGRAM_USER_BOUND user_id_present=True chat_id_present=True")
+        return {"ok": True, "reason": "bound"}
+    except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        log(f"ADSGRAM_BIND_FAILED error={e}")
+        return {"ok": False, "reason": "error"}
+
+def adsgram_token_for_user(adsgram_user_id):
+    try:
+        ensure_free_earn_tables()
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            SELECT token
+            FROM free_signal_unlocks
+            WHERE adsgram_user_id = %s
+              AND COALESCE(unlocked, 0) = 0
+              AND COALESCE(ad_rewarded, 0) = 0
+              AND expires_at >= %s
+            ORDER BY adsgram_bound_at DESC NULLS LAST, created_at DESC
+            LIMIT 1
+        """, (str(adsgram_user_id or "").strip(), datetime.now()))
+        row = c.fetchone()
+        conn.close()
+        return str(row[0]) if row else ""
+    except Exception as e:
+        log(f"ADSGRAM_TOKEN_LOOKUP_FAILED user_id_present={bool(adsgram_user_id)} error={e}")
+        return ""
+
 def adsgram_signature_status():
     if not ADSGRAM_REQUIRE_SIGNATURE:
         return True, "signature_not_required"
@@ -955,9 +1084,9 @@ def adsgram_signature_status():
     # Keep this closed when required instead of inventing an unsafe verifier.
     return False, "signature_verification_not_configured"
 
-def process_adsgram_reward(token, payload_keys=None):
+def process_adsgram_reward(token=None, payload_keys=None, adsgram_user_id=None):
     safe_keys = sorted({str(k) for k in (payload_keys or []) if str(k).lower() not in {"secret", "signature", "hash", "token"}})
-    log(f"ADSGRAM_REWARD_RECEIVED token_present={bool(token)} keys={safe_keys}")
+    log(f"ADSGRAM_REWARD_RECEIVED user_id_present={bool(adsgram_user_id)} token_present={bool(token)} keys={safe_keys}")
     if REWARDED_AD_PROVIDER != "adsgram":
         log("ADSGRAM_REWARD_REJECTED reason=provider_not_adsgram")
         return {"ok": False, "reason": "provider_not_adsgram"}
@@ -965,9 +1094,17 @@ def process_adsgram_reward(token, payload_keys=None):
     if not sig_ok:
         log(f"ADSGRAM_REWARD_REJECTED reason={sig_reason}")
         return {"ok": False, "reason": sig_reason}
-    if not token:
-        log("ADSGRAM_REWARD_REJECTED reason=missing_token")
-        return {"ok": False, "reason": "missing_token"}
+    if not adsgram_user_id:
+        log("ADSGRAM_REWARD_REJECTED reason=missing_user_id")
+        return {"ok": False, "reason": "missing_user_id"}
+    mapped_token = adsgram_token_for_user(adsgram_user_id)
+    if not mapped_token:
+        log("ADSGRAM_REWARD_REJECTED reason=unknown_user_id")
+        return {"ok": False, "reason": "unknown_user_id"}
+    if token and str(token) != str(mapped_token):
+        log("ADSGRAM_REWARD_REJECTED reason=token_user_mismatch")
+        return {"ok": False, "reason": "token_user_mismatch"}
+    token = mapped_token
     log("ADSGRAM_REWARD_ACCEPTED")
     result = process_free_unlock_token(
         token,

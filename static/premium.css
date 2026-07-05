@@ -3437,3 +3437,11 @@ html[data-theme="light"] .nx-process-line strong {
     grid-template-columns: 1fr;
   }
 }
+
+.nx-adsgram-bind-status {
+  margin-top: 10px;
+  color: #fbbf24;
+}
+.nx-adsgram-bind-status.is-ok {
+  color: #34e994;
+}
