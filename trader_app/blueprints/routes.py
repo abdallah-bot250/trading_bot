@@ -40,6 +40,64 @@ def landing():
 
 
 
+
+
+def _adsgram_extract_token():
+    payload = {}
+    try:
+        if request.is_json:
+            payload.update(request.get_json(silent=True) or {})
+    except Exception:
+        pass
+    try:
+        payload.update(request.form.to_dict(flat=True))
+    except Exception:
+        pass
+    try:
+        payload.update(request.args.to_dict(flat=True))
+    except Exception:
+        pass
+
+    token = (
+        payload.get("token")
+        or payload.get("state")
+        or payload.get("payload")
+        or payload.get("custom_id")
+        or payload.get("user_id")
+        or ""
+    )
+    return str(token or "").strip(), payload
+
+
+@public_bp.route("/adsgram/reward", methods=["GET", "POST"])
+def adsgram_reward():
+    from auto_sender import process_adsgram_reward
+
+    token, payload = _adsgram_extract_token()
+    result = process_adsgram_reward(token, payload_keys=list(payload.keys()))
+    status_code = 200 if result.get("ok") else 400
+    return jsonify({"ok": bool(result.get("ok")), "reason": result.get("reason")}), status_code
+
+
+@public_bp.route("/adsgram/reward-url-info")
+def adsgram_reward_url_info():
+    if not session.get("user") or not is_current_admin():
+        return "غير مصرح", 403
+    provider = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lower()
+    platform_id = os.environ.get("ADSGRAM_PLATFORM_ID", "35044").strip()
+    block_id = os.environ.get("ADSGRAM_BLOCK_ID", "").strip()
+    signature_required = os.environ.get("ADSGRAM_REQUIRE_SIGNATURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+    reward_url = f"{current_base_url()}/adsgram/reward"
+    return render_template(
+        "adsgram_reward_info.html",
+        reward_url=reward_url,
+        provider=provider,
+        platform_id=platform_id,
+        block_id_present=bool(block_id),
+        signature_required=signature_required,
+    )
+
+
 @public_bp.route("/unlock-signal/<token>", methods=["GET", "POST"])
 def unlock_signal(token):
     from auto_sender import (
@@ -47,11 +105,15 @@ def unlock_signal(token):
         REWARDED_AD_PROVIDER,
         LOCKED_SIGNAL_TTL_MINUTES,
         process_free_unlock_token,
+        ADSGRAM_BLOCK_ID,
+        ADSGRAM_PLATFORM_ID,
     )
 
     status = None
     if request.method == "POST":
-        if REWARDED_AD_PROVIDER == "none" and not FREE_UNLOCK_DEMO_MODE:
+        if REWARDED_AD_PROVIDER == "adsgram":
+            status = {"ok": False, "reason": "adsgram_callback_required"}
+        elif REWARDED_AD_PROVIDER == "none" and not FREE_UNLOCK_DEMO_MODE:
             status = {"ok": False, "reason": "ads_not_configured"}
         else:
             status = process_free_unlock_token(token, demo_allowed=FREE_UNLOCK_DEMO_MODE)
@@ -62,6 +124,9 @@ def unlock_signal(token):
         rewarded_ad_provider=REWARDED_AD_PROVIDER,
         demo_mode=FREE_UNLOCK_DEMO_MODE,
         ttl_minutes=LOCKED_SIGNAL_TTL_MINUTES,
+        adsgram_platform_id=ADSGRAM_PLATFORM_ID,
+        adsgram_block_id=ADSGRAM_BLOCK_ID,
+        reward_url=f"{current_base_url()}/adsgram/reward",
     )
 
 
@@ -3394,6 +3459,8 @@ def admin_dashboard():
         free_earn_unlocks = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE COALESCE(unlocked, 0) = 1", default=0) or 0)
         free_earn_credits = int(safe_scalar("SELECT COALESCE(SUM(credits), 0) FROM free_signal_unlock_credits", default=0) or 0)
         free_earn_users = int(safe_scalar("SELECT COUNT(DISTINCT chat_id) FROM free_signal_unlocks", default=0) or 0)
+        adsgram_rewards = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE reward_provider = 'adsgram'", default=0) or 0)
+        adsgram_rewarded = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE reward_provider = 'adsgram' AND COALESCE(ad_rewarded, 0) = 1", default=0) or 0)
 
 
         admin_overview = {
@@ -3450,6 +3517,8 @@ def admin_dashboard():
             "free_earn_unlocks": free_earn_unlocks,
             "free_earn_credits": free_earn_credits,
             "free_earn_users": free_earn_users,
+            "adsgram_rewards": adsgram_rewards,
+            "adsgram_rewarded": adsgram_rewarded,
         }
 
         user_rows = safe_rows("""

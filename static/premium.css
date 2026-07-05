@@ -3374,3 +3374,66 @@ html[data-theme="light"] .nx-process-line strong {
   font-weight: 950;
   text-decoration: none;
 }
+
+/* === NEXORA ADSGRAM REWARD v20260705 === */
+.nx-adsgram-panel {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(59, 130, 246, .34);
+  background: rgba(37, 99, 235, .10);
+}
+.nx-adsgram-panel strong,
+.nx-adsgram-info strong {
+  display: block;
+  color: #bfdbfe;
+  margin-bottom: 6px;
+}
+.nx-adsgram-panel p {
+  margin: 0 0 14px;
+}
+.nx-adsgram-panel small {
+  display: block;
+  word-break: break-all;
+}
+.nx-unlock-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+.nx-unlock-links a,
+.nx-unlock-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  background: rgba(10, 21, 34, .72);
+  color: #e5edf6;
+  text-decoration: none;
+  font-weight: 900;
+}
+.nx-unlock-links a[aria-disabled="true"] {
+  opacity: .55;
+  pointer-events: none;
+}
+.nx-adsgram-info {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.nx-adsgram-info div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(8, 19, 31, .72);
+}
+@media (max-width: 620px) {
+  .nx-unlock-links {
+    grid-template-columns: 1fr;
+  }
+}

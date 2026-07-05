@@ -33,6 +33,10 @@ REWARDED_AD_PROVIDER = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lo
 FREE_SIGNALS_LIFETIME = int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2)
 LOCKED_SIGNAL_TTL_MINUTES = int(os.environ.get("LOCKED_SIGNAL_TTL_MINUTES", "10") or 10)
 FREE_UNLOCK_DEMO_MODE = os.environ.get("FREE_UNLOCK_DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+ADSGRAM_REWARD_SECRET = os.environ.get("ADSGRAM_REWARD_SECRET", "").strip()
+ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "").strip()
+ADSGRAM_PLATFORM_ID = os.environ.get("ADSGRAM_PLATFORM_ID", "35044").strip()
+ADSGRAM_REQUIRE_SIGNATURE = os.environ.get("ADSGRAM_REQUIRE_SIGNATURE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 # ================= CONFIG =================
 MAX_DAILY_TRADES = 4
@@ -634,6 +638,11 @@ def init_trade_tables():
     c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_token ON free_signal_unlocks (token)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_chat_created ON free_signal_unlocks (chat_id, created_at)")
 
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS ad_rewarded INTEGER DEFAULT 0")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_provider TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_payload_keys TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS rewarded_at TIMESTAMP")
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
         chat_id TEXT PRIMARY KEY,
@@ -735,6 +744,11 @@ def ensure_free_earn_tables():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_token ON free_signal_unlocks (token)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_free_unlock_chat_created ON free_signal_unlocks (chat_id, created_at)")
+
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS ad_rewarded INTEGER DEFAULT 0")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_provider TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS reward_payload_keys TEXT")
+    c.execute("ALTER TABLE free_signal_unlocks ADD COLUMN IF NOT EXISTS rewarded_at TIMESTAMP")
     c.execute("""
     CREATE TABLE IF NOT EXISTS free_signal_unlock_credits (
         chat_id TEXT PRIMARY KEY,
@@ -837,13 +851,13 @@ def free_unlock_attempt_allowed(chat_id):
     except Exception:
         return True
 
-def process_free_unlock_token(token, demo_allowed=False):
+def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, reward_payload_keys=None):
     try:
         ensure_free_earn_tables()
         conn = db()
         c = conn.cursor()
         c.execute("""
-            SELECT id, chat_id, plan, signal_payload, unlocked, credit_granted, expires_at
+            SELECT id, chat_id, plan, signal_payload, unlocked, credit_granted, expires_at, COALESCE(ad_rewarded, 0)
             FROM free_signal_unlocks
             WHERE token = %s
             FOR UPDATE
@@ -853,11 +867,15 @@ def process_free_unlock_token(token, demo_allowed=False):
             conn.rollback()
             conn.close()
             return {"ok": False, "reason": "invalid_token"}
-        unlock_id, chat_id, plan, payload, unlocked, credit_granted, expires_at = row
+        unlock_id, chat_id, plan, payload, unlocked, credit_granted, expires_at, ad_rewarded = row
         if int(unlocked or 0) == 1:
             conn.rollback()
             conn.close()
             return {"ok": False, "reason": "already_used"}
+        if reward_provider == "adsgram" and int(ad_rewarded or 0) == 1:
+            conn.rollback()
+            conn.close()
+            return {"ok": False, "reason": "already_rewarded"}
         if datetime.now() > expires_at:
             if int(credit_granted or 0) != 1:
                 c.execute("UPDATE free_signal_unlocks SET credit_granted = 1 WHERE id = %s", (unlock_id,))
@@ -877,16 +895,29 @@ def process_free_unlock_token(token, demo_allowed=False):
             conn.rollback()
             conn.close()
             return {"ok": False, "reason": "ads_not_configured"}
+        if reward_provider == "adsgram":
+            c.execute("""
+                UPDATE free_signal_unlocks
+                SET ad_rewarded = 1,
+                    reward_provider = %s,
+                    reward_payload_keys = %s,
+                    rewarded_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, ("adsgram", ",".join(reward_payload_keys or []), unlock_id))
         if demo_allowed:
             log("FREE_UNLOCK_DEMO_USED")
         signal = json.loads(payload or "{}")
         if not signal_is_fresh(signal):
-            c.execute("UPDATE free_signal_unlocks SET credit_granted = 1 WHERE id = %s", (unlock_id,))
-            conn.commit()
+            if int(credit_granted or 0) != 1:
+                c.execute("UPDATE free_signal_unlocks SET credit_granted = 1 WHERE id = %s", (unlock_id,))
+                conn.commit()
+                conn.close()
+                add_free_unlock_credit(chat_id)
+                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
+                return {"ok": False, "reason": "stale_credit_granted"}
+            conn.rollback()
             conn.close()
-            add_free_unlock_credit(chat_id)
-            log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
-            return {"ok": False, "reason": "stale_credit_granted"}
+            return {"ok": False, "reason": "stale"}
         msg = format_signal(signal, plan)
         sent_ok = send(chat_id, msg)
         if not sent_ok:
@@ -914,6 +945,43 @@ def process_free_unlock_token(token, demo_allowed=False):
             pass
         log(f"FREE_UNLOCK_PROCESS_FAILED token_present={bool(token)} error={e}")
         return {"ok": False, "reason": "error"}
+
+
+
+def adsgram_signature_status():
+    if not ADSGRAM_REQUIRE_SIGNATURE:
+        return True, "signature_not_required"
+    # AdsGram signature documentation was not provided in this build.
+    # Keep this closed when required instead of inventing an unsafe verifier.
+    return False, "signature_verification_not_configured"
+
+def process_adsgram_reward(token, payload_keys=None):
+    safe_keys = sorted({str(k) for k in (payload_keys or []) if str(k).lower() not in {"secret", "signature", "hash", "token"}})
+    log(f"ADSGRAM_REWARD_RECEIVED token_present={bool(token)} keys={safe_keys}")
+    if REWARDED_AD_PROVIDER != "adsgram":
+        log("ADSGRAM_REWARD_REJECTED reason=provider_not_adsgram")
+        return {"ok": False, "reason": "provider_not_adsgram"}
+    sig_ok, sig_reason = adsgram_signature_status()
+    if not sig_ok:
+        log(f"ADSGRAM_REWARD_REJECTED reason={sig_reason}")
+        return {"ok": False, "reason": sig_reason}
+    if not token:
+        log("ADSGRAM_REWARD_REJECTED reason=missing_token")
+        return {"ok": False, "reason": "missing_token"}
+    log("ADSGRAM_REWARD_ACCEPTED")
+    result = process_free_unlock_token(
+        token,
+        demo_allowed=False,
+        reward_provider="adsgram",
+        reward_payload_keys=safe_keys,
+    )
+    if result.get("ok"):
+        log("ADSGRAM_UNLOCK_SENT")
+    elif result.get("reason") in {"expired_credit_granted", "stale_credit_granted"}:
+        log("ADSGRAM_UNLOCK_CREDIT_GRANTED")
+    else:
+        log(f"ADSGRAM_REWARD_REJECTED reason={result.get('reason')}")
+    return result
 
 def maybe_handle_free_earn_delivery(chat_id, plan, trades, signal):
     if str(plan or "trial").lower() != "trial":

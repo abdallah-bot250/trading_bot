@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang|default('en') }}" dir="{{ direction|default('ltr') }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdsGram Reward URL | Nexora Admin</title>
+<link rel="stylesheet" href="/static/premium.css?v=20260705_adsgram1">
+</head>
+<body class="nexora-shell nx-unlock-page">
+  <main class="nx-unlock-wrap">
+    <section class="nx-unlock-card">
+      <img src="/static/brand/favicon.svg" alt="" width="58" height="58">
+      <span>AdsGram Admin</span>
+      <h1>Reward URL</h1>
+      <p>Put this URL in AdsGram Reward URL field.</p>
+      <div class="nx-unlock-status success">{{ reward_url }}</div>
+      <div class="nx-adsgram-info">
+        <div><strong>Provider</strong><span>{{ provider }}</span></div>
+        <div><strong>Platform ID</strong><span>{{ platform_id }}</span></div>
+        <div><strong>Block ID</strong><span>{% if block_id_present %}Configured{% else %}Missing{% endif %}</span></div>
+        <div><strong>Signature Required</strong><span>{{ signature_required }}</span></div>
+      </div>
+      <a class="nx-unlock-button nx-unlock-link-button" href="/admin">Back to Admin</a>
+    </section>
+  </main>
+</body>
+</html>
