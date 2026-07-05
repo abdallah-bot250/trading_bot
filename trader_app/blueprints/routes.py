@@ -3558,6 +3558,41 @@ def admin_dashboard():
                 log(f"admin rows unavailable: {metric_error}")
                 return []
 
+        def admin_table_columns(table_name):
+            try:
+                c.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                """, (table_name,))
+                return {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+            except Exception as column_error:
+                db_rollback()
+                log(f"admin columns unavailable table={table_name}: {column_error}")
+                return set()
+
+        def admin_recent_signal_rows(limit=8):
+            columns = admin_table_columns("trades_log")
+            required = {"chat_id", "pair", "direction", "entry", "tp", "sl", "status", "created_at"}
+            if not columns or not required.issubset(columns):
+                return []
+            if "display_confidence" in columns:
+                confidence_expr = "display_confidence AS confidence"
+            elif "final_score" in columns:
+                confidence_expr = "final_score AS confidence"
+                log("ADMIN_CONFIDENCE_FALLBACK_USED source=trades_log.final_score")
+            elif "confidence" in columns:
+                confidence_expr = "confidence AS confidence"
+            else:
+                confidence_expr = "NULL AS confidence"
+                log("ADMIN_CONFIDENCE_FALLBACK_USED source=trades_log.none")
+            return safe_rows(f"""
+                SELECT chat_id, pair, direction, entry, tp, sl, {confidence_expr}, status, created_at
+                FROM trades_log
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (int(limit),))
+
         total_users = int(safe_scalar("SELECT COUNT(*) FROM users", default=0) or 0)
         paid_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE is_paid = 1", default=0) or 0)
         linked_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(chat_id, '') != ''", default=0) or 0)
@@ -3774,12 +3809,7 @@ def admin_dashboard():
             ORDER BY created_at DESC
             LIMIT 8
         """)
-        recent_admin_signals = safe_rows("""
-            SELECT chat_id, pair, direction, entry, tp, sl, confidence, status, created_at
-            FROM trades_log
-            ORDER BY created_at DESC
-            LIMIT 8
-        """)
+        recent_admin_signals = admin_recent_signal_rows(limit=8)
         coupons = safe_rows("""
             SELECT id, code, discount_percent, active, expires_at, max_redemptions, redemption_count, created_at
             FROM coupons
