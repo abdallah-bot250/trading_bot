@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/static/premium.css?v=20260705_adsgram2">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+{% if rewarded_ad_provider == 'adsgram' %}<script src="https://sad.adsgram.ai/js/sad.min.js"></script>{% endif %}
 </head>
 <body class="nexora-shell nx-unlock-page">
   <main class="nx-unlock-wrap">
@@ -31,7 +32,7 @@
       {% endif %}
 
       {% if rewarded_ad_provider == 'adsgram' %}
-        <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}">
+        <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}" data-block-id="{{ adsgram_block_id|default('37291') }}">
           <strong>AdsGram Reward</strong>
           <p>Open this page inside Telegram, then watch the rewarded video. Nexora binds your Telegram user to this locked signal before AdsGram calls the Reward URL.</p>
           <button class="nx-unlock-button" id="nxAdsgramBind" type="button">Watch Video & Unlock</button>
@@ -90,11 +91,21 @@
       return res.json().then(function (data) {
         if (!res.ok || !data.ok) throw new Error(data.reason || 'bind_failed');
         console.info('ADSGRAM_BIND_READY');
-        setStatus('Verified. Watch the AdsGram reward ad, then the signal will be sent in Telegram.', true);
+        setStatus('Verified. Loading rewarded video...', true);
+        if (!window.Adsgram || typeof window.Adsgram.init !== 'function') {
+          throw new Error('adsgram_sdk_unavailable');
+        }
+        var blockId = String(panel.dataset.blockId || '').trim();
+        if (!blockId) throw new Error('adsgram_block_missing');
+        var controller = window.Adsgram.init({ blockId: blockId });
+        return controller.show();
+      }).then(function () {
+        setStatus('Reward completed. Your signal is being delivered in Telegram.', true);
       });
     }).catch(function (err) {
       button.disabled = false;
-      setStatus('Verification failed: ' + err.message, false);
+      var message = err && (err.description || err.message) ? (err.description || err.message) : 'reward_failed';
+      setStatus('Ad not completed: ' + message + '. You can try again.', false);
     });
   });
 })();
