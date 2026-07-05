@@ -245,10 +245,23 @@ def send_unlock_prompt(chat_id, unlock_url):
             return False
         payload = {
             "chat_id": chat_id,
-            "text": "🔒 New premium signal is ready.\nWatch a short rewarded ad to unlock it for free.",
+            "text": """━━━━━━━━━━━━━━━━━━
+NEW NEXORA OPPORTUNITY
+━━━━━━━━━━━━━━━━━━
+
+A new market opportunity has passed Nexora analysis and quality checks.
+
+The trade details are protected:
+- Entry
+- Stop Loss
+- Profit Targets
+
+Watch the short sponsored video to unlock this opportunity. Your ad view helps support free access to Nexora signals.
+
+If market conditions change before unlock, an outdated trade will not be sent and your unlock-credit logic remains protected.""",
             "reply_markup": {
                 "inline_keyboard": [[
-                    {"text": "Unlock Signal", "url": unlock_url}
+                    {"text": "Watch & Unlock Signal", "url": unlock_url}
                 ]]
             }
         }
@@ -1231,33 +1244,57 @@ def _compact_trade_reason(signal):
 
 
 # ================= FORMAT =================
+def _signal_line(label, value):
+    if value in (None, "", "N/A"):
+        return ""
+    return f"{label}: {value}"
+
+
 def format_signal(signal, plan=None):
     tp1, tp2, tp3 = _signal_target_ladder(signal)
-    return f"""🚀 NEXORA AI SIGNAL
+    confidence = signal.get("display_confidence", signal.get("confidence"))
+    risk = signal.get("risk_level") or signal.get("risk_score")
+    setup = signal.get("strategy_name") or signal.get("setup_type") or signal.get("market_regime") or signal.get("adaptive_regime")
+    intelligence = [
+        _signal_line("Confidence", f"{confidence}%" if confidence not in (None, "", "N/A") else None),
+        _signal_line("Risk", risk),
+        _signal_line("Market Setup", setup),
+        _signal_line("RR", signal.get("risk_reward")),
+    ]
+    intelligence = "\n".join([line for line in intelligence if line])
+    if intelligence:
+        intelligence = "\n\nSignal Intelligence\n" + intelligence
 
-Pair: {signal.get('pair', 'N/A')}
+    return f"""━━━━━━━━━━━━━━━━━━
+NEXORA TRADE OPPORTUNITY
+━━━━━━━━━━━━━━━━━━
+
+Market: {signal.get('pair', 'N/A')}
 Mode: {signal.get('type', 'FUTURES')}
 Direction: {signal.get('direction', 'N/A')}
-TF: {signal.get('timeframe', 'N/A')}
+Timeframe: {signal.get('timeframe', 'N/A')}
 
 Entry: {signal.get('entry', 'N/A')}
+Stop Loss: {signal.get('sl', 'N/A')}
+
+Targets
 TP1: {tp1}
 TP2: {tp2}
-TP3: {tp3}
-SL: {signal.get('sl', 'N/A')}
+TP3: {tp3}{intelligence}
 
-Confidence: {signal.get('display_confidence', signal.get('confidence', 'N/A'))}%
-RR: {signal.get('risk_reward', 'N/A')}
-Regime: {signal.get('market_regime', signal.get('adaptive_regime', 'N/A'))}
-Strategy: {signal.get('strategy_name', signal.get('setup_type', 'N/A'))}
+━━━━━━━━━━━━━━━━━━
+NEXORA ANALYSIS
+━━━━━━━━━━━━━━━━━━
 
-Why:
-{_compact_trade_reason(signal)}
+This opportunity was selected after multi-factor market analysis using the decision technology available inside Nexora.
 
-Manage:
-Move SL to breakeven after TP1 or +0.6R.
+The system reviews market context, trend structure, momentum, liquidity conditions, entry quality, risk and timeframe alignment before a signal is approved.
 
-⚠️ Risk warning: Crypto trading is risky. Not financial advice.
+Important:
+This signal supports your trading decision. It is not financial advice and does not guarantee profit. Trading involves risk. Always use appropriate position sizing and risk management.
+
+Nexora AI Trader
+Technology supports the decision. Risk management protects the trader.
 """
 
 # ================= ACCESS HELPERS =================
@@ -1951,17 +1988,17 @@ def update_signal_outcomes():
                         icon = "✅" if outcome == "TP_HIT" else "🛑"
                         clean_pnl_percent = clean_number(pnl_percent, 2)
                         what_happened = "TP Hit" if outcome == "TP_HIT" else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
-                        outcome_sent = send(chat_id, f"""{icon} Signal Update
+                        outcome_sent = send(chat_id, f"""{icon} NEXORA TRADE RESULT
 
-Pair: {pair}
+Market: {pair}
 Direction: {direction}
 Entry: {clean_number(entry, 6)}
 Exit: {clean_number(current_price, 6)}
-Close Reason: {what_happened}
-PNL: {clean_pnl_percent}%
-PNL %: {clean_pnl_percent}%
-Duration: N/A
-What happened: {what_happened}
+Result: {what_happened}
+Outcome: {clean_pnl_percent}%
+
+This is a tracked signal result, not a new trade opportunity.
+Trading involves risk and past outcomes do not guarantee future results.
 """)
                         if not outcome_sent:
                             log(f"SIGNAL_OUTCOME_SEND_FAILED signal_id={signal_id} chat_id_present={bool(chat_id)} pair={pair}")
@@ -2096,17 +2133,18 @@ def update_closed_trades():
                     write_log(chat_id, "INFO", f"Trade closed {pair} reason={close_reason} pnl={pnl}")
 
                     what_happened = close_reason if close_reason in ["TP Hit", "SL Hit"] else "Manual/Unknown Exit"
-                    send(chat_id, f"""📌 Trade Closed
+                    send(chat_id, f"""NEXORA TRADE RESULT
 
-Pair: {pair}
+Market: {pair}
 Direction: {direction}
 Entry: {clean_number(entry, 6)}
 Exit: {clean_number(current_price, 6)}
-Close Reason: {close_reason}
-PNL: {pnl} USDT
-PNL %: {pnl_percent}%
+Result: {close_reason}
+Tracked PNL: {pnl} USDT
+Tracked PNL %: {pnl_percent}%
 Duration: {duration_text}
-What happened: {what_happened}
+
+This is a trade result update, not a new trade opportunity.
 """)
 
             except Exception as e:

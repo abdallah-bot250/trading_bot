@@ -456,39 +456,64 @@ def _compact_signal_reason(s):
     return reason
 
 
+def _signal_line(label, value):
+    if value in (None, "", "N/A"):
+        return ""
+    return f"{label}: {value}"
+
+
 def format_signal(s):
     if not s:
-        return "لا توجد إشارة حالياً"
+        return "No active Nexora signal is available right now."
 
     tp1 = s.get("tp1", s.get("tp", "N/A"))
     tp2 = s.get("tp2", s.get("tp", "N/A"))
     tp3 = s.get("tp3", s.get("tp", "N/A"))
-    return f"""🚀 NEXORA AI SIGNAL
+    confidence = s.get("display_confidence", s.get("confidence"))
+    risk = s.get("risk_level") or s.get("risk_score")
+    setup = s.get("strategy_name") or s.get("setup_type") or s.get("market_regime") or s.get("adaptive_regime")
+    intelligence = [
+        _signal_line("Confidence", f"{confidence}%" if confidence not in (None, "", "N/A") else None),
+        _signal_line("Risk", risk),
+        _signal_line("Market Setup", setup),
+        _signal_line("RR", s.get("risk_reward")),
+    ]
+    intelligence = "\n".join([line for line in intelligence if line])
+    if intelligence:
+        intelligence = "\n\nSignal Intelligence\n" + intelligence
 
-Pair: {s.get('pair', 'N/A')}
+    return f"""━━━━━━━━━━━━━━━━━━
+NEXORA TRADE OPPORTUNITY
+━━━━━━━━━━━━━━━━━━
+
+Market: {s.get('pair', 'N/A')}
 Mode: {s.get('type', 'FUTURES')}
 Direction: {s.get('direction', 'N/A')}
-TF: {s.get('timeframe', 'N/A')}
+Timeframe: {s.get('timeframe', 'N/A')}
 
 Entry: {s.get('entry', 'N/A')}
+Stop Loss: {s.get('sl', 'N/A')}
+
+Targets
 TP1: {tp1}
 TP2: {tp2}
-TP3: {tp3}
-SL: {s.get('sl', 'N/A')}
+TP3: {tp3}{intelligence}
 
-Confidence: {s.get('confidence', 'N/A')}%
-RR: {s.get('risk_reward', 'N/A')}
-Regime: {s.get('market_regime', s.get('adaptive_regime', 'N/A'))}
-Strategy: {s.get('strategy_name', s.get('setup_type', 'N/A'))}
+━━━━━━━━━━━━━━━━━━
+NEXORA ANALYSIS
+━━━━━━━━━━━━━━━━━━
 
-Why:
-{_compact_signal_reason(s)}
+This opportunity was selected after multi-factor market analysis using the decision technology available inside Nexora.
 
-Manage:
-Move SL to breakeven after TP1 or +0.6R.
+The system reviews market context, trend structure, momentum, liquidity conditions, entry quality, risk and timeframe alignment before a signal is approved.
 
-⚠️ Risk warning: Crypto trading is risky. Not financial advice.
+Important:
+This signal supports your trading decision. It is not financial advice and does not guarantee profit. Trading involves risk. Always use appropriate position sizing and risk management.
+
+Nexora AI Trader
+Technology supports the decision. Risk management protects the trader.
 """
+
 def can_receive_signals(user):
     """
     user tuple columns:

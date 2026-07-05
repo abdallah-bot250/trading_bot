@@ -5,73 +5,73 @@ from .runtime import send, format_signal, telegram_referral_link, ensure_user_ha
 
 def command_menu(is_admin=False):
     lines = [
-        "Nexora AI Trader",
+        "NEXORA COMMAND CENTER",
         "",
-        "الأوامر المتاحة:",
-        "/start - ربط الحساب واستقبال أول الإشارات",
-        "/subscription - حالة الاشتراك والخطة",
-        "/stats - إحصائيات حسابك",
-        "/affiliate - رابط الأفلييت والرصيد",
-        "/help - عرض هذه القائمة",
+        "Available commands:",
+        "/start - Connect your account and receive eligible signals",
+        "/subscription - View plan and access status",
+        "/stats - View account and signal statistics",
+        "/affiliate - View referral link and commission balance",
+        "/help - Show this menu",
     ]
     if is_admin:
         lines.extend([
             "",
-            "Admin Commands:",
-            "/admin - لوحة أوامر الأدمن",
-            "/admin_stats - إحصائيات عامة",
-            "/broadcast الرسالة - إرسال لكل الحسابات المرتبطة",
-            "/broadcast_paid الرسالة - إرسال للمشتركين المدفوعين فقط",
+            "Admin commands:",
+            "/admin - Admin command menu",
+            "/admin_stats - Platform statistics",
+            "/broadcast message - Send to linked users",
+            "/broadcast_paid message - Send to paid users only",
         ])
     return "\n".join(lines)
 
 
 def admin_menu():
-    return """Nexora Admin Console
+    return """NEXORA ADMIN CONSOLE
 
-الأوامر:
+Commands:
 /admin_stats
-/broadcast الرسالة
-/broadcast_paid الرسالة
+/broadcast message
+/broadcast_paid message
 
-تنبيه: أوامر البث لا تعمل إلا من حساب أدمن مربوط بنفس Telegram."""
+Broadcast commands are protected and available only to an authorized admin Telegram account."""
 
 
 def welcome_message(register_link):
-    return f"""أهلاً بك في Nexora AI Trader
+    return f"""NEXORA AI TRADER
 
-البوت يفلتر السوق ويرسل الفرص الأقوى فقط، بدل الدخول العشوائي.
+Welcome. Nexora filters the market and delivers only qualified opportunities when the current conditions are suitable.
 
-يركز على:
-- Trend
-- Volume
-- Multi-timeframe confirmation
-- Risk score
-- Spot/Futures quality scoring
+What Nexora reviews:
+- Trend and market structure
+- Volume and liquidity
+- Multi-timeframe alignment
+- Entry quality and risk
+- Spot/Futures signal suitability
 
-عندك صفقتين مجانيتين بعد التسجيل.
+Your free plan includes the first two eligible signals after registration.
 
-اربط حسابك من هنا:
+Create or connect your account:
 {register_link}
 
-بعد التسجيل ابعت /start لاستقبال أول الإشارات."""
+After registration, send /start again to complete account linking."""
 
 
 def linked_message(current_plan, expiry, is_admin=False):
     role = "Admin / Owner" if is_admin else "User"
-    return f"""حسابك مربوط بنجاح
+    return f"""NEXORA ACCOUNT LINKED
 
 Role: {role}
 Plan: {current_plan or 'trial'}
 Expiry: {expiry or 'not active'}
 
-استخدم /subscription لمعرفة حالة اشتراكك.
-استخدم /stats لمتابعة إحصائياتك."""
+Use /subscription to review your plan.
+Use /stats to review account statistics."""
 
 
 def subscription_message(user):
     if not user:
-        return "لا يوجد حساب مربوط بهذا Telegram. استخدم /start ثم سجل من الرابط الآمن."
+        return "NEXORA ACCOUNT\n\nNo account is linked to this Telegram yet. Use /start and connect through the secure website link."
 
     plan = user.get("plan") or "trial"
     expiry = user.get("expiry") or "not active"
@@ -81,29 +81,29 @@ def subscription_message(user):
     spot_enabled = int(user.get("spot_enabled", 1) if user.get("spot_enabled") is not None else 1)
     futures_enabled = int(user.get("futures_enabled", 1) if user.get("futures_enabled") is not None else 1)
 
-    status = "Active" if is_paid == 1 else "Trial / inactive"
-    bot_status = "Running" if bot_active == 1 else "Stopped"
+    status = "Active" if is_paid == 1 else "Free trial / inactive"
+    bot_status = "Running" if bot_active == 1 else "Paused"
 
-    return f"""Subscription Status
+    return f"""NEXORA SUBSCRIPTION STATUS
 
 Plan: {plan}
 Status: {status}
 Expiry: {expiry}
-Trial signals used: {trades}/2
+Free signals used: {trades}/2
 Bot: {bot_status}
-Spot Signals: {'Enabled' if spot_enabled else 'Paused'}
-Futures Signals: {'Enabled' if futures_enabled else 'Paused'}
+Spot signals: {'Enabled' if spot_enabled else 'Paused'}
+Futures signals: {'Enabled' if futures_enabled else 'Paused'}
 
-لو عايز تغير Spot/Futures افتح Dashboard ثم Settings."""
+Open your dashboard to manage plan, Telegram connection and signal preferences."""
 
 
 def user_statistics_message(stats):
-    return f"""Account Statistics
+    return f"""NEXORA ACCOUNT STATISTICS
 
 Signals used: {stats.get('trades', 0)}
-Profit: {stats.get('profit', 0)} USDT
+Tracked outcome: {stats.get('profit', 0)} USDT
 Affiliate balance: ${stats.get('affiliate_balance', 0)}
-Total referrals: {stats.get('total_referrals', 0)}
+Registered referrals: {stats.get('total_referrals', 0)}
 Spot signals today: {stats.get('spot_today', 0)}
 Futures signals today: {stats.get('futures_today', 0)}
 Spot win rate: {stats.get('spot_win_rate', 0)}%
@@ -113,7 +113,7 @@ Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
 
 
 def admin_statistics_message(stats):
-    return f"""Platform Statistics
+    return f"""NEXORA PLATFORM STATISTICS
 
 Users: {stats.get('total_users', 0)}
 Paid users: {stats.get('paid_users', 0)}
@@ -128,7 +128,7 @@ Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"""
 
 
 def broadcast_result_message(sent_count, failed_count, target):
-    return f"""Broadcast Complete
+    return f"""NEXORA BROADCAST COMPLETE
 
 Target: {target}
 Sent: {sent_count}

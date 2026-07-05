@@ -1,5 +1,5 @@
 import os
-from flask import Blueprint
+from flask import Blueprint, render_template_string
 from urllib.parse import quote_plus, urlparse
 from trader_app.extensions import limiter
 from trader_app.services.payments import (
@@ -142,7 +142,7 @@ def unlock_signal(token):
         adsgram_block_id=ADSGRAM_BLOCK_ID,
         reward_url=f"{current_base_url()}/adsgram/reward?user_id=[userId]",
         social_facebook_url=os.environ.get("SOCIAL_FACEBOOK_URL", "https://www.facebook.com/profile.php?id=61591117963149").strip(),
-        social_instagram_url=os.environ.get("SOCIAL_INSTAGRAM_URL", "https://www.instagram.com/nexora_ai_trader/").strip(),
+        social_instagram_url=os.environ.get("SOCIAL_INSTAGRAM_URL", "https://www.instagram.com/nexoraaitrader/?hl=en").strip(),
     )
 
 
@@ -678,6 +678,122 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
     return bool(old_user_id and int(old_user_id) != int(current_user_id))
 
 
+
+def _dict_value(row, key, index=0, default=None):
+    try:
+        if row is None:
+            return default
+        if hasattr(row, "get"):
+            return row.get(key, default)
+        return row[index]
+    except Exception:
+        return default
+
+
+def _safe_referral_metrics(c, conn, referrer_chat_id, referral_code):
+    metrics = {
+        "registered_referrals_count": 0,
+        "active_registered_referrals": 0,
+        "paid_referrals_count": 0,
+        "affiliate_referrals_count": 0,
+    }
+    if not referral_code and not referrer_chat_id:
+        log("REFERRAL_DASHBOARD_METRICS registered=0 active=0 paid=0")
+        return metrics
+    try:
+        if referral_code:
+            c.execute("""
+                SELECT COUNT(*) AS count
+                FROM users
+                WHERE referred_by = %s
+            """, (referral_code,))
+            metrics["registered_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
+    except Exception as e:
+        conn.rollback()
+        log(f"REFERRAL_REGISTERED_METRIC_UNAVAILABLE error={e}")
+    try:
+        if referral_code:
+            c.execute("""
+                SELECT COUNT(*) AS count
+                FROM users
+                WHERE referred_by = %s
+                  AND (COALESCE(bot_active, 0) = 1 OR COALESCE(is_paid, 0) = 1)
+            """, (referral_code,))
+            metrics["active_registered_referrals"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
+    except Exception as e:
+        conn.rollback()
+        log(f"REFERRAL_ACTIVE_METRIC_UNAVAILABLE error={e}")
+    try:
+        if referrer_chat_id:
+            c.execute("""
+                SELECT COUNT(DISTINCT referred_chat_id) AS count
+                FROM affiliate_commissions
+                WHERE referrer_chat_id = %s
+                  AND status = 'approved'
+            """, (str(referrer_chat_id),))
+            metrics["paid_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
+    except Exception as e:
+        conn.rollback()
+        log(f"REFERRAL_PAID_METRIC_UNAVAILABLE error={e}")
+    try:
+        if referrer_chat_id:
+            c.execute("""
+                SELECT COUNT(*) AS count
+                FROM affiliate_referrals
+                WHERE referrer_chat_id = %s
+            """, (str(referrer_chat_id),))
+            metrics["affiliate_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
+    except Exception as e:
+        conn.rollback()
+        log(f"REFERRAL_AFFILIATE_ROWS_METRIC_UNAVAILABLE error={e}")
+    log(
+        "REFERRAL_DASHBOARD_METRICS "
+        f"registered={metrics['registered_referrals_count']} "
+        f"active={metrics['active_registered_referrals']} "
+        f"paid={metrics['paid_referrals_count']}"
+    )
+    return metrics
+
+
+def _record_registration_referral(c, conn, referrer_chat_id, referred_chat_id, referred_email):
+    if not referrer_chat_id or not referred_chat_id:
+        return False
+    referrer_chat_id = str(referrer_chat_id).strip()
+    referred_chat_id = str(referred_chat_id).strip()
+    if not referrer_chat_id or not referred_chat_id:
+        return False
+    if referrer_chat_id == referred_chat_id:
+        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_chat_id} referred_email={referred_email}")
+        return False
+    try:
+        c.execute("SAVEPOINT referral_register_sp")
+        c.execute("""
+            SELECT id
+            FROM affiliate_referrals
+            WHERE referrer_chat_id = %s
+              AND referred_chat_id = %s
+            LIMIT 1
+        """, (referrer_chat_id, referred_chat_id))
+        if c.fetchone():
+            c.execute("RELEASE SAVEPOINT referral_register_sp")
+            log(f"REFERRAL_DUPLICATE_SKIPPED referrer={referrer_chat_id} referred_email={referred_email}")
+            return False
+        c.execute("""
+            INSERT INTO affiliate_referrals (referrer_chat_id, referred_chat_id, referred_email)
+            VALUES (%s, %s, %s)
+        """, (referrer_chat_id, referred_chat_id, referred_email))
+        c.execute("RELEASE SAVEPOINT referral_register_sp")
+        log(f"REFERRAL_REGISTERED referrer={referrer_chat_id} referred_email={referred_email}")
+        return True
+    except Exception as e:
+        try:
+            c.execute("ROLLBACK TO SAVEPOINT referral_register_sp")
+            c.execute("RELEASE SAVEPOINT referral_register_sp")
+        except Exception:
+            pass
+        log(f"REFERRAL_REGISTER_ROW_SKIPPED referrer={referrer_chat_id} referred_email={referred_email} error={e}")
+        return False
+
 # ================= REGISTER =================
 @auth_bp.route("/register", methods=["GET", "POST"])
 @limiter.limit("8 per minute", methods=["POST"])
@@ -760,11 +876,21 @@ def register():
                     return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             referred_by = None
+            referrer_chat_id = None
             if final_ref:
-                c.execute("SELECT chat_id FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
+                c.execute("SELECT chat_id, email FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
                 ref_user = c.fetchone()
-                if ref_user and str(ref_user[0] or "").strip() != str(chat_id).strip():
-                    referred_by = final_ref
+                if not ref_user:
+                    log(f"REFERRAL_INVALID_CODE code={final_ref} referred_email={email}")
+                else:
+                    referrer_chat_id = str(ref_user[0] or "").strip()
+                    referrer_email = str(ref_user[1] or "").strip().lower() if len(ref_user) > 1 else ""
+                    if referrer_chat_id and chat_id and referrer_chat_id == str(chat_id).strip():
+                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_chat_id} referred_email={email}")
+                    elif referrer_email and referrer_email == email:
+                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_email} referred_email={email}")
+                    else:
+                        referred_by = final_ref
 
             password = generate_password_hash(password_raw)
             c.execute("""
@@ -796,6 +922,9 @@ def register():
             ))
 
             new_user = c.fetchone()
+
+            if referred_by and referrer_chat_id and chat_id:
+                _record_registration_referral(c, conn, referrer_chat_id, chat_id, email)
 
             if chat_id:
                 log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
@@ -1313,7 +1442,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     token = str(token or "").strip()
     if not token:
         log("TELEGRAM_LINK_FAILED reason=missing_token chat_id_present=True")
-        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        send(chat_id, "NEXORA ACCOUNT LINK\n\nThis Telegram link has expired. Open your Nexora dashboard and tap Connect Telegram Bot again to generate a fresh secure link.")
         return True
 
     c.execute("""
@@ -1325,7 +1454,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     link_row = c.fetchone()
     if not link_row:
         log("TELEGRAM_LINK_FAILED reason=token_not_found chat_id_present=True")
-        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        send(chat_id, "NEXORA ACCOUNT LINK\n\nThis Telegram link has expired. Open your Nexora dashboard and tap Connect Telegram Bot again to generate a fresh secure link.")
         return True
 
     user_email = str(link_row[1] or "").strip().lower()
@@ -1333,7 +1462,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     used_at = link_row[3]
     if used_at or telegram_link_is_expired(created_at):
         log(f"TELEGRAM_LINK_FAILED reason=token_used_or_expired user_email={user_email} chat_id_present=True")
-        send(chat_id, "Telegram link expired. Open your Nexora dashboard and tap Connect Telegram Bot again.")
+        send(chat_id, "NEXORA ACCOUNT LINK\n\nThis Telegram link has expired. Open your Nexora dashboard and tap Connect Telegram Bot again to generate a fresh secure link.")
         return True
 
     c.execute("""
@@ -1345,7 +1474,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     target_user = c.fetchone()
     if not target_user:
         log(f"TELEGRAM_LINK_FAILED reason=user_not_found user_email={user_email} chat_id_present=True")
-        send(chat_id, "Nexora account not found. Please register on the website first.")
+        send(chat_id, "NEXORA ACCOUNT LINK\n\nNo Nexora account was found for this secure link. Please register on the website first, then connect Telegram from your dashboard.")
         return True
 
     target_user_id = target_user[0]
@@ -1354,7 +1483,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
 
     if current_chat_id and current_chat_id != str(chat_id):
         log(f"TELEGRAM_LINK_FAILED reason=user_already_linked user_id={target_user_id} chat_id_present=True")
-        send(chat_id, "This Nexora account is already linked to another Telegram. Login on the website to manage linking safely.")
+        send(chat_id, "NEXORA ACCOUNT LINK\n\nThis Nexora account is already linked to another Telegram account. Login on the website to manage linking safely.")
         return True
 
     c.execute("""
@@ -1384,7 +1513,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     conn.commit()
     log(f"TELEGRAM_LINK_SUCCESS user_id={target_user_id} chat_id_present=True")
     audit_log("telegram_link_success", target_email, "chat_id_present=True")
-    send(chat_id, "Telegram linked successfully to your Nexora account.")
+    send(chat_id, "NEXORA ACCOUNT LINKED\n\nTelegram is now connected to your Nexora account. Trade opportunities and account updates can be delivered here when eligible.")
     return True
 
 
@@ -1418,12 +1547,11 @@ def dashboard():
 
             referral_link = telegram_referral_link(user["referral_code"])
 
-        c.execute("""
-            SELECT COUNT(*) AS total_refs
-            FROM affiliate_referrals
-            WHERE referrer_chat_id = %s
-        """, (chat_id,))
-        refs_count = c.fetchone()["total_refs"] if chat_id else 0
+        referral_metrics = _safe_referral_metrics(c, conn, chat_id, user.get("referral_code"))
+        refs_count = referral_metrics["registered_referrals_count"]
+        active_referrals = referral_metrics["active_registered_referrals"]
+        paid_referrals = referral_metrics["paid_referrals_count"]
+        affiliate_referrals_count = referral_metrics["affiliate_referrals_count"]
 
         c.execute("""
             SELECT COALESCE(SUM(amount), 0) AS total_comm
@@ -1438,35 +1566,6 @@ def dashboard():
             WHERE chat_id = %s AND status = 'paid'
         """, (chat_id,))
         total_withdrawn = c.fetchone()["total_withdrawn"] if chat_id else 0
-
-        active_referrals = 0
-        paid_referrals = 0
-        if chat_id:
-            try:
-                c.execute("""
-                    SELECT COUNT(DISTINCT ar.referred_chat_id)
-                    FROM affiliate_referrals ar
-                    JOIN users u ON u.chat_id = ar.referred_chat_id
-                    WHERE ar.referrer_chat_id = %s
-                      AND COALESCE(u.bot_active, 0) = 1
-                """, (chat_id,))
-                active_row = c.fetchone() or {}
-                active_referrals = int((active_row.get("count") if hasattr(active_row, "get") else active_row[0]) or 0)
-            except Exception as referral_error:
-                conn.rollback()
-                log(f"active referral metric unavailable: {referral_error}")
-            try:
-                c.execute("""
-                    SELECT COUNT(DISTINCT referred_chat_id)
-                    FROM affiliate_commissions
-                    WHERE referrer_chat_id = %s
-                      AND status = 'approved'
-                """, (chat_id,))
-                paid_row = c.fetchone() or {}
-                paid_referrals = int((paid_row.get("count") if hasattr(paid_row, "get") else paid_row[0]) or 0)
-            except Exception as referral_error:
-                conn.rollback()
-                log(f"paid referral metric unavailable: {referral_error}")
 
         referral_qr_url = ""
         if referral_link:
@@ -1781,6 +1880,10 @@ def dashboard():
             total_referrals=refs_count,
             active_referrals=active_referrals,
             paid_referrals=paid_referrals,
+            registered_referrals_count=refs_count,
+            active_registered_referrals=active_referrals,
+            paid_referrals_count=paid_referrals,
+            affiliate_referrals_count=affiliate_referrals_count,
             total_commissions=round(float(total_comm or 0), 2),
             total_withdrawn=round(float(total_withdrawn or 0), 2),
             is_admin=user.get("is_admin", 0),
@@ -3247,6 +3350,109 @@ def request_withdrawal():
         return f"❌ Error: {str(e)}"
 
 
+
+@admin_bp.route("/admin/referral-debug")
+def admin_referral_debug():
+    if not session.get("user"):
+        return redirect("/login")
+    if not admin_required():
+        return "Admin access required.", 403
+    rows = []
+    summary = {"registered": 0, "affiliate_rows": 0, "paid": 0}
+    error = None
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT
+                u.email,
+                u.chat_id,
+                u.referral_code,
+                COALESCE(reg.registered_count, 0) AS registered_count,
+                COALESCE(ar.affiliate_rows, 0) AS affiliate_rows,
+                COALESCE(ac.paid_count, 0) AS paid_count
+            FROM users u
+            LEFT JOIN (
+                SELECT referred_by, COUNT(*) AS registered_count
+                FROM users
+                WHERE referred_by IS NOT NULL AND referred_by <> ''
+                GROUP BY referred_by
+            ) reg ON reg.referred_by = u.referral_code
+            LEFT JOIN (
+                SELECT referrer_chat_id, COUNT(*) AS affiliate_rows
+                FROM affiliate_referrals
+                GROUP BY referrer_chat_id
+            ) ar ON ar.referrer_chat_id = u.chat_id
+            LEFT JOIN (
+                SELECT referrer_chat_id, COUNT(DISTINCT referred_chat_id) AS paid_count
+                FROM affiliate_commissions
+                WHERE status = 'approved'
+                GROUP BY referrer_chat_id
+            ) ac ON ac.referrer_chat_id = u.chat_id
+            WHERE u.referral_code IS NOT NULL AND u.referral_code <> ''
+            ORDER BY registered_count DESC, affiliate_rows DESC, paid_count DESC
+            LIMIT 200
+        """)
+        rows = c.fetchall() or []
+        summary["registered"] = sum(int(r.get("registered_count") or 0) for r in rows)
+        summary["affiliate_rows"] = sum(int(r.get("affiliate_rows") or 0) for r in rows)
+        summary["paid"] = sum(int(r.get("paid_count") or 0) for r in rows)
+    except Exception as e:
+        error = str(e)
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+    return render_template_string("""
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Referral Debug</title>
+<style>
+body{font-family:Arial,sans-serif;background:#07111f;color:#e5eefb;margin:0;padding:24px}
+.card{background:rgba(15,23,42,.92);border:1px solid rgba(56,189,248,.25);border-radius:16px;padding:18px;margin-bottom:18px}
+table{width:100%;border-collapse:collapse;background:rgba(2,6,23,.5);border-radius:12px;overflow:hidden}
+th,td{padding:10px;border-bottom:1px solid rgba(148,163,184,.18);text-align:left}
+th{color:#38bdf8}.warn{color:#fbbf24}.ok{color:#22c55e}
+a{color:#38bdf8}
+</style></head><body>
+<div class="card">
+<h1>Referral Debug</h1>
+<p>Registered referrals are counted from <code>users.referred_by</code>. Paid referrals are counted from approved <code>affiliate_commissions</code>.</p>
+<p><a href="/admin">Back to Admin</a></p>
+{% if error %}<p class="warn">Error: {{ error }}</p>{% endif %}
+</div>
+<div class="card">
+<strong>Summary:</strong>
+Registered: {{ summary.registered }} |
+Affiliate rows: {{ summary.affiliate_rows }} |
+Paid: {{ summary.paid }}
+</div>
+<table>
+<thead><tr><th>Email</th><th>Referral Code</th><th>Registered</th><th>Affiliate Rows</th><th>Paid</th><th>Difference</th></tr></thead>
+<tbody>
+{% for row in rows %}
+{% set diff = (row.registered_count or 0) - (row.affiliate_rows or 0) %}
+<tr>
+<td>{{ row.email }}</td>
+<td>{{ row.referral_code }}</td>
+<td>{{ row.registered_count }}</td>
+<td>{{ row.affiliate_rows }}</td>
+<td>{{ row.paid_count }}</td>
+<td class="{{ 'warn' if diff else 'ok' }}">{{ diff }}{% if diff %} registered-only{% else %} aligned{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</body></html>
+""", rows=rows, summary=summary, error=error)
+
 # ================= ADMIN =================
 def current_admin_email():
     return (session.get("user") or "").strip().lower()
@@ -4148,7 +4354,7 @@ def webhook():
                 conn.close()
             except Exception as e:
                 log(f"telegram subscription error: {e}")
-                send(chat_id, "Could not load subscription status now.")
+                send(chat_id, "NEXORA STATUS\n\nSubscription status is temporarily unavailable. Please try again shortly or open your dashboard.")
             return "ok", 200
 
         if command in ["/stats", "/statistics"]:
@@ -4164,7 +4370,7 @@ def webhook():
                 conn.close()
             except Exception as e:
                 log(f"telegram stats error: {e}")
-                send(chat_id, "Could not load statistics now.")
+                send(chat_id, "NEXORA STATS\n\nAccount statistics are temporarily unavailable. Please try again shortly.")
             return "ok", 200
 
         if command == "/admin":
@@ -4337,7 +4543,7 @@ def webhook():
                         log(f"🎯 Free signals returned: {free_signals}")
 
                         if not free_signals:
-                            send(chat_id, "❌ لا توجد فرصة قوية حاليًا، من فضلك انتظر حتى يظهر دخول قوي.")
+                            send(chat_id, "NEXORA MARKET UPDATE\n\nNo qualified trade opportunity is available right now. Nexora is waiting for cleaner market structure instead of forcing a weak trade.")
                         else:
                             sent_count = 0
 
