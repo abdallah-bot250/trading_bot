@@ -5,26 +5,31 @@ from .runtime import send, format_signal, telegram_referral_link, ensure_user_ha
 
 def command_menu(is_admin=False):
     lines = [
-        "NEXORA COMMAND CENTER",
+        "━━━━━━━━━━━━━━━━━━",
+        "🤖 NEXORA COMMAND CENTER",
+        "━━━━━━━━━━━━━━━━━━",
         "",
-        "Available commands:",
-        "/start - Connect your account and receive eligible signals",
-        "/subscription - View plan and access status",
-        "/stats - View account and signal statistics",
-        "/affiliate - View referral link and commission balance",
-        "/help - Show this menu",
+        "📌 Account Commands",
+        "/start — Connect your account and check access",
+        "/subscription — View plan and access status",
+        "/stats — View account and signal statistics",
+        "/affiliate — View referrals and commission balance",
+        "/help — Show this menu",
     ]
     if is_admin:
         lines.extend([
             "",
-            "Admin commands:",
-            "/admin - Admin command menu",
-            "/admin_stats - Platform statistics",
-            "/broadcast message - Send to linked users",
-            "/broadcast_paid message - Send to paid users only",
+            "🛡 Admin Commands",
+            "/admin — Open the admin command menu",
+            "/admin_stats — View platform statistics",
+            "/broadcast message — Send to linked users",
+            "/broadcast_paid message — Send to paid users only",
         ])
+    lines.extend([
+        "",
+        "⚠️ Trading involves risk. Nexora signals support decision-making and do not guarantee profit.",
+    ])
     return "\n".join(lines)
-
 
 def admin_menu():
     return """NEXORA ADMIN CONSOLE
@@ -59,15 +64,21 @@ After registration, send /start again to complete account linking."""
 
 def linked_message(current_plan, expiry, is_admin=False):
     role = "Admin / Owner" if is_admin else "User"
-    return f"""NEXORA ACCOUNT LINKED
+    return f"""━━━━━━━━━━━━━━━━━━
+🤖 NEXORA AI TRADER
+━━━━━━━━━━━━━━━━━━
 
-Role: {role}
-Plan: {current_plan or 'trial'}
-Expiry: {expiry or 'not active'}
+✅ Account connected successfully
+
+👤 Role: {role}
+💎 Plan: {current_plan or 'trial'}
+📅 Expiry: {expiry or 'not active'}
 
 Use /subscription to review your plan.
-Use /stats to review account statistics."""
+Use /stats to review account statistics.
+Use /affiliate to review referrals and commission balance.
 
+⚠️ Trading involves risk. Nexora signals support decision-making and do not guarantee profit."""
 
 def subscription_message(user):
     if not user:
@@ -103,7 +114,9 @@ def user_statistics_message(stats):
 Signals used: {stats.get('trades', 0)}
 Tracked outcome: {stats.get('profit', 0)} USDT
 Affiliate balance: ${stats.get('affiliate_balance', 0)}
-Registered referrals: {stats.get('total_referrals', 0)}
+Registered referrals: {stats.get('registered_referrals', stats.get('total_referrals', 0))}
+Active referrals: {stats.get('active_referrals', 0)}
+Paid referrals: {stats.get('paid_referrals', 0)}
 Spot signals today: {stats.get('spot_today', 0)}
 Futures signals today: {stats.get('futures_today', 0)}
 Spot win rate: {stats.get('spot_win_rate', 0)}%

@@ -709,7 +709,8 @@ def _safe_referral_metrics(c, conn, referrer_chat_id, referral_code):
             """, (referral_code,))
             metrics["registered_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
     except Exception as e:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         log(f"REFERRAL_REGISTERED_METRIC_UNAVAILABLE error={e}")
     try:
         if referral_code:
@@ -721,7 +722,8 @@ def _safe_referral_metrics(c, conn, referrer_chat_id, referral_code):
             """, (referral_code,))
             metrics["active_registered_referrals"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
     except Exception as e:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         log(f"REFERRAL_ACTIVE_METRIC_UNAVAILABLE error={e}")
     try:
         if referrer_chat_id:
@@ -733,7 +735,8 @@ def _safe_referral_metrics(c, conn, referrer_chat_id, referral_code):
             """, (str(referrer_chat_id),))
             metrics["paid_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
     except Exception as e:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         log(f"REFERRAL_PAID_METRIC_UNAVAILABLE error={e}")
     try:
         if referrer_chat_id:
@@ -744,7 +747,8 @@ def _safe_referral_metrics(c, conn, referrer_chat_id, referral_code):
             """, (str(referrer_chat_id),))
             metrics["affiliate_referrals_count"] = int(_dict_value(c.fetchone(), "count", 0, 0) or 0)
     except Exception as e:
-        conn.rollback()
+        if conn is not None:
+            conn.rollback()
         log(f"REFERRAL_AFFILIATE_ROWS_METRIC_UNAVAILABLE error={e}")
     log(
         "REFERRAL_DASHBOARD_METRICS "
@@ -4220,12 +4224,17 @@ def is_telegram_admin_user(user):
     ) 
 
 
-def build_telegram_user_stats(c, user, chat_id):
+def build_telegram_user_stats(c, user, chat_id, conn=None):
+    referral_code = user.get("referral_code")
+    referral_metrics = _safe_referral_metrics(c, conn, chat_id, referral_code)
     stats = {
         "trades": int(user.get("trades") or 0),
         "profit": round(float(user.get("profit") or 0), 2),
         "affiliate_balance": round(float(user.get("affiliate_balance") or 0), 2),
-        "total_referrals": int(user.get("total_referrals") or 0),
+        "total_referrals": referral_metrics["registered_referrals_count"],
+        "registered_referrals": referral_metrics["registered_referrals_count"],
+        "active_referrals": referral_metrics["active_registered_referrals"],
+        "paid_referrals": referral_metrics["paid_referrals_count"],
         "spot_today": 0,
         "futures_today": 0,
         "spot_win_rate": 0,
@@ -4365,7 +4374,7 @@ def webhook():
                 if not tg_user:
                     send(chat_id, "لا يوجد حساب مربوط بهذا Telegram. استخدم /start أولاً.")
                 else:
-                    stats = build_telegram_user_stats(c, tg_user, chat_id)
+                    stats = build_telegram_user_stats(c, tg_user, chat_id, conn)
                     send(chat_id, user_statistics_message(stats))
                 conn.close()
             except Exception as e:
@@ -4686,26 +4695,41 @@ def webhook():
 
                 referral_code = user[0]
                 balance = float(user[1] or 0)
-                refs = int(user[2] or 0)
 
                 if not referral_code:
                     referral_code = ensure_user_has_referral_code(chat_id, conn)
 
+                metrics = _safe_referral_metrics(c, conn, chat_id, referral_code)
+                registered = metrics["registered_referrals_count"]
+                active = metrics["active_registered_referrals"]
+                paid = metrics["paid_referrals_count"]
                 aff_link = telegram_referral_link(referral_code)
 
-                send(chat_id, f"""💸 نظام الأفلييت
+                log(
+                    f"AFFILIATE_STATS_VIEW chat_id={chat_id} "
+                    f"registered={registered} active={active} paid={paid} balance={round(balance, 2)}"
+                )
 
-🔗 رابطك:
+                send(chat_id, f"""━━━━━━━━━━━━━━━━━━
+🤝 NEXORA AFFILIATE CENTER
+━━━━━━━━━━━━━━━━━━
+
+🔗 Your referral link:
 {aff_link}
 
-👥 عدد الإحالات: {refs}
-💰 رصيد العمولة: {round(balance, 2)}$
+📊 Referral Overview
+👥 Registered referrals: {registered}
+🟢 Active referrals: {active}
+💎 Paid referrals: {paid}
+💰 Commission balance: ${round(balance, 2)}
 
-📌 السحب من الداشبورد
-الحد الأدنى: 25$
-الحد الأقصى: 300$
-⏳ خلال 24 ساعة
-""")
+Commissions are credited only when an eligible referred user completes a qualifying payment.
+
+💳 Withdrawals are managed from your dashboard.
+Minimum withdrawal: $25
+Maximum withdrawal: $300
+
+⚠️ Referral registrations and paid commissions are tracked separately.""")
 
             except Exception as e:
                 log(f"/affiliate error: {e}")
