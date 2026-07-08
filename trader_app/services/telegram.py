@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from .runtime import send, format_signal, telegram_referral_link, ensure_user_has_referral_code, generate_referral_code
+from .runtime import send, format_signal, telegram_referral_link, ensure_user_has_referral_code, generate_referral_code, PLAN_LABELS, PLAN_PRICES, PLAN_DURATIONS_DAYS
 
 
 def command_menu(is_admin=False):
@@ -12,6 +12,7 @@ def command_menu(is_admin=False):
         "📌 Account Commands",
         "/start — Connect your account and check access",
         "/subscription — View plan and access status",
+        "/plans - Compare Free Earn and paid plan access",
         "/stats — View account and signal statistics",
         "/affiliate — View referrals and commission balance",
         "/help — Show this menu",
@@ -79,6 +80,60 @@ Use /stats to review account statistics.
 Use /affiliate to review referrals and commission balance.
 
 ⚠️ Trading involves risk. Nexora signals support decision-making and do not guarantee profit."""
+
+
+def plan_explainer_message():
+    lines = [
+        "━━━━━━━━━━━━━━━━━━",
+        "NEXORA PLAN GUIDE",
+        "━━━━━━━━━━━━━━━━━━",
+        "",
+        "FREE EARN",
+        "• Free registration.",
+        "• Initial direct free-signal allowance if configured.",
+        "• After that, qualified opportunities can be unlocked by watching a short rewarded video.",
+        "• No paid subscription is required for the Free Earn lane.",
+        "• Availability depends on real market conditions. No guaranteed daily signal count.",
+        "",
+        "PAID PLANS",
+        "Direct ad-free access according to the selected plan.",
+    ]
+    for plan_id in ("basic", "pro", "vip", "pro_2y"):
+        label = PLAN_LABELS.get(plan_id, plan_id.title())
+        price = PLAN_PRICES.get(plan_id)
+        days = PLAN_DURATIONS_DAYS.get(plan_id)
+        duration = "2 years" if days and days >= 700 else "monthly"
+        if plan_id == "basic":
+            who = "For users who want direct Telegram delivery without ads."
+            access = "Qualified opportunities with dashboard tracking."
+        elif plan_id == "pro":
+            who = "For active users who want stronger analysis access."
+            access = "Advanced eligible opportunities and premium insights when available."
+        elif plan_id == "vip":
+            who = "For users who want Elite access and eligible automation controls."
+            access = "Priority direct delivery plus Bybit-ready controls for eligible accounts."
+        else:
+            who = "For long-term users who want the highest available Nexora access."
+            access = "Highest direct ad-free access according to the real product configuration."
+        lines.extend([
+            "",
+            label.upper(),
+            f"Price: ${price}" if price is not None else "Price: shown on website",
+            f"Duration: {duration}",
+            f"For: {who}",
+            f"Access: {access}",
+            "Ads: No rewarded ads.",
+        ])
+    lines.extend([
+        "",
+        "COMPARISON",
+        "FREE EARN: watch rewarded videos to unlock eligible opportunities.",
+        "PAID PLANS: direct ad-free access according to the selected plan.",
+        "Highest plan: maximum available access according to the real product configuration.",
+        "",
+        "Trading involves risk. Signals support trading decisions and do not guarantee profits.",
+    ])
+    return "\n".join(lines)
 
 def subscription_message(user):
     if not user:

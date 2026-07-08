@@ -68,6 +68,11 @@ def reset_signal_scan_diagnostics():
         "rejected_fake_breakout": 0,
         "rejected_quality": 0,
         "rejected_entry": 0,
+        "watchlist": 0,
+        "qualified_b_plus": 0,
+        "qualified_a": 0,
+        "qualified_a_plus": 0,
+        "rejected_opportunity": 0,
         "final_signals": 0,
     })
 
@@ -111,6 +116,42 @@ def _large_cap_symbol(symbol):
     if base.endswith("USDT"):
         base = base[:-4]
     return base in ALLOWED_DYNAMIC_BASE_ASSETS
+
+
+def classify_opportunity_tier(signal):
+    try:
+        display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)), 0)
+        final_score = _safe_float(signal.get("final_score", display_conf), 0)
+        rr = _safe_float(signal.get("risk_reward", 0), 0)
+        checklist = _safe_float(signal.get("quality_checklist_score", final_score), final_score)
+        if display_conf >= 88 and final_score >= 92 and rr >= 1.8 and checklist >= 90:
+            return "A_PLUS"
+        if display_conf >= 80 and final_score >= 86 and rr >= 1.6:
+            return "A"
+        if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
+            return "B_PLUS"
+        if display_conf >= 64 and rr >= 1.3:
+            return "WATCHLIST"
+        return "REJECTED"
+    except Exception:
+        return "REJECTED"
+
+
+def mark_opportunity_tier(signal):
+    tier = classify_opportunity_tier(signal)
+    signal["quality_tier"] = tier
+    signal["opportunity_tier"] = tier
+    if tier == "A_PLUS":
+        _scan_diag_inc("qualified_a_plus")
+    elif tier == "A":
+        _scan_diag_inc("qualified_a")
+    elif tier == "B_PLUS":
+        _scan_diag_inc("qualified_b_plus")
+    elif tier == "WATCHLIST":
+        _scan_diag_inc("watchlist")
+    else:
+        _scan_diag_inc("rejected_opportunity")
+    return tier
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -1284,9 +1325,10 @@ def _mark_signal_built(signal):
         _scan_diag_inc("candidates_built")
         key = _signal_build_key(signal.get("pair"), signal.get("timeframe"))
         SIGNAL_BUILD_COOLDOWN_CACHE[key] = time.time()
+        tier = mark_opportunity_tier(signal)
         print(
             f"SIGNAL_BUILT direction={signal.get('direction')} "
-            f"symbol={signal.get('pair')} timeframe={signal.get('timeframe')}"
+            f"symbol={signal.get('pair')} timeframe={signal.get('timeframe')} tier={tier}"
         )
     except Exception:
         pass
@@ -4376,10 +4418,11 @@ def generate_free_signal(symbol, interval="5m"):
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     global LAST_USED_PAIRS
+    supply_cap = max(1, int(os.environ.get("MAX_CANDIDATES_PER_SCAN", "6") or 6))
     try:
-        limit = max(1, min(int(limit), 3))
+        limit = max(1, min(int(limit), supply_cap, 10))
     except Exception:
-        limit = 2
+        limit = min(2, supply_cap)
 
     candidates = []
 

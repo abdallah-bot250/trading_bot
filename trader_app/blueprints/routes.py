@@ -19,6 +19,7 @@ from trader_app.services.telegram import (
     broadcast_result_message,
     command_menu,
     linked_message,
+    plan_explainer_message,
     subscription_message,
     user_statistics_message,
     welcome_message,
@@ -2920,6 +2921,42 @@ def admin_users_page():
     return _admin_section("users")
 
 
+@admin_bp.route("/admin/signal-supply")
+def admin_signal_supply_page():
+    if not session.get("user") or not is_current_admin():
+        return "غير مصرح", 403
+    from market_analyzer import get_signal_scan_diagnostics
+    diagnostics = get_signal_scan_diagnostics()
+    rows = [
+        ("Market scans", diagnostics.get("scanned", 0)),
+        ("Qualified A+", diagnostics.get("qualified_a_plus", 0)),
+        ("Qualified A", diagnostics.get("qualified_a", 0)),
+        ("Qualified B+", diagnostics.get("qualified_b_plus", 0)),
+        ("Watchlist", diagnostics.get("watchlist", 0)),
+        ("Rejected low volatility", diagnostics.get("rejected_low_volatility", 0)),
+        ("Rejected MTF", diagnostics.get("rejected_mtf", 0)),
+        ("Rejected liquidity", diagnostics.get("rejected_liquidity", 0)),
+        ("Rejected fake breakout", diagnostics.get("rejected_fake_breakout", 0)),
+        ("Rejected quality", diagnostics.get("rejected_quality", 0)),
+        ("Rejected entry", diagnostics.get("rejected_entry", 0)),
+        ("Final signals", diagnostics.get("final_signals", 0)),
+    ]
+    dominant = sorted(
+        [(label, value) for label, value in rows if str(label).startswith("Rejected")],
+        key=lambda item: int(item[1] or 0),
+        reverse=True,
+    )
+    reason = dominant[0][0] if dominant and int(dominant[0][1] or 0) > 0 else "No dominant rejection reason recorded yet."
+    return render_template_string("""
+    <!doctype html><html><head><meta charset='utf-8'><title>Nexora Signal Supply</title>
+    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1100px;margin:40px auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(15,27,42,.94),rgba(7,14,23,.96));border:1px solid rgba(56,189,248,.18);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}span{color:#94a3b8}strong{display:block;font-size:28px;margin-top:8px}.reason{border-color:rgba(250,204,21,.35)}</style>
+    </head><body><main class='wrap'><h1>Nexora Signal Supply Diagnostics</h1><p>Admin-only readout for qualified opportunities, Free Earn supply, and rejection pressure.</p>
+    <section class='grid'>{% for label,value in rows %}<div class='card'><span>{{ label }}</span><strong>{{ value }}</strong></div>{% endfor %}</section>
+    <div class='card reason' style='margin-top:18px'><span>Why no signals?</span><strong style='font-size:20px'>{{ reason }}</strong></div>
+    <p><a style='color:#22d3ee' href='/admin'>Back to Admin</a></p></main></body></html>
+    """, rows=rows, reason=reason)
+
+
 @admin_bp.route("/admin/subscriptions")
 def admin_subscriptions_page():
     return _admin_section("subscriptions")
@@ -4384,12 +4421,21 @@ def webhook():
                 send(chat_id, command_menu(False))
             return "ok", 200
 
+        if command in ["/plans", "/pricing"]:
+            try:
+                send(chat_id, plan_explainer_message())
+            except Exception as e:
+                log(f"telegram plans error: {e}")
+                send(chat_id, "NEXORA PLANS\n\nPlan information is temporarily unavailable. Please open your dashboard or pricing page.")
+            return "ok", 200
+
         if command in ["/subscription", "/status", "/check_subscription"]:
             try:
                 conn = db()
                 c = conn.cursor()
                 tg_user = get_telegram_user(c, chat_id)
                 send(chat_id, subscription_message(tg_user))
+                send(chat_id, "Tip: send /plans to compare Free Earn and paid direct access.")
                 conn.close()
             except Exception as e:
                 log(f"telegram subscription error: {e}")

@@ -37,8 +37,9 @@ assert_contains(runtime, "NEXORA TRADE OPPORTUNITY", "runtime signal opportunity
 assert_contains(auto_sender, "not financial advice and does not guarantee profit", "risk disclaimer")
 assert_contains(runtime, "not financial advice and does not guarantee profit", "runtime risk disclaimer")
 assert_contains(auto_sender, "NEW NEXORA OPPORTUNITY", "locked signal header")
-assert_contains(auto_sender, "The trade details are protected", "locked signal protection")
-assert_contains(auto_sender, "Watch & Unlock Signal", "unlock button copy")
+assert_contains(auto_sender, "Unlock the full setup", "locked signal protection")
+assert_contains(auto_sender, "Watch Video & Unlock", "unlock button copy")
+assert_contains(auto_sender, "\"web_app\"", "telegram web app unlock button")
 assert_contains(auto_sender, "NEXORA TRADE RESULT", "trade result header")
 assert_contains(telegram, "NEXORA COMMAND CENTER", "professional telegram command layer")
 

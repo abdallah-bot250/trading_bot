@@ -58,10 +58,15 @@ ENTRY_CHASE_TOLERANCE_PERCENT = float(os.environ.get("ENTRY_CHASE_TOLERANCE_PERC
 MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("MAX_TP1_PROGRESS_PERCENT", "45"))
 SIGNAL_FRESHNESS_SECONDS = 180
 MAX_OPEN_TRADES_PER_USER = 2
-FREE_SIGNALS_LIMIT = FREE_SIGNALS_LIFETIME
+MAX_CANDIDATES_PER_SCAN = max(1, int(os.environ.get("MAX_CANDIDATES_PER_SCAN", "6") or 6))
+MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE = max(1, int(os.environ.get("MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE", str(MAX_CANDIDATES_PER_SCAN)) or MAX_CANDIDATES_PER_SCAN))
+MAX_DELIVERIES_PER_CYCLE = max(1, int(os.environ.get("MAX_DELIVERIES_PER_CYCLE", "3") or 3))
+
+# Backward-compatible alias only. This no longer follows FREE_SIGNALS_LIFETIME.
+FREE_SIGNALS_LIMIT = MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE
 
 # ===== QUALITY CONTROL =====
-MAX_SIGNALS_PER_CYCLE = 2
+MAX_SIGNALS_PER_CYCLE = MAX_DELIVERIES_PER_CYCLE
 ULTRA_MODE = True
 
 # ================= DUPLICATE SIGNAL CACHE =================
@@ -111,6 +116,61 @@ def signal_display_confidence(signal):
         return float(signal.get("display_confidence", signal.get("confidence", 0)) or 0)
     except Exception:
         return 0.0
+
+def qualified_opportunity_tier(signal):
+    try:
+        tier = str(signal.get("quality_tier") or signal.get("opportunity_tier") or "").upper()
+        if tier in {"A_PLUS", "A", "B_PLUS", "WATCHLIST", "REJECTED"}:
+            return tier
+        display_conf = signal_display_confidence(signal)
+        final_score = float(signal.get("final_score", display_conf) or 0)
+        rr = float(signal.get("risk_reward", 0) or 0)
+        checklist = float(signal.get("quality_checklist_score", final_score) or 0)
+        if display_conf >= 88 and final_score >= 92 and rr >= 1.8 and checklist >= 90:
+            return "A_PLUS"
+        if display_conf >= 80 and final_score >= 86 and rr >= 1.6:
+            return "A"
+        if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
+            return "B_PLUS"
+        if display_conf >= 64 and rr >= 1.3:
+            return "WATCHLIST"
+        return "REJECTED"
+    except Exception:
+        return "REJECTED"
+
+
+PLAN_BENEFITS = {
+    "trial": {
+        "delivery": "free_earn_or_initial_direct",
+        "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "ads": "after_free_lifetime_allowance",
+    },
+    "basic": {
+        "delivery": "direct_ad_free",
+        "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "notes": "Telegram delivery and dashboard tracking.",
+    },
+    "pro": {
+        "delivery": "direct_ad_free",
+        "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "notes": "Advanced analysis access and broader eligible setups.",
+    },
+    "vip": {
+        "delivery": "direct_ad_free_priority",
+        "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "notes": "Elite access with auto-trading controls for eligible accounts.",
+    },
+    "pro_2y": {
+        "delivery": "highest_direct_ad_free_access",
+        "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "notes": "Highest available access; never downgraded by old free-plan caps.",
+    },
+}
+
+
+def is_qualified_opportunity(signal):
+    return qualified_opportunity_tier(signal) in {"A_PLUS", "A", "B_PLUS"}
+
 
 
 def extract_actual_fill_price(order):
@@ -249,19 +309,21 @@ def send_unlock_prompt(chat_id, unlock_url):
 NEW NEXORA OPPORTUNITY
 ━━━━━━━━━━━━━━━━━━
 
-A new market opportunity has passed Nexora analysis and quality checks.
+A qualified market opportunity has passed Nexora's analysis and risk checks.
 
-The trade details are protected:
-- Entry
-- Stop Loss
-- Profit Targets
+Unlock the full setup:
+• Entry
+• Stop Loss
+• Profit Targets
 
-Watch the short sponsored video to unlock this opportunity. Your ad view helps support free access to Nexora signals.
+Watch a short sponsored video to unlock this opportunity for free.
 
-If market conditions change before unlock, an outdated trade will not be sent and your unlock-credit logic remains protected.""",
+If market conditions change before delivery, your earned unlock will be protected for the next eligible opportunity.
+
+Trading involves risk. Signals support decision-making and do not guarantee profits.""",
             "reply_markup": {
                 "inline_keyboard": [[
-                    {"text": "Watch & Unlock Signal", "url": unlock_url}
+                    {"text": "Watch Video & Unlock", "web_app": {"url": unlock_url}}
                 ]]
             }
         }
@@ -1320,58 +1382,19 @@ def is_paid_plan_active(plan, expiry, is_paid):
 # ================= PLAN FILTER =================
 def signal_allowed_for_plan(plan, signal):
     try:
-        confidence = signal_display_confidence(signal)
-        engine_confidence = float(signal.get("engine_confidence", confidence))
+        plan = str(plan or "trial").strip().lower()
         risk_score = float(signal.get("risk_score", 50))
-        score = abs(float(signal.get("score", 0)))
-        timeframe = signal.get("timeframe", "5m")
-        volume = signal.get("volume", "WEAK")
-        trend_power = signal.get("trend_power", "MIXED")
+        tier = qualified_opportunity_tier(signal)
 
+        # This is a final global risk gate, not a subscription feature gate.
         if risk_score >= 72:
             return False
 
-        if plan == "pro_2y":
-            return True
+        benefits = PLAN_BENEFITS.get(plan)
+        if not benefits:
+            return False
 
-        if plan == "trial":
-            return (
-                confidence >= 75
-                and confidence <= 82
-                and engine_confidence >= 70
-                and score >= 5
-                and timeframe in ["5m", "15m"]
-                and risk_score <= 64
-            )
-
-        if plan == "basic":
-            return (
-                confidence >= 74
-                and engine_confidence >= 70
-                and score >= 5
-                and volume == "STRONG"
-                and risk_score <= 66
-            )
-
-        if plan == "pro":
-            return (
-                confidence >= 78
-                and engine_confidence >= 74
-                and risk_score <= 60
-                and score >= 6
-                and volume == "STRONG"
-                and trend_power in ["STRONG_BULL", "STRONG_BEAR"]
-            )
-
-        if plan == "vip":
-            return (
-                confidence >= 80
-                and engine_confidence >= 76
-                and risk_score <= 58
-                and score >= 6
-            )
-
-        return False
+        return tier in benefits["eligible_tiers"]
     except:
         return False
 
@@ -1386,19 +1409,12 @@ def signal_plan_block_reason(plan, signal):
         volume = signal.get("volume", "WEAK")
         trend_power = signal.get("trend_power", "MIXED")
 
+        tier = qualified_opportunity_tier(signal)
         if risk_score >= 72:
             return f"global_risk_filter display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score}"
-        if plan == "trial":
-            return f"trial_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} timeframe={timeframe}"
-        if plan == "basic":
-            return f"basic_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} volume={volume}"
-        if plan == "pro":
-            return f"pro_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score} volume={volume} trend_power={trend_power}"
-        if plan == "vip":
-            return f"vip_limits display_conf={display_confidence} engine_conf={engine_confidence} risk_score={risk_score} score={score}"
-        if plan == "pro_2y":
-            return f"pro_2y_global_gate display_conf={display_confidence} risk_score={risk_score} score={score}"
-        return f"unknown_plan display_conf={display_confidence} risk_score={risk_score}"
+        if tier not in PLAN_BENEFITS.get(str(plan or "trial").lower(), {}).get("eligible_tiers", set()):
+            return f"tier_not_eligible tier={tier} display_conf={display_confidence} risk_score={risk_score} score={score}"
+        return f"eligible tier={tier} display_conf={display_confidence} risk_score={risk_score} score={score}"
     except Exception as e:
         return f"plan_filter_error error={e}"
 
@@ -1416,6 +1432,10 @@ def log_signal_scan_summary(final_count):
             f"rejected_fake_breakout={summary.get('rejected_fake_breakout', 0)} "
             f"rejected_quality={summary.get('rejected_quality', 0)} "
             f"rejected_entry={summary.get('rejected_entry', 0)} "
+            f"watchlist={summary.get('watchlist', 0)} "
+            f"qualified_b_plus={summary.get('qualified_b_plus', 0)} "
+            f"qualified_a={summary.get('qualified_a', 0)} "
+            f"qualified_a_plus={summary.get('qualified_a_plus', 0)} "
             f"final_signals={summary.get('final_signals', final_count)}"
         )
         if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
@@ -2244,7 +2264,7 @@ def get_monster_signals():
     """
     try:
         reset_signal_scan_diagnostics()
-        signals = get_top_free_signals(limit=FREE_SIGNALS_LIMIT) or []
+        signals = get_top_free_signals(limit=MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE) or []
 
         # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
         if not signals:
@@ -2286,6 +2306,11 @@ def get_monster_signals():
                 log(f"Logical invalid signal skipped: {signal_log_summary(s)}")
                 continue
 
+            if not is_qualified_opportunity(s):
+                tier = qualified_opportunity_tier(s)
+                log(f"SIGNAL_REJECTED stage=qualified_opportunity reason=tier_{tier} pair={s.get('pair')}")
+                continue
+
             if not signal_not_expired(s):
                 log(f"Expired signal skipped: {s.get('pair')}")
                 continue
@@ -2325,7 +2350,7 @@ def get_monster_signals():
         )
 
         log_signal_scan_summary(len(final_signals))
-        return final_signals
+        return final_signals[:MAX_DELIVERIES_PER_CYCLE]
     except Exception as e:
         log(f"get_monster_signals error: {e}")
         log_signal_scan_summary(0)
@@ -2507,7 +2532,8 @@ def run():
                             continue
 
                     # ===== PLAN FILTER =====
-                    plan_filter_required = not (plan == "trial" and FREE_EARN_MODE and not is_trial_allowed(trades))
+                    # Trial/Free Earn access is handled separately from paid-plan filters.
+                    plan_filter_required = plan != "trial"
                     if plan_filter_required and not signal_allowed_for_plan(plan, signal):
                         block_reason = signal_plan_block_reason(plan, signal)
                         log(
