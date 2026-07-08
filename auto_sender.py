@@ -1496,12 +1496,14 @@ def unpack_delivery_user(user):
     }
 
 
-def delivery_access_status(user_info):
+def delivery_access_status(user_info, qualified_opportunity_available=False):
     plan = user_info.get("plan")
     if not user_info.get("chat_id"):
         return False, "missing_chat_id"
     if plan == "trial":
         if not is_trial_allowed(user_info.get("trades")):
+            if FREE_EARN_MODE and qualified_opportunity_available:
+                return True, "free_earn_lane"
             return False, "trial_limit_reached"
         return True, "eligible"
     if not is_paid_plan_active(plan, user_info.get("expiry"), user_info.get("is_paid")):
@@ -2490,7 +2492,7 @@ def run():
                     for user in users:
                         try:
                             user_info = unpack_delivery_user(user)
-                            eligible, _ = delivery_access_status(user_info)
+                            eligible, _ = delivery_access_status(user_info, qualified_opportunity_available=True)
                             log_plan_delivery_diag(
                                 user_info.get("email"),
                                 user_info.get("plan"),

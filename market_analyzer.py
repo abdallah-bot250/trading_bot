@@ -1388,6 +1388,25 @@ def final_signal_score(signal, market_context, sr_targets, mtf_context, reversal
     }
 
 
+def candidate_pipeline_log(event, symbol, interval, stage=None, reason=None, signal=None, tier=None):
+    try:
+        parts = [str(event), f"symbol={symbol}", f"timeframe={interval}"]
+        if stage:
+            parts.append(f"stage={stage}")
+        if tier:
+            parts.append(f"tier={tier}")
+        if signal:
+            parts.append(f"direction={signal.get('direction')}")
+            parts.append(f"setup={signal.get('setup_type') or signal.get('strategy_name')}")
+            parts.append(f"conf={signal.get('display_confidence', signal.get('confidence'))}")
+            parts.append(f"rr={signal.get('risk_reward')}")
+        if reason:
+            parts.append(f"reason={str(reason)[:180]}")
+        print(" ".join(parts))
+    except Exception:
+        pass
+
+
 def skip_signal(symbol, interval, reason):
     try:
         _record_scan_rejection(reason)
@@ -4065,12 +4084,17 @@ def generate_signal(symbol, interval="5m"):
     if not news_ok:
         return None
 
+    candidate_pipeline_log("CANDIDATE_PIPELINE_ENTER", symbol, interval, stage="adaptive_build_paid")
     adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=True)
     if adaptive_signal:
+        candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="playbook_signal_built", signal=adaptive_signal)
         finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=True)
         if finalized_signal:
+            tier = mark_opportunity_tier(finalized_signal)
+            candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="finalized", signal=finalized_signal, tier=tier)
             _mark_signal_built(finalized_signal)
             return finalized_signal
+        candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="finalize", reason=finalize_reason, signal=adaptive_signal)
         no_trade_summary(symbol, interval, adaptive_regime, {
             "direction": adaptive_signal.get("direction"),
             "strategy": adaptive_signal.get("strategy_name"),
@@ -4079,6 +4103,7 @@ def generate_signal(symbol, interval="5m"):
         }, finalize_reason)
         return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
 
+    candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="adaptive_build", reason=adaptive_reason)
     no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
     return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
 
@@ -4320,12 +4345,17 @@ def generate_free_signal(symbol, interval="5m"):
         structure
     )
 
+    candidate_pipeline_log("CANDIDATE_PIPELINE_ENTER", symbol, interval, stage="adaptive_build_free")
     adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=False)
     if adaptive_signal:
+        candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="playbook_signal_built", signal=adaptive_signal)
         finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=False)
         if finalized_signal:
+            tier = mark_opportunity_tier(finalized_signal)
+            candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="finalized", signal=finalized_signal, tier=tier)
             _mark_signal_built(finalized_signal)
             return finalized_signal
+        candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="finalize", reason=finalize_reason, signal=adaptive_signal)
         no_trade_summary(symbol, interval, adaptive_regime, {
             "direction": adaptive_signal.get("direction"),
             "strategy": adaptive_signal.get("strategy_name"),
@@ -4334,6 +4364,7 @@ def generate_free_signal(symbol, interval="5m"):
         }, finalize_reason)
         return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
 
+    candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="adaptive_build", reason=adaptive_reason)
     no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
     return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
 
@@ -4570,6 +4601,7 @@ def get_top_free_signals(limit=2):
                     )
 
                     candidates.append(signal)
+                    candidate_pipeline_log("CANDIDATE_APPENDED", signal.get("pair"), signal.get("timeframe"), stage="candidate_pool", signal=signal, tier=signal.get("quality_tier") or signal.get("opportunity_tier"))
                     if SIGNAL_DEBUG_LOGS:
                         print(
                             f"CANDIDATE_SIGNAL symbol={signal['pair']} tf={signal['timeframe']} "
@@ -4637,6 +4669,8 @@ def get_top_free_signals(limit=2):
             if len(best) >= limit:
                 break
 
+    for selected in best:
+        candidate_pipeline_log("FINAL_SIGNAL_SELECTED", selected.get("pair"), selected.get("timeframe"), stage="final_selection", signal=selected, tier=selected.get("quality_tier") or selected.get("opportunity_tier"))
     print(f"Top signals selected: {_selected_signal_summary(best)}")
     return best
 
