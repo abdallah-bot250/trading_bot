@@ -128,6 +128,8 @@ def classify_opportunity_tier(signal):
             return "A_PLUS"
         if display_conf >= 80 and final_score >= 86 and rr >= 1.6:
             return "A"
+        if signal.get("b_plus_calibrated") is True:
+            return "B_PLUS"
         if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
             return "B_PLUS"
         if display_conf >= 64 and rr >= 1.3:
@@ -152,6 +154,102 @@ def mark_opportunity_tier(signal):
     else:
         _scan_diag_inc("rejected_opportunity")
     return tier
+
+
+B_PLUS_CONFIRMED_SETUPS = {
+    "range_edge_bounce",
+    "trend_pullback_continuation",
+    "trend_following_confirmed",
+    "accumulation_reclaim",
+    "distribution_rejection",
+    "break_and_retest",
+}
+B_PLUS_HARD_REJECT_MARKERS = (
+    "LOW_LIQUIDITY",
+    "LOW_VOLUME_CHOP",
+    "FAKE_BREAKOUT",
+    "HARD MTF CONFLICT",
+    "MTF CONFLICT",
+    "STALE",
+    "INVALID RR",
+    "INVALID ENTRY",
+    "MID-RANGE",
+    "MID_RANGE",
+    "NO RETEST",
+    "NO ENTRY",
+    "NOT ENOUGH ROOM",
+)
+
+
+def _b_plus_setup_name(signal):
+    return str(
+        signal.get("setup_type")
+        or signal.get("strategy_name")
+        or signal.get("adaptive_playbook")
+        or ""
+    ).strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def b_plus_calibration_eligible(signal):
+    try:
+        setup = _b_plus_setup_name(signal)
+        confidence = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)), 0)
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        risk_score = _safe_float(signal.get("risk_score"), 50)
+        lifecycle = str(signal.get("setup_lifecycle") or "").upper()
+        context = " ".join([
+            str(signal.get("market_regime") or ""),
+            str(signal.get("liquidity_context") or ""),
+            str(signal.get("liquidity_reason") or ""),
+            str(signal.get("entry_location_reason") or ""),
+            str(signal.get("smart_money_reason") or ""),
+            str(signal.get("signal_quality_reason") or ""),
+            str(signal.get("final_score_reason") or ""),
+            str(signal.get("self_review") or ""),
+        ]).upper()
+
+        if lifecycle != "CONFIRMED":
+            return False, "setup_not_confirmed"
+        if setup not in B_PLUS_CONFIRMED_SETUPS:
+            return False, f"setup_not_allowed:{setup or 'unknown'}"
+        if not (62 <= confidence <= 69):
+            return False, f"confidence_outside_b_plus_band:{confidence}"
+        if rr < 1.5:
+            return False, f"bad_rr:{rr}"
+        if risk_score >= 78:
+            return False, f"risk_too_high:{risk_score}"
+        if any(marker in context for marker in B_PLUS_HARD_REJECT_MARKERS):
+            return False, "hard_reject_marker_present"
+        if str(signal.get("structure") or "").upper() == "MID_RANGE":
+            return False, "mid_range_structure"
+        if not signal.get("entry") or not signal.get("tp") or not signal.get("sl"):
+            return False, "missing_trade_levels"
+        return True, "confirmed_setup_safe_rr"
+    except Exception as e:
+        return False, f"calibration_error:{e}"
+
+
+def apply_b_plus_calibration(signal):
+    ok, reason = b_plus_calibration_eligible(signal)
+    symbol = signal.get("pair") or signal.get("symbol")
+    setup = _b_plus_setup_name(signal)
+    confidence = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)), 0)
+    rr = _safe_float(signal.get("risk_reward"), 0)
+    if not ok:
+        if 62 <= confidence <= 69:
+            print(f"B_PLUS_CALIBRATION_REJECTED symbol={symbol} reason={reason}")
+        return False, reason
+
+    signal["quality_tier"] = "B_PLUS"
+    signal["opportunity_tier"] = "B_PLUS"
+    signal["b_plus_calibrated"] = True
+    signal["confidence_cap_reason"] = "b_plus_confirmed_setup_cap"
+    signal["risk_warning"] = "B+ opportunity: confirmed setup with acceptable RR, but lower confidence. Manage risk carefully."
+    if _safe_float(signal.get("risk_score"), 50) >= 70:
+        signal["auto_trade_allowed"] = False
+        signal["auto_trade_block_reason"] = "b_plus_risk_score_too_high"
+    print(f"B_PLUS_CALIBRATION_APPLIED symbol={symbol} setup={setup} confidence={confidence} rr={rr}")
+    return True, "b_plus_calibration_applied"
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -2574,7 +2672,7 @@ def expert_quality_checklist(signal, regime_info, expert_context):
     regime = str(signal.get("market_regime") or regime_info.get("regime") or "")
 
     add("Trend", regime in ["STRONG_BULL", "WEAK_BULL", "STRONG_BEAR", "WEAK_BEAR", "EXPANSION", "ACCUMULATION", "DISTRIBUTION", "BREAKOUT", "REVERSAL", "RANGE"], regime)
-    add("Momentum", display_conf >= 70, f"display confidence {display_conf}")
+    add("Momentum", display_conf >= 70 or signal.get("b_plus_calibrated") is True, f"display confidence {display_conf}")
     add("Volume", volume_score >= 50, f"volume score {volume_score}")
     add("Liquidity", regime not in ["LOW_LIQUIDITY", "LOW_VOLUME_CHOP"], regime)
     add("Volatility", volatility.get("ok") is True, volatility.get("reason"))
@@ -2606,7 +2704,7 @@ def expert_self_review(signal, checklist):
             return False, "Would I risk my own money? No - risk score too high"
         if _safe_float(signal.get("risk_reward"), 0) < 1.5:
             return False, "Would I risk my own money? No - RR below minimum"
-        if _safe_float(signal.get("display_confidence", signal.get("confidence")), 0) < 70:
+        if _safe_float(signal.get("display_confidence", signal.get("confidence")), 0) < 70 and signal.get("b_plus_calibrated") is not True:
             return False, "Would I risk my own money? No - confidence too low"
         return True, "Would I risk my own money? Yes - checklist passed"
     except Exception as e:
@@ -3655,8 +3753,19 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 
         confidence = _adaptive_score(regime_info, direction, strategy_name, levels, symbol, interval, reasons)
         min_conf = 75 if paid else 70
+        b_plus_pending = False
         if confidence < min_conf:
-            return None, f"confidence {confidence} below {min_conf}", regime_info
+            pre_signal_ok = (
+                62 <= confidence <= 69
+                and playbook.get("strategy_name") in B_PLUS_CONFIRMED_SETUPS
+                and levels.get("risk_reward", 0) >= playbook.get("rr_min", 1.5)
+                and smart_entry.get("ok") is True
+                and expert_mtf.get("state") == "CONFIRMED"
+            )
+            if not pre_signal_ok:
+                print(f"B_PLUS_CALIBRATION_REJECTED symbol={symbol} reason=confidence {confidence} below {min_conf}")
+                return None, f"confidence {confidence} below {min_conf}", regime_info
+            b_plus_pending = True
 
         target_basis = "Adaptive Support/Resistance"
         reason_text = "; ".join([str(r) for r in reasons if r])
@@ -3706,6 +3815,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "breakeven_trigger_r": 0.6,
             "adaptive_playbook": playbook.get("playbook"),
             "setup_lifecycle": "CONFIRMED",
+            "b_plus_calibration_pending": b_plus_pending,
             "liquidity_context": liquidity_info.get("liquidity_context"),
             "liquidity_score": liquidity_info.get("liquidity_score"),
             "liquidity_reason": liquidity_info.get("liquidity_reason"),
@@ -3791,7 +3901,9 @@ def finalize_adaptive_signal(signal, df, paid=True):
         if not quality_ok:
             return None, quality_reason
         if _safe_float(signal.get("display_confidence"), 0) < 70:
-            return None, f"display confidence {signal.get('display_confidence')} below 70"
+            calibrated, calibration_reason = apply_b_plus_calibration(signal)
+            if not calibrated:
+                return None, f"display confidence {signal.get('display_confidence')} below 70"
         expert_context = {
             "mtf": signal.get("expert_mtf") or {},
             "volatility": signal.get("expert_volatility") or {},
@@ -4146,7 +4258,9 @@ def generate_signal(symbol, interval="5m"):
     if not quality_ok:
         return skip_signal(symbol, interval, quality_reason)
     if _safe_float(signal.get("display_confidence"), 0) < 70:
-        return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
+        calibrated, calibration_reason = apply_b_plus_calibration(signal)
+        if not calibrated:
+            return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 
@@ -4398,7 +4512,9 @@ def generate_free_signal(symbol, interval="5m"):
     if not quality_ok:
         return skip_signal(symbol, interval, quality_reason)
     if _safe_float(signal.get("display_confidence"), 0) < 70:
-        return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
+        calibrated, calibration_reason = apply_b_plus_calibration(signal)
+        if not calibrated:
+            return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
 

@@ -1246,7 +1246,10 @@ def valid_signal(signal):
             and signal.get("entry") is not None
             and signal.get("tp") is not None
             and signal.get("sl") is not None
-            and float(signal.get("confidence", 0)) >= MIN_CONFIDENCE
+            and (
+                float(signal.get("confidence", 0)) >= MIN_CONFIDENCE
+                or str(signal.get("quality_tier") or signal.get("opportunity_tier") or "").upper() == "B_PLUS"
+            )
         )
     except:
         return False
@@ -1436,6 +1439,8 @@ def log_signal_scan_summary(final_count):
             f"qualified_b_plus={summary.get('qualified_b_plus', 0)} "
             f"qualified_a={summary.get('qualified_a', 0)} "
             f"qualified_a_plus={summary.get('qualified_a_plus', 0)} "
+            f"free_earn_locks_created={summary.get('free_earn_locks_created', 0)} "
+            f"paid_deliveries={summary.get('paid_deliveries', 0)} "
             f"final_signals={summary.get('final_signals', final_count)}"
         )
         if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
@@ -2330,7 +2335,7 @@ def get_monster_signals():
             # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
-                    if signal_display_confidence(s) < 75:
+                    if signal_display_confidence(s) < 75 and qualified_opportunity_tier(s) != "B_PLUS":
                         log(f"Ultra mode rejected: {s.get('pair')} display_conf={signal_display_confidence(s)}")
                         continue
                 except:
@@ -2480,7 +2485,7 @@ def run():
                 log(f"Processing signal: {signal_log_summary(signal)}")
                 signal_sent_users = 0
                 display_confidence = signal_display_confidence(signal)
-                if display_confidence < 70:
+                if display_confidence < 70 and qualified_opportunity_tier(signal) != "B_PLUS":
                     log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
                     for user in users:
                         try:
@@ -2573,6 +2578,11 @@ def run():
                     # ===== FREE EARN / SEND SIGNAL =====
                     free_earn_state = maybe_handle_free_earn_delivery(chat_id, plan, trades, signal)
                     if free_earn_state == "locked_prompt_sent":
+                        try:
+                            from market_analyzer import _scan_diag_inc
+                            _scan_diag_inc("free_earn_locks_created")
+                        except Exception:
+                            pass
                         log_plan_delivery_diag(email, plan, chat_id, False, "free_earn_locked")
                         continue
                     if free_earn_state in {"lock_create_failed", "lock_no_base_url", "lock_prompt_failed"}:
@@ -2589,6 +2599,12 @@ def run():
                         log_plan_delivery_diag(email, plan, chat_id, True, "sent")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")
                         record_sent_signal(chat_id, plan, signal)
+                        if plan != "trial":
+                            try:
+                                from market_analyzer import _scan_diag_inc
+                                _scan_diag_inc("paid_deliveries")
+                            except Exception:
+                                pass
 
                         if plan == "trial":
                             increment_trade(chat_id)
