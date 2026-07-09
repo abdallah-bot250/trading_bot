@@ -78,3 +78,8 @@ After installation, verify:
 - Admin keeps the manual Pro 2Y constraint repair button visible for one-time post-deploy use if needed.
 - Before paid ads: test register, login, Telegram linking, payment, manual payment, proof page, bot check, and admin health.
 - No guaranteed profit copy should be used in ads, landing pages, or sales messages.
+
+
+## Sale readiness note
+
+Use `BUYER_HANDOVER.md`, `ENVIRONMENT_VARIABLES.md`, and `BUYER_VERIFICATION_CHECKLIST.md` for final buyer transfer. Rotate all secrets before production ownership changes.

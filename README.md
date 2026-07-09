@@ -518,3 +518,13 @@ No database schema, migrations, payment flow, Telegram token, route names, or au
 - Admin keeps the manual Pro 2Y constraint repair button visible for one-time post-deploy use if needed.
 - Before paid ads: test register, login, Telegram linking, payment, manual payment, proof page, bot check, and admin health.
 - No guaranteed profit copy should be used in ads, landing pages, or sales messages.
+
+## Sale Readiness Lockdown
+
+- Dashboard performance numbers are sourced from real `signal_log` / `trades_log` records.
+- If verified outcomes are not available, Nexora displays `N/A` or `Not enough data yet` instead of synthetic ROI, portfolio, or win-rate claims.
+- Free Earn V2 is available for trial users after the lifetime free-signal allowance is used.
+- AdsGram reward callbacks use `/adsgram/reward?user_id=[userId]` and require server-side token/user mapping before any signal unlock.
+- B+ qualified opportunities remain gated by hard safety checks and are diagnosed separately from A/A+ opportunities.
+- Pipeline diagnostics record candidate transitions without weakening market safety filters.
+- No guaranteed profit copy should be used in ads, landing pages, buyer materials, or Telegram messages.

@@ -1,58 +1,40 @@
 # Nexora AI Trader - Sale README
 
-Suggested selling price: 8000 USD.
+Nexora AI Trader is a production-oriented Flask + Telegram crypto signal SaaS package with subscription access, referral tracking, rewarded-ad unlocks for free users, and sale-ready buyer documentation.
 
-## Features
-- Premium landing page, pricing, dashboard, admin panel, and bot verification page.
-- Telegram onboarding, subscription status, stats, affiliate links, and admin broadcasts.
-- Binance, Binance US, and KuCoin market data fallback.
-- Signal tracking with TP/SL outcome monitoring.
-- NOWPayments automatic payment and manual payment desk.
-- Affiliate commissions and withdrawal requests.
+## What Is Included
 
-## Tech Stack
-Python, Flask, Gunicorn, PostgreSQL, SQLAlchemy, Alembic, Telegram Bot API, NOWPayments, ccxt, pandas, NumPy, scikit-learn.
+- Flask website with landing page, login/register, dashboard, admin panel, payments, proof, bot check, and product feature pages.
+- Telegram bot onboarding, account linking, referral messaging, subscription status, admin broadcasts, and signal delivery.
+- Adaptive signal pipeline with diagnostics, B+ qualified opportunity calibration, and strict no-random-trade safeguards.
+- Free Earn V2: free users receive the configured lifetime free signals, then unlock eligible premium signals through AdsGram rewarded ads.
+- NOWPayments automatic invoices plus manual payment support.
+- Referral / affiliate tracking with website-first referral links.
+- Real dashboard metrics from `signal_log` and `trades_log`; insufficient history displays honest empty states instead of fake ROI or win-rate numbers.
 
-## Demo Checklist
-- Open `https://nexoratrader.net/health`.
-- Verify `/bot-check`.
-- Register and login with a test account.
-- Link Telegram with `/start`.
-- Review dashboard, payment pages, invoice history, and admin panel.
-- Confirm worker logs show signal activity.
+## Not Included
 
-## Known Limitations
-This is not a profit guarantee. Auto trading requires user API keys and careful testing. Manual payments require admin approval.
+- No guarantee of profit.
+- No financial advice.
+- No buyer-owned secrets, API keys, Telegram token, payment keys, or database credentials.
+- No guaranteed ad revenue. AdsGram must be configured and approved by the buyer.
 
-## Buyer-Facing Operational Features
+## Buyer Verification Checklist
 
-- Subscription visibility: plan status, expiry, and remaining days are shown to users.
-- Admin intelligence: active users, free/premium split, expiring/expired subscriptions, revenue, signals, and service status.
-- Referral visibility: referral link, referral code, copy action, total referrals, commission total, balance, and withdrawals.
+- Open `/health`.
+- Register and login with a test user.
+- Link Telegram through `/bot-check` or dashboard Connect Telegram flow.
+- Confirm `/webhook` returns 200/204 and Telegram receives `/start`.
+- Confirm Free Earn mode creates a locked signal only after the free lifetime allowance is used.
+- Confirm AdsGram reward URL is configured as `/adsgram/reward?user_id=[userId]`.
+- Confirm paid users receive eligible final signals directly.
+- Confirm dashboard metrics show N/A until real tracked outcomes exist.
+- Confirm `/admin/sale-readiness` is accessible to admin only.
 
-## Phase 2 Buyer Notes
+## Sale Notes
 
-- Includes subscription lifecycle visibility, referral QR/code dashboard, richer admin health cards, and read-only system diagnostics.
-- These additions are backward compatible and do not alter authentication, Telegram linking, payments, trading, or AI logic.
+Pricing is intentionally not hardcoded in this document. The seller and buyer should agree on price, included accounts, handover schedule, and post-sale support separately.
 
-## Final Launch Checklist
+## Risk Disclaimer
 
-- [ ] Domain connected
-- [ ] Telegram webhook returns 200 OK
-- [ ] Admin clicked `Repair Pro 2Y Plan Constraint` once after deploy
-- [ ] Free trial tested: only 2 free signals total
-- [ ] Paid plan tested: no free signal cap
-- [ ] Admin dashboard tested
-- [ ] Signal message tested with Support, Resistance, Risk/Reward, and Target Basis
-- [ ] Trade close message tested with Pair, Direction, Entry, Exit, Close Reason, PNL, PNL %, and Duration
-- [ ] Referral website link tested: `/r/<referral_code>` and `/ref/<referral_code>`
-
-## Premium Marketing Lockdown Checklist
-
-- Landing page has a clear paid-ads hero, free-trial CTA, proof CTA, and honest risk disclaimer.
-- Pricing displays Free Trial, Basic, Pro, Elite, and Pro 2 Years without renaming production plan IDs.
-- Referral traffic stays on the website first, with Telegram shown as the official secondary step.
-- Dashboard shows plan, subscription status, Telegram connection, and free signal usage using existing data only.
-- Admin keeps the manual Pro 2Y constraint repair button visible for one-time post-deploy use if needed.
-- Before paid ads: test register, login, Telegram linking, payment, manual payment, proof page, bot check, and admin health.
-- No guaranteed profit copy should be used in ads, landing pages, or sales messages.
+Crypto trading is risky. Signals are decision-support alerts, not guaranteed outcomes. Past results do not guarantee future performance.

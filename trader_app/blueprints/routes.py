@@ -1579,18 +1579,18 @@ def dashboard():
         type_stats = {
             "spot_today": 0,
             "futures_today": 0,
-            "spot_win_rate": 0,
-            "futures_win_rate": 0,
-            "spot_profit": 0,
-            "futures_profit": 0,
+            "spot_win_rate": None,
+            "futures_win_rate": None,
+            "spot_profit": None,
+            "futures_profit": None,
         }
         signal_performance = {
             "total_signals": 0,
             "active_signals": 0,
             "closed_signals": 0,
             "wins": 0,
-            "win_rate": 0,
-            "today_outcome": 0,
+            "win_rate": None,
+            "today_outcome": None,
             "avg_rr": None,
             "best_strategy": "Not enough data yet",
             "best_timeframe": "Not enough data yet",
@@ -1601,55 +1601,89 @@ def dashboard():
             "latest_reason": "Not enough data yet",
             "latest_regime": "Not enough data yet",
             "latest_strategy": "Not enough data yet",
+            "latest_confidence": None,
+            "has_closed_outcomes": False,
         }
         recent_signals = []
         performance_chart = {"labels": [], "values": []}
+        signal_columns = set()
         if chat_id:
             try:
-                c.execute("""
+                c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
+                signal_columns = {
+                    (row.get("column_name") if hasattr(row, "get") else row[0])
+                    for row in (c.fetchall() or [])
+                }
+            except Exception as column_error:
+                conn.rollback()
+                log(f"dashboard signal_log column detection unavailable: {column_error}")
+
+            pnl_expr = "COALESCE(pnl_percent, 0)" if "pnl_percent" in signal_columns else "0"
+            confidence_expr = "NULL AS confidence"
+            if "display_confidence" in signal_columns:
+                confidence_expr = "display_confidence AS confidence"
+            elif "final_score" in signal_columns:
+                confidence_expr = "final_score AS confidence"
+            elif "confidence" in signal_columns:
+                confidence_expr = "confidence AS confidence"
+            rr_expr = "risk_reward" if "risk_reward" in signal_columns else "NULL"
+            strategy_expr = "strategy_name" if "strategy_name" in signal_columns else "NULL"
+            timeframe_expr = "timeframe" if "timeframe" in signal_columns else "NULL"
+            status_closed = "(status = 'CLOSED' OR outcome IS NOT NULL)"
+            status_open = "(status IN ('SENT', 'OPEN'))"
+
+            try:
+                c.execute(f"""
                     SELECT
-                        LOWER(COALESCE(trade_type, 'futures')) AS trade_type,
+                        LOWER(COALESCE(signal_type, 'futures')) AS trade_type,
                         COUNT(*) FILTER (
-                            WHERE created_at >= date_trunc('day', NOW())
+                            WHERE sent_at >= date_trunc('day', NOW())
                         ) AS signals_today,
                         COUNT(*) FILTER (
-                            WHERE status = 'CLOSED'
+                            WHERE {status_closed}
                         ) AS closed_count,
                         COUNT(*) FILTER (
-                            WHERE status = 'CLOSED' AND COALESCE(pnl, 0) > 0
+                            WHERE {status_closed}
+                              AND (COALESCE(outcome, '') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR {pnl_expr} > 0)
                         ) AS wins,
-                        COALESCE(SUM(COALESCE(pnl, 0)), 0) AS profit
-                    FROM trades_log
+                        COALESCE(SUM(CASE WHEN {status_closed} THEN {pnl_expr} ELSE 0 END), 0) AS profit
+                    FROM signal_log
                     WHERE chat_id = %s
-                    GROUP BY LOWER(COALESCE(trade_type, 'futures'))
+                    GROUP BY LOWER(COALESCE(signal_type, 'futures'))
                 """, (chat_id,))
                 for row in c.fetchall():
                     type_name = str(row["trade_type"] or "futures").lower()
                     closed_count = int(row["closed_count"] or 0)
                     wins = int(row["wins"] or 0)
-                    win_rate_value = round((wins / closed_count) * 100, 2) if closed_count else 0
+                    win_rate_value = round((wins / closed_count) * 100, 2) if closed_count else None
+                    profit_value = round(float(row["profit"] or 0), 2) if closed_count else None
                     if type_name == "spot":
                         type_stats["spot_today"] = int(row["signals_today"] or 0)
                         type_stats["spot_win_rate"] = win_rate_value
-                        type_stats["spot_profit"] = round(float(row["profit"] or 0), 2)
+                        type_stats["spot_profit"] = profit_value
                     elif type_name == "futures":
                         type_stats["futures_today"] = int(row["signals_today"] or 0)
                         type_stats["futures_win_rate"] = win_rate_value
-                        type_stats["futures_profit"] = round(float(row["profit"] or 0), 2)
+                        type_stats["futures_profit"] = profit_value
             except Exception as stats_error:
                 conn.rollback()
-                log(f"spot_futures stats unavailable: {stats_error}")
+                log(f"spot_futures real signal stats unavailable: {stats_error}")
 
             try:
-                c.execute("""
+                c.execute(f"""
                     SELECT
                         COUNT(*) AS total_signals,
-                        COUNT(*) FILTER (WHERE status = 'OPEN') AS active_signals,
-                        COUNT(*) FILTER (WHERE status = 'CLOSED') AS closed_signals,
-                        COUNT(*) FILTER (WHERE status = 'CLOSED' AND COALESCE(pnl, 0) > 0) AS wins,
-                        COALESCE(SUM(CASE WHEN created_at >= date_trunc('day', NOW()) THEN COALESCE(pnl, 0) ELSE 0 END), 0) AS today_outcome,
-                        MAX(created_at) AS last_scan
-                    FROM trades_log
+                        COUNT(*) FILTER (WHERE {status_open}) AS active_signals,
+                        COUNT(*) FILTER (WHERE {status_closed}) AS closed_signals,
+                        COUNT(*) FILTER (
+                            WHERE {status_closed}
+                              AND (COALESCE(outcome, '') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR {pnl_expr} > 0)
+                        ) AS wins,
+                        COALESCE(SUM(CASE WHEN sent_at >= date_trunc('day', NOW()) AND {status_closed} THEN {pnl_expr} ELSE 0 END), 0) AS today_outcome,
+                        MAX(sent_at) AS last_scan,
+                        AVG({rr_expr}) AS avg_rr,
+                        AVG(CASE WHEN {confidence_expr.split(' AS ')[0]} IS NULL THEN NULL ELSE {confidence_expr.split(' AS ')[0]} END) AS avg_confidence
+                    FROM signal_log
                     WHERE chat_id = %s
                 """, (chat_id,))
                 perf = c.fetchone() or {}
@@ -1657,57 +1691,56 @@ def dashboard():
                 signal_performance["active_signals"] = int(perf.get("active_signals") or 0)
                 signal_performance["closed_signals"] = int(perf.get("closed_signals") or 0)
                 signal_performance["wins"] = int(perf.get("wins") or 0)
-                signal_performance["win_rate"] = round((signal_performance["wins"] / signal_performance["closed_signals"]) * 100, 2) if signal_performance["closed_signals"] else 0
-                signal_performance["today_outcome"] = round(float(perf.get("today_outcome") or 0), 2)
+                signal_performance["has_closed_outcomes"] = bool(signal_performance["closed_signals"])
+                signal_performance["win_rate"] = round((signal_performance["wins"] / signal_performance["closed_signals"]) * 100, 2) if signal_performance["closed_signals"] else None
+                signal_performance["today_outcome"] = round(float(perf.get("today_outcome") or 0), 2) if signal_performance["closed_signals"] else None
                 signal_performance["last_scan"] = perf.get("last_scan") or "No scans yet"
                 signal_performance["market_status"] = "Live monitoring" if signal_performance["total_signals"] else "Waiting for qualified setup"
+                signal_performance["avg_rr"] = round(float(perf.get("avg_rr")), 2) if perf.get("avg_rr") is not None else None
+                signal_performance["latest_confidence"] = round(float(perf.get("avg_confidence")), 2) if perf.get("avg_confidence") is not None else None
             except Exception as perf_error:
                 conn.rollback()
-                log(f"dashboard performance metrics unavailable: {perf_error}")
+                log(f"dashboard real performance metrics unavailable: {perf_error}")
 
             try:
-                confidence_expr = "NULL AS confidence"
-                try:
-                    c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("trades_log",))
-                    trade_columns = {
-                        (row.get("column_name") if hasattr(row, "get") else row[0])
-                        for row in (c.fetchall() or [])
-                    }
-                    if "display_confidence" in trade_columns:
-                        confidence_expr = "display_confidence AS confidence"
-                    elif "final_score" in trade_columns:
-                        confidence_expr = "final_score AS confidence"
-                    elif "confidence" in trade_columns:
-                        confidence_expr = "confidence"
-                except Exception as column_error:
-                    conn.rollback()
-                    log(f"dashboard signal confidence column detection unavailable: {column_error}")
-                c.execute("""
-                    SELECT pair, direction, entry, tp, sl, {confidence_expr}, status, created_at, trade_type, pnl
-                    FROM trades_log
+                c.execute(f"""
+                    SELECT pair, direction, entry, tp, sl, {confidence_expr}, status, sent_at AS created_at,
+                           signal_type AS trade_type, {pnl_expr} AS pnl, outcome,
+                           {strategy_expr} AS strategy_name, {timeframe_expr} AS timeframe, {rr_expr} AS risk_reward
+                    FROM signal_log
                     WHERE chat_id = %s
-                    ORDER BY created_at DESC
+                    ORDER BY sent_at DESC
                     LIMIT 8
-                """.format(confidence_expr=confidence_expr), (chat_id,))
+                """, (chat_id,))
                 recent_signals = c.fetchall()
                 if recent_signals:
                     latest = recent_signals[0]
                     signal_performance["best_pair"] = latest.get("pair") or "Not enough data yet"
-                    signal_performance["latest_reason"] = f"{latest.get('direction') or 'Signal'} setup with tracked confidence {latest.get('confidence') or 'N/A'}%."
+                    signal_performance["latest_confidence"] = latest.get("confidence") if latest.get("confidence") is not None else signal_performance["latest_confidence"]
+                    conf_text = latest.get("confidence") if latest.get("confidence") is not None else "N/A"
+                    signal_performance["latest_reason"] = f"{latest.get('direction') or 'Signal'} setup with verified delivery confidence {conf_text}%."
+                    if latest.get("strategy_name"):
+                        signal_performance["latest_strategy"] = latest.get("strategy_name")
+                    if latest.get("timeframe"):
+                        signal_performance["best_timeframe"] = latest.get("timeframe")
             except Exception as recent_error:
                 conn.rollback()
-                log(f"dashboard recent signals unavailable: {recent_error}")
+                log(f"dashboard recent real signals unavailable: {recent_error}")
 
             try:
-                c.execute("""
+                c.execute(f"""
                     SELECT COALESCE(pair, 'Unknown') AS pair,
                            COUNT(*) AS closed_count,
-                           COUNT(*) FILTER (WHERE COALESCE(pnl, 0) > 0) AS wins
-                    FROM trades_log
-                    WHERE chat_id = %s AND status = 'CLOSED'
+                           COUNT(*) FILTER (
+                               WHERE COALESCE(outcome, '') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR {pnl_expr} > 0
+                           ) AS wins
+                    FROM signal_log
+                    WHERE chat_id = %s AND {status_closed}
                     GROUP BY COALESCE(pair, 'Unknown')
                     HAVING COUNT(*) > 0
-                    ORDER BY (COUNT(*) FILTER (WHERE COALESCE(pnl, 0) > 0))::float / COUNT(*) DESC, COUNT(*) DESC
+                    ORDER BY (COUNT(*) FILTER (
+                        WHERE COALESCE(outcome, '') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR {pnl_expr} > 0
+                    ))::float / COUNT(*) DESC, COUNT(*) DESC
                     LIMIT 1
                 """, (chat_id,))
                 best_pair_row = c.fetchone()
@@ -1715,16 +1748,16 @@ def dashboard():
                     signal_performance["best_pair"] = best_pair_row.get("pair") or signal_performance["best_pair"]
             except Exception as best_pair_error:
                 conn.rollback()
-                log(f"dashboard best pair unavailable: {best_pair_error}")
+                log(f"dashboard best verified pair unavailable: {best_pair_error}")
 
             try:
-                c.execute("""
-                    SELECT to_char(created_at::date, 'MM-DD') AS label,
-                           COALESCE(SUM(COALESCE(pnl, 0)), 0) AS pnl
-                    FROM trades_log
+                c.execute(f"""
+                    SELECT to_char(sent_at::date, 'MM-DD') AS label,
+                           COALESCE(SUM(CASE WHEN {status_closed} THEN {pnl_expr} ELSE 0 END), 0) AS pnl
+                    FROM signal_log
                     WHERE chat_id = %s
-                    GROUP BY created_at::date
-                    ORDER BY created_at::date DESC
+                    GROUP BY sent_at::date
+                    ORDER BY sent_at::date DESC
                     LIMIT 7
                 """, (chat_id,))
                 chart_rows = list(reversed(c.fetchall()))
@@ -1734,7 +1767,7 @@ def dashboard():
                 }
             except Exception as chart_error:
                 conn.rollback()
-                log(f"dashboard chart unavailable: {chart_error}")
+                log(f"dashboard verified chart unavailable: {chart_error}")
 
 
 
@@ -1784,17 +1817,14 @@ def dashboard():
         conn.close()
 
         plan = str(user.get("plan") or "trial").strip().lower()
-        profit = float(user.get("profit", 0) or 0)
+        legacy_profit = float(user.get("profit", 0) or 0)
         trades = int(user.get("trades", 0) or 0)
         trade_amount = float(user.get("trade_amount", 10) or 10)
         affiliate_balance = float(user.get("affiliate_balance", 0) or 0)
-        portfolio_value = round(max(0, (trade_amount * max(trades, 1)) + profit + affiliate_balance), 2)
-        roi = round((profit / max(trade_amount * max(trades, 1), 1)) * 100, 2)
-        win_rate = min(96, max(48, 58 + (trades * 3) + (8 if profit > 0 else 0) + (6 if plan == "vip" else 0)))
-        ai_score = min(99, max(54, 62 + (trades * 4) + (10 if is_linked else 0) + (8 if user.get("bot_active", 0) == 1 else 0) + (8 if plan == "vip" else 0)))
-        open_trades = 1 if user.get("bot_active", 0) == 1 and plan in ("pro", "vip", "pro_2y") else 0
-        closed_trades = max(0, trades)
-        balance = round(portfolio_value + float(total_comm or 0) - float(total_withdrawn or 0), 2)
+        verified_pnl = signal_performance["today_outcome"] if signal_performance["today_outcome"] is not None else None
+        verified_win_rate = signal_performance["win_rate"]
+        verified_ai_score = signal_performance["latest_confidence"]
+        affiliate_net_balance = round(affiliate_balance + float(total_comm or 0) - float(total_withdrawn or 0), 2)
         subscription = _subscription_snapshot(user)
 
         if plan in AUTO_TRADE_PLANS or user.get("is_admin", 0) == 1:
@@ -1814,20 +1844,35 @@ def dashboard():
         free_signal_limit = 2
         free_signal_usage = min(trades, free_signal_limit) if plan == "trial" else None
 
+        def metric_display(value, suffix="", prefix=""):
+            if value is None:
+                return "N/A"
+            return f"{prefix}{value}{suffix}"
+
         dashboard_widgets = {
-            "portfolio": portfolio_value,
-            "roi": roi,
-            "win_rate": win_rate,
-            "ai_score": ai_score,
-            "balance": balance,
-            "open_trades": open_trades,
-            "closed_trades": closed_trades,
+            "portfolio": None,
+            "portfolio_display": "N/A",
+            "roi": None,
+            "roi_display": "N/A",
+            "win_rate": verified_win_rate,
+            "win_rate_display": metric_display(verified_win_rate, "%"),
+            "ai_score": verified_ai_score,
+            "ai_score_numeric": float(verified_ai_score or 0),
+            "ai_score_display": metric_display(verified_ai_score, "/100"),
+            "balance": affiliate_net_balance,
+            "balance_display": f"${affiliate_net_balance}",
+            "open_trades": signal_performance["active_signals"],
+            "closed_trades": signal_performance["closed_signals"],
             "spot_today": type_stats["spot_today"],
             "futures_today": type_stats["futures_today"],
             "spot_win_rate": type_stats["spot_win_rate"],
+            "spot_win_rate_display": metric_display(type_stats["spot_win_rate"], "%"),
             "futures_win_rate": type_stats["futures_win_rate"],
+            "futures_win_rate_display": metric_display(type_stats["futures_win_rate"], "%"),
             "spot_profit": type_stats["spot_profit"],
+            "spot_profit_display": metric_display(type_stats["spot_profit"], prefix="$"),
             "futures_profit": type_stats["futures_profit"],
+            "futures_profit_display": metric_display(type_stats["futures_profit"], prefix="$"),
             "subscription_status": subscription["status"],
             "remaining_days": subscription["remaining_days"],
             "started_days_ago": subscription["started_days_ago"],
@@ -1838,8 +1883,18 @@ def dashboard():
             "active_signals": signal_performance["active_signals"],
             "total_signals": signal_performance["total_signals"],
             "today_outcome": signal_performance["today_outcome"],
-            "real_win_rate": signal_performance["win_rate"],
+            "today_outcome_display": metric_display(signal_performance["today_outcome"], prefix="$"),
+            "real_win_rate": verified_win_rate,
+            "real_win_rate_display": metric_display(verified_win_rate, "%"),
         }
+        dashboard_chart_scores = [
+            0,
+            0,
+            float(verified_win_rate or 0),
+            float(verified_ai_score or 0),
+            min(max(float(affiliate_net_balance or 0), 0), 100),
+            min(signal_performance["closed_signals"], 100),
+        ]
         notifications = []
         if not is_linked:
             notifications.append("Link Telegram to receive signals and activate the full experience.")
@@ -1871,7 +1926,7 @@ def dashboard():
             plan_label=plan_label,
             expiry=user.get("expiry"),
             subscription=subscription,
-            profit=profit,
+            profit=legacy_profit,
             trades=trades,
             bot_active=user.get("bot_active", 0),
             trade_amount=trade_amount,
@@ -1901,6 +1956,7 @@ def dashboard():
             dashboard_title=dashboard_title,
             dashboard_subtitle=dashboard_subtitle,
             dashboard_widgets=dashboard_widgets,
+            dashboard_chart_scores=dashboard_chart_scores,
             notifications=notifications,
             recent_activity=recent_activity,
             signal_performance=signal_performance,
@@ -2999,6 +3055,78 @@ def admin_ai_monitor_page():
         performance=performance,
         recent_signals=rows[:20],
     )
+
+
+
+@admin_bp.route("/admin/sale-readiness")
+def admin_sale_readiness():
+    admin_guard = require_admin()
+    if admin_guard:
+        return admin_guard
+    metrics = {
+        "total_signals_sent": 0,
+        "open_trades": 0,
+        "closed_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "pending_outcomes": 0,
+        "free_earn_locks": 0,
+        "ads_completed": 0,
+        "paid_deliveries": 0,
+        "latest_rejection_reasons": [],
+        "latest_delivered_signals": [],
+    }
+    conn = None
+    try:
+        conn = db()
+        c = conn.cursor()
+        metrics["total_signals_sent"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log", default=0) or 0)
+        metrics["open_trades"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log WHERE status IN ('SENT','OPEN')", default=0) or 0)
+        metrics["closed_trades"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log WHERE status = 'CLOSED' OR outcome IS NOT NULL", default=0) or 0)
+        metrics["wins"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log WHERE COALESCE(outcome,'') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR COALESCE(pnl_percent,0) > 0", default=0) or 0)
+        metrics["losses"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log WHERE COALESCE(outcome,'') IN ('SL_HIT') OR COALESCE(pnl_percent,0) < 0", default=0) or 0)
+        metrics["pending_outcomes"] = metrics["open_trades"]
+        metrics["free_earn_locks"] = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks", default=0) or 0)
+        metrics["ads_completed"] = int(safe_scalar("SELECT COUNT(*) FROM free_signal_unlocks WHERE COALESCE(ad_rewarded,0)=1", default=0) or 0)
+        metrics["paid_deliveries"] = int(safe_scalar("SELECT COUNT(*) FROM signal_log WHERE plan <> 'trial'", default=0) or 0)
+        c.execute("""
+            SELECT message, created_at
+            FROM bot_logs
+            WHERE message ILIKE %s OR message ILIKE %s OR message ILIKE %s
+            ORDER BY created_at DESC
+            LIMIT 8
+        """, ("%REJECT%", "%NO_TRADE%", "%BLOCKED%"))
+        metrics["latest_rejection_reasons"] = c.fetchall()
+        c.execute("""
+            SELECT chat_id, pair, direction, plan, sent_at
+            FROM signal_log
+            ORDER BY sent_at DESC
+            LIMIT 8
+        """)
+        metrics["latest_delivered_signals"] = c.fetchall()
+    except Exception as exc:
+        try:
+            if conn:
+                conn.rollback()
+        except Exception:
+            pass
+        log(f"admin sale readiness metrics unavailable: {exc}")
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+    return render_template_string("""
+    <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>Nexora Sale Readiness</title>
+    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1180px;margin:36px auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(15,27,42,.94),rgba(7,14,23,.96));border:1px solid rgba(56,189,248,.18);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}span{color:#94a3b8}strong{display:block;font-size:30px;margin-top:8px}.table{width:100%;border-collapse:collapse;margin-top:14px}.table td,.table th{padding:10px;border-bottom:1px solid rgba(148,163,184,.16);text-align:left}.top{display:flex;justify-content:space-between;gap:12px;align-items:center}.btn{color:#03110d;background:#20d68a;border-radius:12px;padding:10px 14px;text-decoration:none;font-weight:800}</style>
+    </head><body><div class='wrap'><div class='top'><div><h1>Sale Readiness Monitor</h1><p>Read-only owner diagnostics from real tracked data.</p></div><a class='btn' href='/admin'>Back to Admin</a></div>
+    <div class='grid'>{% for key,value in metrics.items() if key not in ['latest_rejection_reasons','latest_delivered_signals'] %}<div class='card'><span>{{ key.replace('_',' ')|title }}</span><strong>{{ value }}</strong></div>{% endfor %}</div>
+    <div class='card' style='margin-top:18px'><h2>Latest Delivered Signals</h2><table class='table'><tr><th>Chat</th><th>Pair</th><th>Direction</th><th>Plan</th><th>Sent</th></tr>{% for row in metrics.latest_delivered_signals %}<tr><td>{{ row.chat_id }}</td><td>{{ row.pair }}</td><td>{{ row.direction }}</td><td>{{ row.plan }}</td><td>{{ row.sent_at }}</td></tr>{% else %}<tr><td colspan='5'>Not enough delivered signal history yet.</td></tr>{% endfor %}</table></div>
+    <div class='card' style='margin-top:18px'><h2>Latest Rejection / Block Reasons</h2><table class='table'><tr><th>Message</th><th>Time</th></tr>{% for row in metrics.latest_rejection_reasons %}<tr><td>{{ row.message }}</td><td>{{ row.created_at }}</td></tr>{% else %}<tr><td colspan='2'>No recent rejection logs available.</td></tr>{% endfor %}</table></div>
+    </div></body></html>
+    """, metrics=metrics)
 
 
 @admin_bp.route("/admin/product-features")

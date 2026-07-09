@@ -694,6 +694,18 @@ def init_trade_tables():
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_chat_sent ON signal_log (chat_id, sent_at)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_status_sent ON signal_log (status, sent_at)")
     c.execute("CREATE INDEX IF NOT EXISTS ix_signal_log_pair_status ON signal_log (pair, status)")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS timeframe TEXT")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS display_confidence REAL")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS final_score REAL")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS risk_reward REAL")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS tier TEXT")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'telegram'")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS delivery_mode TEXT")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS locked INTEGER DEFAULT 0")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS unlocked INTEGER DEFAULT 1")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS take_profits TEXT")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS stop_loss REAL")
+    c.execute("ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS signal_payload TEXT")
 
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS spot_enabled INTEGER DEFAULT 1")
     c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS futures_enabled INTEGER DEFAULT 1")
@@ -750,7 +762,7 @@ def write_log(chat_id, level, message):
         log(f"DB log insert failed: {e}")
 
 
-def record_sent_signal(chat_id, plan, signal):
+def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, unlocked=True, source="telegram"):
     if not ENABLE_SIGNAL_TRACKING:
         return None
     try:
@@ -758,6 +770,14 @@ def record_sent_signal(chat_id, plan, signal):
         c = conn.cursor()
         c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
         columns = {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+        tp_values = [
+            signal.get("tp1"),
+            signal.get("tp2"),
+            signal.get("tp3"),
+        ]
+        tp_values = [v for v in tp_values if v not in (None, "", "N/A")]
+        if not tp_values and signal.get("tp") not in (None, "", "N/A"):
+            tp_values = [signal.get("tp")]
         insert_columns = ["chat_id", "plan", "pair", "direction", "signal_type", "entry", "tp", "sl", "status"]
         values = [
             str(chat_id),
@@ -766,13 +786,29 @@ def record_sent_signal(chat_id, plan, signal):
             signal.get("direction"),
             signal.get("type", "FUTURES"),
             float(signal.get("entry", 0)),
-            float(signal.get("tp", 0)),
+            float(signal.get("tp", signal.get("tp1", 0)) or 0),
             float(signal.get("sl", 0)),
             "SENT",
         ]
-        if "confidence" in columns:
-            insert_columns.insert(-1, "confidence")
-            values.insert(-1, float(signal.get("display_confidence", signal.get("confidence", 0))))
+        optional_values = {
+            "confidence": float(signal.get("display_confidence", signal.get("confidence", 0)) or 0),
+            "display_confidence": float(signal.get("display_confidence", signal.get("confidence", 0)) or 0),
+            "final_score": float(signal.get("final_score", signal.get("score", 0)) or 0),
+            "risk_reward": float(signal.get("risk_reward", 0) or 0),
+            "tier": signal.get("qualified_tier") or signal.get("tier") or signal.get("opportunity_tier"),
+            "timeframe": signal.get("timeframe"),
+            "source": source or "telegram",
+            "delivery_mode": delivery_mode or ("free_earn" if str(plan or "").lower() == "trial" else "paid"),
+            "locked": 1 if locked else 0,
+            "unlocked": 1 if unlocked else 0,
+            "take_profits": json.dumps(tp_values, separators=(",", ":"), default=str),
+            "stop_loss": float(signal.get("sl", 0) or 0),
+            "signal_payload": json.dumps(_free_signal_payload(signal), separators=(",", ":"), default=str),
+        }
+        for column, value in optional_values.items():
+            if column in columns:
+                insert_columns.append(column)
+                values.append(value)
         placeholders = ", ".join(["%s"] * len(insert_columns))
         c.execute(f"""
         INSERT INTO signal_log ({", ".join(insert_columns)})
@@ -1016,7 +1052,7 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
         """, (unlock_id,))
         conn.commit()
         conn.close()
-        record_sent_signal(chat_id, plan, signal)
+        record_sent_signal(chat_id, plan, signal, delivery_mode="free_earn", locked=True, unlocked=True)
         increment_trade(chat_id)
         write_log(chat_id, "INFO", f"Free earned signal unlocked {signal.get('pair')} {signal.get('direction')}")
         log(f"FREE_SIGNAL_UNLOCKED_AND_SENT chat_id={chat_id} pair={signal.get('pair')}")
@@ -1971,7 +2007,7 @@ def update_signal_outcomes():
         c.execute("""
         SELECT id, chat_id, pair, direction, entry, tp, sl
         FROM signal_log
-        WHERE status = 'SENT'
+        WHERE status IN ('SENT', 'OPEN')
           AND chat_id IS NOT NULL
           AND chat_id <> ''
         ORDER BY sent_at ASC
@@ -1990,14 +2026,14 @@ def update_signal_outcomes():
                 pnl_percent = 0
                 if direction == "LONG":
                     if current_price >= tp:
-                        outcome = "TP_HIT"
+                        outcome = "TP1_HIT"
                         pnl_percent = ((tp - entry) / entry) * 100
                     elif current_price <= sl:
                         outcome = "SL_HIT"
                         pnl_percent = ((sl - entry) / entry) * 100
                 elif direction == "SHORT":
                     if current_price <= tp:
-                        outcome = "TP_HIT"
+                        outcome = "TP1_HIT"
                         pnl_percent = ((entry - tp) / entry) * 100
                     elif current_price >= sl:
                         outcome = "SL_HIT"
@@ -2012,9 +2048,9 @@ def update_signal_outcomes():
                     conn.commit()
 
                     if SIGNAL_TRACKING_NOTIFY:
-                        icon = "✅" if outcome == "TP_HIT" else "🛑"
+                        icon = "✅" if outcome in ("TP1_HIT", "TP2_HIT", "TP3_HIT", "TP_HIT") else "🛑"
                         clean_pnl_percent = clean_number(pnl_percent, 2)
-                        what_happened = "TP Hit" if outcome == "TP_HIT" else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
+                        what_happened = "TP Hit" if outcome in ("TP1_HIT", "TP2_HIT", "TP3_HIT", "TP_HIT") else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
                         outcome_sent = send(chat_id, f"""{icon} NEXORA TRADE RESULT
 
 Market: {pair}
@@ -2600,7 +2636,7 @@ def run():
                         signal_sent_users += 1
                         log_plan_delivery_diag(email, plan, chat_id, True, "sent")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")
-                        record_sent_signal(chat_id, plan, signal)
+                        record_sent_signal(chat_id, plan, signal, delivery_mode=("free_earn_credit" if str(plan).lower() == "trial" else "paid"), locked=False, unlocked=True)
                         if plan != "trial":
                             try:
                                 from market_analyzer import _scan_diag_inc

@@ -974,8 +974,8 @@ input, select {
 
     <section class="nx-sale-grid" aria-label="Trading performance summary">
         <div class="nx-sale-card"><span>Active Signals</span><strong>{{ dashboard_widgets.active_signals }}</strong><small>Open tracked signals from your account.</small></div>
-        <div class="nx-sale-card"><span>Win Rate</span><strong>{{ dashboard_widgets.real_win_rate }}%</strong><small>{% if signal_performance.closed_signals %}Based on closed tracked trades.{% else %}Not enough data yet.{% endif %}</small></div>
-        <div class="nx-sale-card"><span>Today Outcome</span><strong>${{ dashboard_widgets.today_outcome }}</strong><small>Uses tracked signal P/L when available.</small></div>
+        <div class="nx-sale-card"><span>Win Rate</span><strong>{{ dashboard_widgets.real_win_rate_display }}</strong><small>{% if signal_performance.closed_signals %}Based on closed tracked outcomes.{% else %}Not enough data yet.{% endif %}</small></div>
+        <div class="nx-sale-card"><span>Today Outcome</span><strong>{{ dashboard_widgets.today_outcome_display }}</strong><small>{% if signal_performance.closed_signals %}Uses verified tracked outcomes.{% else %}Not enough data yet.{% endif %}</small></div>
         <div class="nx-sale-card"><span>Account Status</span><strong>{% if is_linked and bot_active == 1 %}Ready{% elif is_linked %}Linked{% else %}Action Needed{% endif %}</strong><small>Portfolio is shown only from available account data.</small></div>
     </section>
 
@@ -984,9 +984,9 @@ input, select {
             <span>Nexora AI Intelligence</span>
             <h3>AI Market Summary</h3>
             <p style="color:#cbd5e1;line-height:1.8;">{{ signal_performance.latest_reason }}</p>
-            <div class="nx-meter"><span style="width:{{ [dashboard_widgets.ai_score,100]|min }}%;"></span></div>
+            <div class="nx-meter"><span style="width:{{ [dashboard_widgets.ai_score_numeric,100]|min }}%;"></span></div>
             <div class="nx-kv">
-                <div><span>AI Confidence Meter</span><strong>{{ dashboard_widgets.ai_score }}/100</strong></div>
+                <div><span>AI Confidence Meter</span><strong>{{ dashboard_widgets.ai_score_display }}</strong></div>
                 <div><span>Current Market Regime</span><strong>{{ signal_performance.latest_regime }}</strong></div>
                 <div><span>Best Strategy</span><strong>{{ signal_performance.best_strategy }}</strong></div>
                 <div><span>Best Timeframe</span><strong>{{ signal_performance.best_timeframe }}</strong></div>
@@ -1025,7 +1025,7 @@ input, select {
                     <td>{{ s.direction or '-' }}</td>
                     <td>{{ s.entry or '-' }}</td>
                     <td>{{ s.tp or '-' }} / {{ s.sl or '-' }}</td>
-                    <td>{{ s.confidence or '-' }}%</td>
+                    <td>{% if s.confidence is not none %}{{ s.confidence }}%{% else %}N/A{% endif %}</td>
                     <td>{{ s.status or 'TRACKED' }}{% if s.pnl is defined and s.pnl is not none %} · {{ s.pnl }}{% endif %}</td>
                     <td>{{ s.created_at or '-' }}</td>
                 </tr>
@@ -1070,38 +1070,38 @@ input, select {
         <div class="widget-grid">
             <div class="widget">
                 <span>Portfolio</span>
-                <strong>${{dashboard_widgets.portfolio}}</strong>
-                <small>Trade capital + profit + affiliate balance</small>
+                <strong>{{dashboard_widgets.portfolio_display}}</strong>
+                <small>Exchange portfolio is shown only when real account balance data exists.</small>
             </div>
             <div class="widget">
                 <span>ROI</span>
-                <strong>{{dashboard_widgets.roi}}%</strong>
-                <small>Based on current tracked profit</small>
+                <strong>{{dashboard_widgets.roi_display}}</strong>
+                <small>ROI appears only after verified capital and closed outcomes exist.</small>
             </div>
             <div class="widget">
                 <span>Win Rate</span>
-                <strong>{{dashboard_widgets.win_rate}}%</strong>
-                <small>Plan-adjusted signal quality estimate</small>
+                <strong>{{dashboard_widgets.win_rate_display}}</strong>
+                <small>{% if signal_performance.closed_signals %}Verified closed signal outcomes only{% else %}Not enough data yet{% endif %}</small>
             </div>
             <div class="widget">
                 <span>AI Score</span>
-                <strong>{{dashboard_widgets.ai_score}}/100</strong>
-                <small>Telegram, bot state, and plan readiness</small>
+                <strong>{{dashboard_widgets.ai_score_display}}</strong>
+                <small>{% if dashboard_widgets.ai_score is not none %}Average tracked signal confidence{% else %}Not enough data yet{% endif %}</small>
             </div>
             <div class="widget">
-                <span>Balance</span>
-                <strong>${{dashboard_widgets.balance}}</strong>
-                <small>Portfolio plus commissions minus withdrawals</small>
+                <span>Affiliate Balance</span>
+                <strong>{{dashboard_widgets.balance_display}}</strong>
+                <small>Approved commissions minus paid withdrawals.</small>
             </div>
             <div class="widget">
                 <span>Open Trades</span>
                 <strong>{{dashboard_widgets.open_trades}}</strong>
-                <small>{% if dashboard_tier == "elite" %}Automation watchlist{% else %}Manual signal workspace{% endif %}</small>
+                <small>Open tracked signals waiting for verified outcome.</small>
             </div>
             <div class="widget">
                 <span>Closed Trades</span>
                 <strong>{{dashboard_widgets.closed_trades}}</strong>
-                <small>Total tracked signal usage</small>
+                <small>Closed outcomes from tracked delivered signals.</small>
             </div>
             <div class="widget">
                 <span>Subscription</span>
@@ -1140,13 +1140,13 @@ input, select {
             </div>
             <div class="widget">
                 <span>Spot Win Rate</span>
-                <strong>{{dashboard_widgets.spot_win_rate}}%</strong>
-                <small>Spot profit: ${{dashboard_widgets.spot_profit}}</small>
+                <strong>{{dashboard_widgets.spot_win_rate_display}}</strong>
+                <small>Spot P/L: {{dashboard_widgets.spot_profit_display}}</small>
             </div>
             <div class="widget">
                 <span>Futures Win Rate</span>
-                <strong>{{dashboard_widgets.futures_win_rate}}%</strong>
-                <small>Futures profit: ${{dashboard_widgets.futures_profit}}</small>
+                <strong>{{dashboard_widgets.futures_win_rate_display}}</strong>
+                <small>Futures P/L: {{dashboard_widgets.futures_profit_display}}</small>
             </div>
         </div>
 
@@ -1612,14 +1612,7 @@ if (tierChartNode) {
             labels: ["Portfolio", "ROI", "Win Rate", "AI Score", "Balance", "Closed Trades"],
             datasets: [{
                 label: "{{dashboard_title}}",
-                data: [
-                    Math.min({{dashboard_widgets.portfolio}}, 100),
-                    Math.max(0, Math.min({{dashboard_widgets.roi}}, 100)),
-                    {{dashboard_widgets.win_rate}},
-                    {{dashboard_widgets.ai_score}},
-                    Math.min({{dashboard_widgets.balance}}, 100),
-                    Math.min({{dashboard_widgets.closed_trades}}, 100)
-                ],
+                data: {{ dashboard_chart_scores|tojson }},
                 borderColor: "{% if dashboard_tier == 'elite' %}#f4bf5f{% elif dashboard_tier == 'pro' %}#34d3ff{% else %}#20d68a{% endif %}",
                 backgroundColor: "{% if dashboard_tier == 'elite' %}rgba(244,191,95,0.18){% elif dashboard_tier == 'pro' %}rgba(52,211,255,0.16){% else %}rgba(32,214,138,0.16){% endif %}",
                 pointBackgroundColor: "#f8fafc"
