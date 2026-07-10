@@ -31,6 +31,7 @@ SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower(
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 NEXORA_PROOF_MODE = os.environ.get("NEXORA_PROOF_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 MIN_DAILY_SIGNAL_TARGET = int(os.environ.get("MIN_DAILY_SIGNAL_TARGET", "0") or 0)
+NO_SIGNAL_STATUS_ENABLED = os.environ.get("NO_SIGNAL_STATUS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 FREE_EARN_MODE = os.environ.get("FREE_EARN_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 REWARDED_AD_PROVIDER = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lower()
 FREE_SIGNALS_LIFETIME = int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2)
@@ -143,26 +144,39 @@ PLAN_BENEFITS = {
     "trial": {
         "delivery": "free_earn_or_initial_direct",
         "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "plan_rank": 0,
+        "auto_trade": False,
+        "free_lifetime_signals": FREE_SIGNALS_LIFETIME,
         "ads": "after_free_lifetime_allowance",
     },
     "basic": {
         "delivery": "direct_ad_free",
         "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "plan_rank": 1,
+        "auto_trade": False,
         "notes": "Telegram delivery and dashboard tracking.",
     },
     "pro": {
         "delivery": "direct_ad_free",
         "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "plan_rank": 2,
+        "auto_trade": False,
         "notes": "Advanced analysis access and broader eligible setups.",
     },
     "vip": {
         "delivery": "direct_ad_free_priority",
         "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "plan_rank": 3,
+        "auto_trade": True,
+        "elite_filter": True,
         "notes": "Elite access with auto-trading controls for eligible accounts.",
     },
     "pro_2y": {
         "delivery": "highest_direct_ad_free_access",
         "eligible_tiers": {"A_PLUS", "A", "B_PLUS"},
+        "plan_rank": 4,
+        "auto_trade": True,
+        "highest_access": True,
         "notes": "Highest available access; never downgraded by old free-plan caps.",
     },
 }
@@ -170,6 +184,13 @@ PLAN_BENEFITS = {
 
 def is_qualified_opportunity(signal):
     return qualified_opportunity_tier(signal) in {"A_PLUS", "A", "B_PLUS"}
+
+
+def plan_benefit(plan, key, default=None):
+    try:
+        return PLAN_BENEFITS.get(str(plan or "trial").strip().lower(), {}).get(key, default)
+    except Exception:
+        return default
 
 
 
@@ -1339,70 +1360,88 @@ def _compact_trade_reason(signal):
     if not reason:
         reason = "Trend alignment + MTF confirmation + volume support."
     reason = " ".join(reason.split())
-    if len(reason) > 120:
-        reason = reason[:117].rstrip() + "..."
+    if len(reason) > 86:
+        reason = reason[:83].rstrip() + "..."
     return reason
 
 
 # ================= FORMAT =================
-def _signal_line(label, value):
-    if value in (None, "", "N/A"):
-        return ""
-    return f"{label}: {value}"
+def _coin_badge(pair):
+    try:
+        symbol = str(pair or "").upper().replace("/", "")
+        for suffix in ("USDT", "USDC", "BUSD", "USD"):
+            if symbol.endswith(suffix):
+                symbol = symbol[:-len(suffix)]
+                break
+        badges = {
+            "BTC": "Bitcoin",
+            "ETH": "Ethereum",
+            "BNB": "BNB",
+            "SOL": "Solana",
+            "XRP": "XRP",
+            "ADA": "Cardano",
+            "DOGE": "Dogecoin",
+            "AVAX": "Avalanche",
+            "LINK": "Chainlink",
+            "DOT": "Polkadot",
+            "LTC": "Litecoin",
+            "BCH": "Bitcoin Cash",
+            "TRX": "TRON",
+            "TON": "Toncoin",
+            "SUI": "Sui",
+            "NEAR": "NEAR",
+            "UNI": "Uniswap",
+            "AAVE": "Aave",
+        }
+        return badges.get(symbol, symbol or "Crypto")
+    except Exception:
+        return "Crypto"
 
 
 def format_signal(signal, plan=None):
     tp1, tp2, tp3 = _signal_target_ladder(signal)
     confidence = signal.get("display_confidence", signal.get("confidence"))
-    risk = signal.get("risk_level") or signal.get("risk_score")
+    pair = signal.get("pair", "N/A")
+    coin_badge = _coin_badge(pair)
+    direction = str(signal.get("direction", "N/A")).upper()
+    direction_label = "BUY" if direction == "LONG" else "SELL" if direction == "SHORT" else "SETUP"
+    rr = signal.get("risk_reward")
     setup = signal.get("strategy_name") or signal.get("setup_type") or signal.get("market_regime") or signal.get("adaptive_regime")
-    intelligence = [
-        _signal_line("Confidence", f"{confidence}%" if confidence not in (None, "", "N/A") else None),
-        _signal_line("Risk", risk),
-        _signal_line("Market Setup", setup),
-        _signal_line("RR", signal.get("risk_reward")),
-    ]
-    intelligence = "\n".join([line for line in intelligence if line])
-    if intelligence:
-        intelligence = "\n\nSignal Intelligence\n" + intelligence
+    why = _compact_trade_reason(signal)
+    setup_line = f"\nStrategy: {setup}" if setup else ""
+    confidence_line = f"{confidence}%" if confidence not in (None, "", "N/A") else "N/A"
 
-    return f"""━━━━━━━━━━━━━━━━━━
-NEXORA TRADE OPPORTUNITY
-━━━━━━━━━━━━━━━━━━
+    return f"""NEXORA AI SIGNAL
 
-Market: {signal.get('pair', 'N/A')}
+{coin_badge} | {pair}
 Mode: {signal.get('type', 'FUTURES')}
-Direction: {signal.get('direction', 'N/A')}
-Timeframe: {signal.get('timeframe', 'N/A')}
+Direction: {direction_label} {direction}
+TF: {signal.get('timeframe', 'N/A')}
 
 Entry: {signal.get('entry', 'N/A')}
-Stop Loss: {signal.get('sl', 'N/A')}
-
-Targets
 TP1: {tp1}
 TP2: {tp2}
-TP3: {tp3}{intelligence}
+TP3: {tp3}
+SL: {signal.get('sl', 'N/A')}
 
-━━━━━━━━━━━━━━━━━━
-NEXORA ANALYSIS
-━━━━━━━━━━━━━━━━━━
+Confidence: {confidence_line}
+RR: {rr if rr not in (None, '', 'N/A') else 'N/A'}{setup_line}
 
-This opportunity was selected after multi-factor market analysis using the decision technology available inside Nexora.
+Why:
+{why}
 
-The system reviews market context, trend structure, momentum, liquidity conditions, entry quality, risk and timeframe alignment before a signal is approved.
+Manage:
+Move SL to breakeven after TP1 if your strategy allows it.
 
-Important:
-This signal supports your trading decision. It is not financial advice and does not guarantee profit. Trading involves risk. Always use appropriate position sizing and risk management.
+Risk warning: Crypto trading is risky. Not financial advice."""
 
-Nexora AI Trader
-Technology supports the decision. Risk management protects the trader.
-"""
 
 # ================= ACCESS HELPERS =================
 def is_trial_allowed(trades):
-    return (trades or 0) < 2
+    return (trades or 0) < FREE_SIGNALS_LIFETIME
 
 def is_paid_plan_active(plan, expiry, is_paid):
+    plan = str(plan or "trial").strip().lower()
     if plan == "trial":
         return True
 
@@ -1432,6 +1471,11 @@ def signal_allowed_for_plan(plan, signal):
         benefits = PLAN_BENEFITS.get(plan)
         if not benefits:
             return False
+
+        # pro_2y is the highest access tier. It still respects all global safety
+        # gates above, but it must not be narrowed by legacy premium thresholds.
+        if benefits.get("highest_access"):
+            return tier in benefits["eligible_tiers"]
 
         return tier in benefits["eligible_tiers"]
     except:
@@ -1533,7 +1577,7 @@ def unpack_delivery_user(user):
 
 
 def delivery_access_status(user_info, qualified_opportunity_available=False):
-    plan = user_info.get("plan")
+    plan = str(user_info.get("plan") or "trial").strip().lower()
     if not user_info.get("chat_id"):
         return False, "missing_chat_id"
     if plan == "trial":
@@ -2425,54 +2469,78 @@ def should_notify_no_signal(chat_id):
 
 def notify_users_no_signal(users):
     try:
+        if not NO_SIGNAL_STATUS_ENABLED:
+            return
+        try:
+            scan_summary = get_signal_scan_diagnostics(0) or {}
+        except Exception:
+            scan_summary = {}
+
+        final_signals = int(scan_summary.get("final_signals", 0) or 0)
+        rejected_mtf = int(scan_summary.get("rejected_mtf", 0) or 0)
+        rejected_entry = int(scan_summary.get("rejected_entry", 0) or 0)
+        rejected_quality = int(scan_summary.get("rejected_quality", 0) or 0)
+        rejected_liquidity = int(scan_summary.get("rejected_liquidity", 0) or 0)
+
+        market_reason = "No high-quality final setup passed all safety checks."
+        if rejected_mtf:
+            market_reason = "Multi-timeframe confirmation was not strong enough."
+        elif rejected_entry:
+            market_reason = "Price moved away from a professional entry zone."
+        elif rejected_liquidity:
+            market_reason = "Liquidity was not strong enough for a clean trade."
+        elif rejected_quality:
+            market_reason = "Signal quality score stayed below the delivery gate."
+
         for user in users:
             try:
-                chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
-                spot_enabled = int(type_flags[0]) if len(type_flags) > 0 else 1
-                futures_enabled = int(type_flags[1]) if len(type_flags) > 1 else 1
-                email = type_flags[2] if len(type_flags) > 2 else ""
-                spot_auto_trade_enabled = int(type_flags[3]) if len(type_flags) > 3 else 0
-                futures_auto_trade_enabled = int(type_flags[4]) if len(type_flags) > 4 else 0
-                stop_loss_required = int(type_flags[5]) if len(type_flags) > 5 else 1
+                user_info = unpack_delivery_user(user)
+                chat_id = user_info["chat_id"]
+                plan = str(user_info["plan"] or "trial").strip().lower()
+                trades = user_info["trades"]
+                email = user_info["email"]
 
                 if not chat_id:
                     log_unlinked_user_once(email)
                     continue
 
-                # ===== ACCESS CHECK =====
                 if plan == "trial":
-                    if not is_trial_allowed(trades):
+                    if not is_trial_allowed(trades) and not FREE_EARN_MODE:
                         continue
-                else:
-                    if not is_paid_plan_active(plan, expiry, is_paid):
-                        continue
+                elif not is_paid_plan_active(plan, user_info["expiry"], user_info["is_paid"]):
+                    continue
 
                 if not should_notify_no_signal(chat_id):
                     continue
 
-                msg = """⚠️ تنبيه مهم من البوت
+                plan_note = "Premium direct delivery is active." if plan != "trial" else "Free Earn waits for a qualified premium signal."
+                msg = f"""NEXORA MARKET STATUS
 
-نظرًا لسوء تقلبات الأسواق الحالية وعدم وجود فرصة واضحة وقوية بما يكفي الآن،
-لن يتم إرسال صفقات في الوقت الحالي.
+No trade has been sent in this scan.
 
-📌 الرجاء الانتظار حتى تظهر فرصة مناسبة
-وذلك حفاظًا على سلامة أموالكم وتقليل احتمالية الخسارة.
+Reason:
+{market_reason}
 
-🤖 البوت لن يرسل صفقة إلا إذا كانت مطابقة للشروط المطلوبة بأفضل شكل ممكن."""
+Plan:
+{plan} - {plan_note}
+
+The bot is active, but it will not force weak trades. Quality first.
+
+Risk warning: Crypto trading is risky. Not financial advice."""
 
                 sent_ok = send(chat_id, msg)
 
                 if sent_ok:
-                    log(f"No-signal notice sent to {chat_id}")
-                    write_log(chat_id, "INFO", "No-signal market warning sent")
+                    log(f"NO_SIGNAL_STATUS_SENT plan={plan} chat_id_present=True final_signals={final_signals}")
+                    write_log(chat_id, "INFO", f"No-signal status sent plan={plan}")
                 else:
-                    log(f"Failed sending no-signal notice to {chat_id}")
+                    log(f"NO_SIGNAL_STATUS_FAILED plan={plan} chat_id_present=True")
 
             except Exception as inner_e:
                 log(f"notify_users_no_signal inner error: {inner_e}")
 
     except Exception as e:
-        log(f"notify_users_no_signal error: {e}")    
+        log(f"notify_users_no_signal error: {e}")
 
 # ================= MAIN =================
 def run():
