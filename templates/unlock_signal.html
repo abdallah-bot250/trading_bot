@@ -31,7 +31,19 @@
         {% endif %}
       {% endif %}
 
-      {% if rewarded_ad_provider == 'adsgram' %}
+      {% if rewarded_ad_provider == 'adsgram' and not adsgram_platform_approved %}
+        <div class="nx-adsgram-panel is-disabled">
+          <strong>Rewarded video is pending approval</strong>
+          <p>AdsGram has not approved this platform yet, so sponsored video unlocks are temporarily unavailable.</p>
+          <button class="nx-unlock-button" type="button" disabled>Ads pending approval</button>
+          <small class="nx-adsgram-bind-status">You can still upgrade to remove ads, or follow Nexora social pages while AdsGram approval is completed.</small>
+        </div>
+        <div class="nx-unlock-links">
+          <a href="/pricing">Upgrade: No Ads</a>
+          <a href="{{ social_facebook_url }}" target="_blank" rel="noopener">Facebook</a>
+          <a href="{{ social_instagram_url }}" target="_blank" rel="noopener">Instagram</a>
+        </div>
+      {% elif rewarded_ad_provider == 'adsgram' %}
         <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}" data-block-id="{{ adsgram_block_id|default('37291') }}">
           <strong>New qualified opportunity</strong>
           <p>A market opportunity is ready. Watch a short sponsored video to unlock Entry, Stop Loss, and Profit Targets.</p>
@@ -95,7 +107,7 @@
         }
         var blockId = String(panel.dataset.blockId || '').trim();
         if (!blockId) throw new Error('reward_video_not_configured');
-        var controller = window.Adsgram.init({ blockId: blockId });
+        var controller = window.Adsgram.init({ blockId: /^[0-9]+$/.test(blockId) ? Number(blockId) : blockId });
         return controller.show();
       }).then(function () {
         setStatus('Reward completed. Your signal is being delivered in Telegram.', true);
@@ -103,6 +115,9 @@
     }).catch(function (err) {
       button.disabled = false;
       var message = err && (err.description || err.message) ? (err.description || err.message) : 'reward_failed';
+      if (/expected pattern|not match|declined|forbidden|not approved/i.test(message)) {
+        message = 'AdsGram is not approved for this platform yet';
+      }
       setStatus('Video was not completed: ' + message + '. You can try again.', false);
     });
   });

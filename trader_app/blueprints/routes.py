@@ -125,6 +125,7 @@ def unlock_signal(token):
     )
 
     status = None
+    adsgram_platform_approved = os.environ.get("ADSGRAM_PLATFORM_APPROVED", "false").strip().lower() in {"1", "true", "yes", "approved", "on"}
     if request.method == "POST":
         if REWARDED_AD_PROVIDER == "adsgram":
             status = {"ok": False, "reason": "adsgram_callback_required"}
@@ -141,6 +142,7 @@ def unlock_signal(token):
         ttl_minutes=LOCKED_SIGNAL_TTL_MINUTES,
         adsgram_platform_id=ADSGRAM_PLATFORM_ID,
         adsgram_block_id=ADSGRAM_BLOCK_ID,
+        adsgram_platform_approved=adsgram_platform_approved,
         reward_url=f"{current_base_url()}/adsgram/reward?user_id=[userId]",
         social_facebook_url=os.environ.get("SOCIAL_FACEBOOK_URL", "https://www.facebook.com/profile.php?id=61591117963149").strip(),
         social_instagram_url=os.environ.get("SOCIAL_INSTAGRAM_URL", "https://www.instagram.com/nexoraaitrader/?hl=en").strip(),
