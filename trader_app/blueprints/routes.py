@@ -120,6 +120,8 @@ def unlock_signal(token):
         REWARDED_AD_PROVIDER,
         LOCKED_SIGNAL_TTL_MINUTES,
         process_free_unlock_token,
+        process_social_unlock_token,
+        FREE_SOCIAL_UNLOCK_ENABLED,
         ADSGRAM_BLOCK_ID,
         ADSGRAM_PLATFORM_ID,
     )
@@ -127,7 +129,10 @@ def unlock_signal(token):
     status = None
     adsgram_platform_approved = os.environ.get("ADSGRAM_PLATFORM_APPROVED", "false").strip().lower() in {"1", "true", "yes", "approved", "on"}
     if request.method == "POST":
-        if REWARDED_AD_PROVIDER == "adsgram":
+        unlock_method = request.form.get("unlock_method", "").strip().lower()
+        if REWARDED_AD_PROVIDER == "adsgram" and not adsgram_platform_approved and FREE_SOCIAL_UNLOCK_ENABLED and unlock_method == "social_follow":
+            status = process_social_unlock_token(token)
+        elif REWARDED_AD_PROVIDER == "adsgram":
             status = {"ok": False, "reason": "adsgram_callback_required"}
         elif REWARDED_AD_PROVIDER == "none" and not FREE_UNLOCK_DEMO_MODE:
             status = {"ok": False, "reason": "ads_not_configured"}
@@ -143,9 +148,11 @@ def unlock_signal(token):
         adsgram_platform_id=ADSGRAM_PLATFORM_ID,
         adsgram_block_id=ADSGRAM_BLOCK_ID,
         adsgram_platform_approved=adsgram_platform_approved,
+        social_unlock_enabled=FREE_SOCIAL_UNLOCK_ENABLED,
         reward_url=f"{current_base_url()}/adsgram/reward?user_id=[userId]",
         social_facebook_url=os.environ.get("SOCIAL_FACEBOOK_URL", "https://www.facebook.com/profile.php?id=61591117963149").strip(),
         social_instagram_url=os.environ.get("SOCIAL_INSTAGRAM_URL", "https://www.instagram.com/nexoraaitrader/?hl=en").strip(),
+        social_telegram_url=os.environ.get("SOCIAL_TELEGRAM_URL", current_bot_link()).strip(),
     )
 
 

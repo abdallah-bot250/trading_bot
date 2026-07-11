@@ -32,17 +32,42 @@
       {% endif %}
 
       {% if rewarded_ad_provider == 'adsgram' and not adsgram_platform_approved %}
+        {% if social_unlock_enabled %}
+        <div class="nx-adsgram-panel nx-social-unlock-panel">
+          <strong>Unlock with quick Nexora tasks</strong>
+          <p>AdsGram video rewards are still pending approval. Complete the quick social steps below, then unlock this qualified signal safely.</p>
+          <ol class="nx-unlock-steps">
+            <li>Follow Nexora on Facebook.</li>
+            <li>Follow Nexora on Instagram.</li>
+            <li>Open the official Telegram bot.</li>
+          </ol>
+          <div class="nx-unlock-links nx-social-task-links">
+            <a href="{{ social_facebook_url }}" target="_blank" rel="noopener">Follow Facebook</a>
+            <a href="{{ social_instagram_url }}" target="_blank" rel="noopener">Follow Instagram</a>
+            <a href="{{ social_telegram_url }}" target="_blank" rel="noopener">Open Telegram</a>
+          </div>
+          <form method="POST" class="nx-social-unlock-form">
+            <input type="hidden" name="unlock_method" value="social_follow">
+            <button class="nx-unlock-button" type="submit">I completed the tasks - Unlock Signal</button>
+          </form>
+          <small class="nx-adsgram-bind-status">The signal is still checked for freshness before delivery. If it expires, your unlock credit is saved for the next qualified signal.</small>
+        </div>
+        <div class="nx-unlock-links">
+          <a href="/pricing">Upgrade: No Ads</a>
+        </div>
+        {% else %}
         <div class="nx-adsgram-panel is-disabled">
           <strong>Rewarded video is pending approval</strong>
           <p>AdsGram has not approved this platform yet, so sponsored video unlocks are temporarily unavailable.</p>
           <button class="nx-unlock-button" type="button" disabled>Ads pending approval</button>
-          <small class="nx-adsgram-bind-status">You can still upgrade to remove ads, or follow Nexora social pages while AdsGram approval is completed.</small>
+          <small class="nx-adsgram-bind-status">Upgrade to remove ads, or try again after approval is completed.</small>
         </div>
         <div class="nx-unlock-links">
           <a href="/pricing">Upgrade: No Ads</a>
           <a href="{{ social_facebook_url }}" target="_blank" rel="noopener">Facebook</a>
           <a href="{{ social_instagram_url }}" target="_blank" rel="noopener">Instagram</a>
         </div>
+        {% endif %}
       {% elif rewarded_ad_provider == 'adsgram' %}
         <div class="nx-adsgram-panel" data-token="{{ token }}" data-bind-url="/adsgram/bind-user" data-reward-url="{{ reward_url }}" data-block-id="{{ adsgram_block_id|default('37291') }}">
           <strong>New qualified opportunity</strong>

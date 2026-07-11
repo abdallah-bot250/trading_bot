@@ -37,6 +37,7 @@ REWARDED_AD_PROVIDER = os.environ.get("REWARDED_AD_PROVIDER", "none").strip().lo
 FREE_SIGNALS_LIFETIME = int(os.environ.get("FREE_SIGNALS_LIFETIME", "2") or 2)
 LOCKED_SIGNAL_TTL_MINUTES = int(os.environ.get("LOCKED_SIGNAL_TTL_MINUTES", "10") or 10)
 FREE_UNLOCK_DEMO_MODE = os.environ.get("FREE_UNLOCK_DEMO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+FREE_SOCIAL_UNLOCK_ENABLED = os.environ.get("FREE_SOCIAL_UNLOCK_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 ADSGRAM_REWARD_SECRET = os.environ.get("ADSGRAM_REWARD_SECRET", "").strip()
 ADSGRAM_BLOCK_ID = os.environ.get("ADSGRAM_BLOCK_ID", "37291").strip()
 ADSGRAM_PLATFORM_ID = os.environ.get("ADSGRAM_PLATFORM_ID", "35044").strip()
@@ -1036,15 +1037,16 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
             conn.rollback()
             conn.close()
             return {"ok": False, "reason": "ads_not_configured"}
-        if reward_provider == "adsgram":
+        if reward_provider:
+            is_rewarded_ad = 1 if reward_provider == "adsgram" else 0
             c.execute("""
                 UPDATE free_signal_unlocks
-                SET ad_rewarded = 1,
+                SET ad_rewarded = %s,
                     reward_provider = %s,
                     reward_payload_keys = %s,
                     rewarded_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-            """, ("adsgram", ",".join(reward_payload_keys or []), unlock_id))
+            """, (is_rewarded_ad, str(reward_provider), ",".join(reward_payload_keys or []), unlock_id))
         if demo_allowed:
             log("FREE_UNLOCK_DEMO_USED")
         signal = json.loads(payload or "{}")
@@ -1090,6 +1092,26 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
 
 
 
+
+
+def process_social_unlock_token(token):
+    if not FREE_SOCIAL_UNLOCK_ENABLED:
+        log("FREE_SOCIAL_UNLOCK_REJECTED reason=disabled")
+        return {"ok": False, "reason": "social_unlock_disabled"}
+    log("FREE_SOCIAL_UNLOCK_REQUESTED token_present=True")
+    result = process_free_unlock_token(
+        token,
+        demo_allowed=False,
+        reward_provider="social_follow",
+        reward_payload_keys=["facebook", "instagram", "telegram"],
+    )
+    if result.get("ok"):
+        log("FREE_SOCIAL_UNLOCK_SENT")
+    elif result.get("reason") in {"expired_credit_granted", "stale_credit_granted"}:
+        log("FREE_SOCIAL_UNLOCK_CREDIT_GRANTED")
+    else:
+        log(f"FREE_SOCIAL_UNLOCK_REJECTED reason={result.get('reason')}")
+    return result
 def verify_telegram_webapp_init_data(init_data):
     if not TOKEN:
         return False, "", "telegram_token_missing"
