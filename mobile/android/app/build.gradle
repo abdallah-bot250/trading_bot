@@ -1,15 +1,16 @@
-﻿plugins {
+plugins {
     id 'com.android.application'
 }
 
 android {
     namespace 'net.nexoratrader.app'
-    compileSdk 36
+    compileSdk 33
+    buildToolsVersion '36.1.0'
 
     defaultConfig {
         applicationId 'net.nexoratrader.app'
         minSdk 23
-        targetSdk 36
+        targetSdk 33
         versionCode 1
         versionName '1.0.0-professional'
     }
