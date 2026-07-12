@@ -4,14 +4,19 @@
 
 android {
     namespace 'net.nexoratrader.app'
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId 'net.nexoratrader.app'
         minSdk 23
-        targetSdk 35
+        targetSdk 36
         versionCode 1
-        versionName '1.0.0'
+        versionName '1.0.0-professional'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 
     buildTypes {

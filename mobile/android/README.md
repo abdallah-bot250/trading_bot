@@ -1,28 +1,51 @@
 ﻿# Nexora AI Trader Android App
 
-This is a lightweight Android WebView wrapper for the production Nexora AI Trader SaaS.
+Professional Android companion app for the production Nexora AI Trader SaaS.
 
 Production URL:
 https://nexoratrader.net
 
-What it includes:
-- Native splash/loading experience
-- Secure WebView settings
-- Telegram/WhatsApp/external links opened outside the app
-- Back button handling
-- Network error screen
-- File chooser support for website upload inputs
+## What It Includes
 
-Build steps:
-1. Open this `mobile/android` folder in Android Studio.
+- Premium dark native shell inspired by Binance / Bybit / TradingView.
+- Native splash screen with Nexora brand identity.
+- Native top toolbar.
+- Native bottom navigation.
+- WebView session/cookie support.
+- Pull-to-refresh interaction.
+- Native offline screen.
+- Internet lost dialog.
+- Update available dialog placeholder.
+- Native share app action.
+- Native rate app action.
+- Native support / Telegram actions.
+- External link safety for Telegram, WhatsApp, and payment providers.
+- Notification channel structure for future signal alerts, announcements, and marketing notifications.
+- Google Play assets folder.
+
+## Build Steps
+
+1. Open this folder in Android Studio:
+   `D:\trading_bot_backup\mobile\android`
 2. Let Android Studio sync Gradle.
-3. Build a debug APK for testing.
-4. Configure a release signing key.
-5. Build a release AAB for Google Play.
+3. Build debug APK:
+   `Build > Build Bundle(s) / APK(s) > Build APK(s)`
+4. Build release AAB:
+   `Build > Generate Signed Bundle / APK > Android App Bundle`
+5. Configure a real release signing key before Google Play upload.
 
-Before Google Play submission:
-- Replace placeholder app icon with final Nexora app icon.
-- Add Privacy Policy URL.
-- Add Terms of Service URL.
-- Use risk disclaimer in the store listing.
-- Do not claim guaranteed profit or guaranteed trading results.
+## Important
+
+This app is intentionally a safe native wrapper around the live SaaS website. It does not modify:
+
+- Signal Engine
+- Trading logic
+- Payments
+- Telegram bot
+- Database
+- AdsGram / Free Earn
+- Authentication
+
+## Google Play Notes
+
+Use risk-safe language only. Do not claim guaranteed profit, guaranteed signals, guaranteed returns, or investment advice.
