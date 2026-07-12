@@ -11,6 +11,7 @@ Nexora AI Trader is a production-oriented Flask + Telegram crypto signal SaaS pa
 - NOWPayments automatic invoices plus manual payment support.
 - Referral / affiliate tracking with website-first referral links.
 - Real dashboard metrics from `signal_log` and `trades_log`; insufficient history displays honest empty states instead of fake ROI or win-rate numbers.
+- Professional multi-exchange auto-trade layer with encrypted API storage, connection testing, emergency stop, risk profile settings, and execution logging. Bybit futures is production-ready; additional exchanges are available for monitored connection/testing until exchange-specific execution protection is verified.
 
 ## Not Included
 
@@ -30,6 +31,8 @@ Nexora AI Trader is a production-oriented Flask + Telegram crypto signal SaaS pa
 - Confirm paid users receive eligible final signals directly.
 - Confirm dashboard metrics show N/A until real tracked outcomes exist.
 - Confirm `/admin/sale-readiness` is accessible to admin only.
+- Confirm `/auto-trade` shows the multi-exchange wizard and `/admin/auto-trade-monitor` shows execution diagnostics.
+- Confirm Spot Auto Trade remains disabled unless protected exits are deliberately implemented and tested.
 
 ## Sale Notes
 

@@ -20,6 +20,14 @@ import os
 import psycopg2
 from dotenv import load_dotenv
 
+try:
+    from trader_app.services.runtime import decrypt_text
+    from trader_app.services.exchanges.registry import get_exchange_capability, normalize_exchange_key
+except Exception:
+    decrypt_text = None
+    get_exchange_capability = None
+    normalize_exchange_key = lambda value: str(value or "bybit").strip().lower()
+
 load_dotenv()
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -1304,7 +1312,7 @@ def get_users():
     c = conn.cursor()
 
     c.execute("""
-    SELECT chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid,
+    SELECT id, chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid,
            COALESCE(spot_enabled, 1), COALESCE(futures_enabled, 1), email,
            COALESCE(spot_auto_trade_enabled, 0), COALESCE(futures_auto_trade_enabled, 0),
            COALESCE(stop_loss_required, 1)
@@ -1576,8 +1584,9 @@ def log_pro_2y_block(plan, reason):
 
 
 def unpack_delivery_user(user):
-    chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
+    user_id, chat_id, plan, expiry, api_key, api_secret, trade_amount, trade_type, trades, profit, bot_active, is_paid, *type_flags = user
     return {
+        "user_id": user_id,
         "chat_id": chat_id,
         "plan": plan,
         "expiry": expiry,
@@ -1612,7 +1621,125 @@ def delivery_access_status(user_info, qualified_opportunity_available=False):
         return False, "subscription_inactive"
     return True, "eligible"
 # ================= EXCHANGE =================
-def get_exchange(api_key, api_secret, trade_type):
+def safe_decrypt_credential(value):
+    if not value:
+        return ""
+    if decrypt_text:
+        try:
+            decrypted = decrypt_text(value)
+            if decrypted:
+                return decrypted
+        except Exception:
+            pass
+    return value
+
+
+def record_execution_event(user_info, signal, status, reason, connection=None, order_id=None, actual_entry=None, payload=None):
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+        INSERT INTO execution_log (
+            user_id, user_email, exchange, connection_id, symbol, direction,
+            trade_type, mode, requested_entry, actual_entry, status, reason, order_id, payload
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            user_info.get("user_id"),
+            user_info.get("email"),
+            (connection or {}).get("exchange"),
+            (connection or {}).get("id"),
+            signal.get("pair"),
+            signal.get("direction"),
+            "futures" if signal.get("type") == "FUTURES" else "spot",
+            (connection or {}).get("mode"),
+            signal.get("entry"),
+            actual_entry,
+            status,
+            reason,
+            order_id,
+            json.dumps(payload or {}, default=str)[:4000],
+        ))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        if SIGNAL_DEBUG_LOGS:
+            log(f"EXECUTION_LOG_WRITE_FAILED reason={e}")
+
+
+def load_primary_auto_trade_connection(user_info, signal_trade_type):
+    """Return a safe primary exchange connection or None.
+
+    This is additive: legacy Bybit keys still work when no multi-exchange
+    connection exists. Spot execution remains disabled unless protected exits
+    are explicitly supported.
+    """
+    email = user_info.get("email")
+    user_id = user_info.get("user_id")
+    if not email and not user_id:
+        return None, "missing_user"
+    try:
+        conn = db()
+        c = conn.cursor()
+        if user_id:
+            c.execute("""
+            SELECT ec.id, ec.exchange, ec.mode, ec.api_key_encrypted, ec.api_secret_encrypted,
+                   ec.passphrase_encrypted, ec.auto_trade_enabled, ec.primary_for_futures,
+                   ats.emergency_stop, ats.mode AS risk_mode, ats.risk_per_trade
+            FROM exchange_connections ec
+            LEFT JOIN auto_trade_settings ats ON ats.user_id = ec.user_id
+            WHERE ec.user_id = %s
+              AND ec.deleted_at IS NULL
+              AND COALESCE(ec.auto_trade_enabled, 0) = 1
+              AND (%s = 'futures' AND COALESCE(ec.primary_for_futures, 0) = 1)
+            ORDER BY ec.last_tested_at DESC NULLS LAST, ec.created_at DESC
+            LIMIT 1
+            """, (user_id, signal_trade_type))
+        else:
+            c.execute("""
+            SELECT ec.id, ec.exchange, ec.mode, ec.api_key_encrypted, ec.api_secret_encrypted,
+                   ec.passphrase_encrypted, ec.auto_trade_enabled, ec.primary_for_futures,
+                   ats.emergency_stop, ats.mode AS risk_mode, ats.risk_per_trade
+            FROM exchange_connections ec
+            LEFT JOIN auto_trade_settings ats ON ats.user_id = ec.user_id
+            WHERE LOWER(ec.user_email) = LOWER(%s)
+              AND ec.deleted_at IS NULL
+              AND COALESCE(ec.auto_trade_enabled, 0) = 1
+              AND (%s = 'futures' AND COALESCE(ec.primary_for_futures, 0) = 1)
+            ORDER BY ec.last_tested_at DESC NULLS LAST, ec.created_at DESC
+            LIMIT 1
+            """, (email, signal_trade_type))
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None, "no_primary_connection"
+        connection = {
+            "id": row[0],
+            "exchange": normalize_exchange_key(row[1]),
+            "mode": row[2] or "futures",
+            "api_key": safe_decrypt_credential(row[3]),
+            "api_secret": safe_decrypt_credential(row[4]),
+            "passphrase": safe_decrypt_credential(row[5]),
+            "auto_trade_enabled": int(row[6] or 0),
+            "primary_for_futures": int(row[7] or 0),
+            "emergency_stop": int(row[8] or 0),
+            "risk_mode": row[9] or "conservative",
+            "risk_per_trade": float(row[10] or 0) if row[10] is not None else None,
+        }
+        if connection["emergency_stop"]:
+            return None, "emergency_stop"
+        if signal_trade_type == "spot":
+            return None, "spot_auto_disabled_or_unprotected"
+        capability = get_exchange_capability(connection["exchange"]) if get_exchange_capability else {"auto_trade_futures": connection["exchange"] in {"bybit", "binance"}}
+        if not capability.get("auto_trade_futures"):
+            return None, f"exchange_not_live_enabled:{connection['exchange']}"
+        return connection, "multi_exchange"
+    except Exception as e:
+        log(f"MULTI_EXCHANGE_CONNECTION_LOOKUP_FAILED email={email} reason={e}")
+        return None, "lookup_failed"
+
+
+def get_exchange(api_key, api_secret, trade_type, exchange_name=None, passphrase=None):
     """Return the configured exchange for real auto-trading.
 
     Default is Bybit because Binance can be blocked by region/API permissions.
@@ -1620,7 +1747,7 @@ def get_exchange(api_key, api_secret, trade_type):
     Use Bybit API keys without withdrawal permission. For futures, this build
     targets USDT-margined perpetuals (for example BTC/USDT:USDT).
     """
-    exchange_name = (AUTO_TRADE_EXCHANGE or "bybit").lower()
+    exchange_name = normalize_exchange_key(exchange_name or AUTO_TRADE_EXCHANGE or "bybit")
     trade_type = str(trade_type or "spot").lower()
     default_type = "swap" if trade_type == "futures" else "spot"
 
@@ -1643,7 +1770,33 @@ def get_exchange(api_key, api_secret, trade_type):
     if exchange_name == "kucoin":
         if trade_type == "futures":
             raise Exception("KuCoin futures execution is not enabled in this build. Use spot or set AUTO_TRADE_EXCHANGE=bybit.")
-        return ccxt.kucoin(common)
+        return ccxt.kucoin({**common, "password": passphrase} if passphrase else common)
+
+    if exchange_name == "okx":
+        return ccxt.okx({
+            **common,
+            "password": passphrase,
+            "options": {"defaultType": "swap" if trade_type == "futures" else "spot"},
+        })
+
+    if exchange_name == "bitget":
+        return ccxt.bitget({
+            **common,
+            "password": passphrase,
+            "options": {"defaultType": "swap" if trade_type == "futures" else "spot"},
+        })
+
+    if exchange_name == "gateio":
+        return ccxt.gateio({
+            **common,
+            "options": {"defaultType": "swap" if trade_type == "futures" else "spot"},
+        })
+
+    if exchange_name == "mexc":
+        return ccxt.mexc({
+            **common,
+            "options": {"defaultType": "swap" if trade_type == "futures" else "spot"},
+        })
 
     if exchange_name in ["binanceus", "binance_us"]:
         if trade_type == "futures":
@@ -1928,15 +2081,18 @@ def place_protection_orders(exchange, symbol, side, amount, tp_price, sl_price, 
         return False, f"Protection order error: {e}"
 
 # ================= TRADE EXECUTION =================
-def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id):
+def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id, exchange_name=None, passphrase=None, connection_id=None, user_info=None):
     try:
-        exchange = get_exchange(api_key, api_secret, trade_type)
+        exchange_name = normalize_exchange_key(exchange_name or AUTO_TRADE_EXCHANGE or "bybit")
+        connection_ref = {"exchange": exchange_name, "id": connection_id}
+        exchange = get_exchange(api_key, api_secret, trade_type, exchange_name=exchange_name, passphrase=passphrase)
         exchange.load_markets()
 
         raw_symbol = signal["pair"]
-        symbol = normalize_symbol_for_ccxt(raw_symbol, trade_type=trade_type, exchange_name=AUTO_TRADE_EXCHANGE)
+        symbol = normalize_symbol_for_ccxt(raw_symbol, trade_type=trade_type, exchange_name=exchange_name)
 
         if str(trade_type or "spot").lower() == "spot" and not ENABLE_SPOT_AUTO_TRADE:
+            record_execution_event(user_info or {}, signal, "SKIPPED", "spot_auto_disabled_or_unprotected", connection_ref)
             return None, "Spot auto-trading is disabled for safety until exchange OCO/SL protection is implemented. Spot signals remain enabled."
 
         balance = exchange.fetch_balance()
@@ -1957,9 +2113,11 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         display_confidence = signal_display_confidence(signal)
         if display_confidence < 70:
             log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
+            record_execution_event(user_info or {}, signal, "REJECTED", "low_display_confidence", connection_ref)
             return None, "Auto trade rejected: display confidence below 70"
         freshness_ok, freshness_reason, live_price = validate_signal_entry_freshness(signal, context="AUTO_TRADE")
         if not freshness_ok:
+            record_execution_event(user_info or {}, signal, "REJECTED", f"entry_freshness:{freshness_reason}", connection_ref)
             return None, f"Auto trade rejected by entry freshness guard: {freshness_reason}"
 
         # تأكيد حي قبل التنفيذ
@@ -2057,10 +2215,29 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         ))
         conn.commit()
         conn.close()
+        record_execution_event(
+            user_info or {},
+            signal,
+            "EXECUTED",
+            protection_msg,
+            connection_ref,
+            order_id=str(order.get("id")),
+            actual_entry=actual_entry_price,
+        )
 
         return order, protection_msg
 
     except Exception as e:
+        try:
+            record_execution_event(
+                user_info or {},
+                signal,
+                "ERROR",
+                str(e),
+                {"exchange": exchange_name if "exchange_name" in locals() else None, "id": connection_id},
+            )
+        except Exception:
+            pass
         return None, f"Trade Error: {e}"
 
 # ================= SIGNAL TRACKING MONITOR =================
@@ -2742,39 +2919,61 @@ def run():
                         log_pro_2y_block(plan, "telegram_send_failed")
 
                     # ===== AUTO TRADE FOR VIP =====
-                    if plan in AUTO_TRADE_PLANS and bot_active == 1 and api_key and api_secret:
+                    if plan in AUTO_TRADE_PLANS and bot_active == 1:
                         try:
+                            signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
+                            primary_connection, connection_reason = load_primary_auto_trade_connection(user_info, signal_trade_type)
+                            effective_api_key = primary_connection.get("api_key") if primary_connection else safe_decrypt_credential(api_key)
+                            effective_api_secret = primary_connection.get("api_secret") if primary_connection else safe_decrypt_credential(api_secret)
+                            effective_passphrase = primary_connection.get("passphrase") if primary_connection else None
+                            effective_exchange = primary_connection.get("exchange") if primary_connection else AUTO_TRADE_EXCHANGE
+                            effective_connection_id = primary_connection.get("id") if primary_connection else None
+
+                            if not effective_api_key or not effective_api_secret:
+                                record_execution_event(user_info, signal, "SKIPPED", f"missing_credentials:{connection_reason}", primary_connection)
+                                log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=missing_credentials connection={connection_reason}")
+                                continue
+
                             can_trade, reason = can_trade_user(chat_id, trade_amount)
                             if not can_trade:
+                                record_execution_event(user_info, signal, "SKIPPED", f"user_risk_gate:{reason}", primary_connection)
                                 log(f"Auto trade blocked for {chat_id}: {reason}")
                                 continue
 
                             if has_open_trade(chat_id, signal["pair"]):
+                                record_execution_event(user_info, signal, "SKIPPED", "existing_open_trade", primary_connection)
                                 log(f"Auto trade skipped: already open trade on {signal['pair']} for {chat_id}")
                                 continue
 
                             if pair_in_cooldown(chat_id, signal["pair"]):
+                                record_execution_event(user_info, signal, "SKIPPED", "pair_cooldown", primary_connection)
                                 log(f"Auto trade skipped: cooldown active on {signal['pair']} for {chat_id}")
                                 continue
 
-                            signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"
                             if signal_trade_type == "spot" and (spot_auto_trade_enabled != 1 or not ENABLE_SPOT_AUTO_TRADE):
+                                record_execution_event(user_info, signal, "SKIPPED", "spot_auto_disabled_or_unprotected", primary_connection)
                                 log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=spot_auto_disabled_or_unprotected")
                                 continue
-                            if signal_trade_type == "futures" and futures_auto_trade_enabled != 1:
+                            if signal_trade_type == "futures" and futures_auto_trade_enabled != 1 and not primary_connection:
+                                record_execution_event(user_info, signal, "SKIPPED", "futures_auto_disabled", primary_connection)
                                 log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=futures_auto_disabled")
                                 continue
                             if stop_loss_required == 1 and not signal.get("sl"):
+                                record_execution_event(user_info, signal, "SKIPPED", "missing_stop_loss", primary_connection)
                                 log(f"AUTO_TRADE_SKIPPED pair={signal.get('pair')} reason=missing_stop_loss")
                                 continue
 
                             order, result_msg = execute_trade(
-                                api_key=api_key,
-                                api_secret=api_secret,
+                                api_key=effective_api_key,
+                                api_secret=effective_api_secret,
                                 signal=signal,
                                 trade_type=signal_trade_type,
                                 risk_percent=adjust_risk(profit),
-                                chat_id=chat_id
+                                chat_id=chat_id,
+                                exchange_name=effective_exchange,
+                                passphrase=effective_passphrase,
+                                connection_id=effective_connection_id,
+                                user_info=user_info,
                             )
 
                             if order:

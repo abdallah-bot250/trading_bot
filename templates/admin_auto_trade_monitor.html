@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Auto Trade Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260712_multi_exchange">
+  <style>
+    body{margin:0;background:radial-gradient(circle at 18% 10%,rgba(212,175,55,.14),transparent 28%),linear-gradient(135deg,#030812,#07111e);color:#f7fbff;font-family:Inter,Segoe UI,Arial,sans-serif}
+    .wrap{max-width:1280px;margin:0 auto;padding:34px 22px}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:22px}
+    h1{margin:0;font-size:clamp(28px,4vw,44px);letter-spacing:-.04em}
+    p{color:#9fb0c6}
+    .btn{display:inline-flex;text-decoration:none;color:#061016;background:linear-gradient(135deg,#ffe082,#d4af37);border-radius:14px;padding:12px 16px;font-weight:900}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+    .card{background:linear-gradient(145deg,rgba(14,25,42,.86),rgba(5,11,20,.8));border:1px solid rgba(212,175,55,.22);border-radius:22px;padding:18px;box-shadow:0 24px 70px rgba(0,0,0,.34)}
+    .label{color:#9fb0c6;font-size:12px;text-transform:uppercase;letter-spacing:.12em}
+    .value{font-size:30px;font-weight:1000;margin-top:8px}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:12px 10px;border-bottom:1px solid rgba(148,163,184,.16);text-align:left;vertical-align:top}
+    th{color:#9fb0c6;font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+    .pill{display:inline-flex;padding:6px 9px;border-radius:999px;background:rgba(23,201,100,.12);color:#83ffb4;font-weight:900;font-size:12px}
+    .pill.warn{background:rgba(212,175,55,.13);color:#ffe58a}
+    .pill.err{background:rgba(255,91,110,.12);color:#ffb2bd}
+    .scroll{overflow-x:auto}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="top">
+      <div>
+        <h1>Auto Trade Monitor</h1>
+        <p>Read-only execution safety, exchange connection, and skipped-trade diagnostics.</p>
+      </div>
+      <a class="btn" href="/admin">Back to Admin</a>
+    </div>
+    <section class="grid">
+      {% for key, value in metrics.items() %}
+        <div class="card"><div class="label">{{ key.replace('_',' ')|title }}</div><div class="value">{{ value }}</div></div>
+      {% endfor %}
+    </section>
+    <section class="card" style="margin-top:18px">
+      <h2>Recent Execution Events</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>User</th><th>Exchange</th><th>Pair</th><th>Side</th><th>Type</th><th>Status</th><th>Reason</th><th>Time</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              {% set cls = 'err' if row.status in ['ERROR','REJECTED'] else ('warn' if row.status == 'SKIPPED' else '') %}
+              <tr>
+                <td>{{ row.user_email or 'N/A' }}</td>
+                <td>{{ row.exchange or 'N/A' }}</td>
+                <td>{{ row.symbol or 'N/A' }}</td>
+                <td>{{ row.direction or 'N/A' }}</td>
+                <td>{{ row.trade_type or 'N/A' }}</td>
+                <td><span class="pill {{ cls }}">{{ row.status or 'N/A' }}</span></td>
+                <td>{{ row.reason or 'N/A' }}</td>
+                <td>{{ row.created_at or 'N/A' }}</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="8">No execution events yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

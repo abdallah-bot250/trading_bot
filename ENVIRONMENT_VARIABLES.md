@@ -38,4 +38,14 @@
 - `ENABLE_SIGNAL_TRACKING`
 - `SIGNAL_TRACKING_NOTIFY`
 
+## Multi-Exchange Auto Trade
+- `AUTO_TRADE_EXCHANGE` - legacy fallback exchange, usually `bybit`.
+- `ENABLE_SPOT_AUTO_TRADE` - keep `false` unless protected OCO/bracket exits are implemented and verified.
+- `MAX_AUTO_TRADE_NOTIONAL_PERCENT`
+- `MAX_ENTRY_DEVIATION_PERCENT`
+- `ENTRY_CHASE_TOLERANCE_PERCENT`
+- `MAX_TP1_PROGRESS_PERCENT`
+
+Exchange API keys should be added by users through `/auto-trade`. Production secrets must not be stored in `.env.example`.
+
 Never commit production `.env` values.

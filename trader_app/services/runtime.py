@@ -729,6 +729,69 @@ def init_db():
         )
         """)
 
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS exchange_connections (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            user_email TEXT,
+            exchange TEXT NOT NULL,
+            label TEXT DEFAULT 'Primary account',
+            api_key_encrypted TEXT,
+            api_secret_encrypted TEXT,
+            passphrase_encrypted TEXT,
+            mode TEXT DEFAULT 'futures',
+            spot_enabled INTEGER DEFAULT 0,
+            futures_enabled INTEGER DEFAULT 1,
+            auto_trade_enabled INTEGER DEFAULT 0,
+            primary_for_spot INTEGER DEFAULT 0,
+            primary_for_futures INTEGER DEFAULT 1,
+            status TEXT DEFAULT 'pending',
+            permission_status TEXT DEFAULT 'unknown',
+            last_tested_at TIMESTAMP NULL,
+            last_error TEXT,
+            balance_snapshot TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS auto_trade_settings (
+            user_id INTEGER PRIMARY KEY,
+            user_email TEXT,
+            mode TEXT DEFAULT 'conservative',
+            risk_per_trade REAL DEFAULT 1.0,
+            max_daily_trades INTEGER DEFAULT 3,
+            max_daily_loss REAL DEFAULT 3.0,
+            max_position_size REAL DEFAULT 50.0,
+            allowed_symbols TEXT DEFAULT '',
+            emergency_stop INTEGER DEFAULT 0,
+            stop_loss_required INTEGER DEFAULT 1,
+            take_profit_required INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            user_email TEXT,
+            exchange TEXT,
+            connection_id INTEGER,
+            symbol TEXT,
+            direction TEXT,
+            trade_type TEXT DEFAULT 'futures',
+            mode TEXT,
+            requested_entry REAL,
+            actual_entry REAL,
+            status TEXT,
+            reason TEXT,
+            order_id TEXT,
+            payload TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
         # إضافات أمان لو الجدول قديم
 
         try:
@@ -748,6 +811,9 @@ def init_db():
             "failed_payments",
             "subscription_renewals",
             "audit_logs",
+            "exchange_connections",
+            "auto_trade_settings",
+            "execution_log",
         ]
 
         for table_name in managed_tables:
@@ -836,6 +902,11 @@ def init_db():
             c.execute("CREATE INDEX IF NOT EXISTS ix_users_paid_created ON users (is_paid, created_at)")
             c.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_email_created ON audit_logs (email, created_at)")
             c.execute("CREATE INDEX IF NOT EXISTS ix_audit_logs_action_created ON audit_logs (action, created_at)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_exchange_connections_user ON exchange_connections (user_id, deleted_at)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_exchange_connections_email ON exchange_connections (LOWER(user_email), deleted_at)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_exchange_connections_primary_futures ON exchange_connections (user_id, primary_for_futures, auto_trade_enabled)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_execution_log_user_created ON execution_log (user_id, created_at)")
+            c.execute("CREATE INDEX IF NOT EXISTS ix_execution_log_status_created ON execution_log (status, created_at)")
             c.execute("""
                 DO $$
                 BEGIN
@@ -858,6 +929,8 @@ def init_db():
                 ("coupons", "ck_coupons_discount_range", "discount_percent >= 0 AND discount_percent <= 95"),
                 ("coupons", "ck_coupons_active_flag", "active IN (0, 1)"),
                 ("payment_invoices", "ck_payment_invoices_amount_nonnegative", "amount >= 0 AND original_amount >= 0 AND discount_amount >= 0"),
+                ("exchange_connections", "ck_exchange_connection_flags", "spot_enabled IN (0, 1) AND futures_enabled IN (0, 1) AND auto_trade_enabled IN (0, 1) AND primary_for_spot IN (0, 1) AND primary_for_futures IN (0, 1)"),
+                ("auto_trade_settings", "ck_auto_trade_settings_flags", "emergency_stop IN (0, 1) AND stop_loss_required IN (0, 1) AND take_profit_required IN (0, 1)"),
             ]
 
             for table_name, constraint_name, condition in constraints:
@@ -881,6 +954,45 @@ def init_db():
             log(f"⚠️ chat_id unique index warning: {idx_err}")
 
         # فعّل الأدمن تلقائيًا لو الإيميل موجود
+        try:
+            c.execute("""
+                INSERT INTO auto_trade_settings (user_id, user_email)
+                SELECT id, email
+                FROM users
+                WHERE id IS NOT NULL
+                ON CONFLICT (user_id) DO NOTHING
+            """)
+            c.execute("""
+                INSERT INTO exchange_connections (
+                    user_id, user_email, exchange, label, api_key_encrypted, api_secret_encrypted,
+                    mode, spot_enabled, futures_enabled, auto_trade_enabled, primary_for_futures,
+                    status, permission_status
+                )
+                SELECT
+                    u.id, u.email, 'bybit', 'Legacy Bybit API', u.api_key, u.api_secret,
+                    COALESCE(NULLIF(u.trade_type, ''), 'futures'),
+                    COALESCE(u.spot_auto_trade_enabled, 0),
+                    COALESCE(u.futures_auto_trade_enabled, 0),
+                    CASE WHEN COALESCE(u.futures_auto_trade_enabled, 0) = 1 THEN 1 ELSE 0 END,
+                    1,
+                    'imported',
+                    'unknown'
+                FROM users u
+                WHERE u.id IS NOT NULL
+                  AND u.api_key IS NOT NULL AND u.api_key <> ''
+                  AND u.api_secret IS NOT NULL AND u.api_secret <> ''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM exchange_connections ec
+                      WHERE ec.user_id = u.id
+                        AND ec.exchange = 'bybit'
+                        AND ec.label = 'Legacy Bybit API'
+                        AND ec.deleted_at IS NULL
+                  )
+            """)
+        except Exception as migration_err:
+            log(f"multi_exchange migration warning: {migration_err}")
+
         if ADMIN_EMAIL:
             c.execute("""
                 UPDATE users

@@ -24,6 +24,16 @@ from trader_app.services.telegram import (
     user_statistics_message,
     welcome_message,
 )
+from trader_app.services.exchanges.connection_test import test_exchange_connection
+from trader_app.services.exchanges.encryption import encrypt_credential, decrypt_credential, mask_credential
+from trader_app.services.exchanges.registry import (
+    EXCHANGE_CAPABILITIES,
+    exchange_requires_passphrase,
+    get_exchange_capability,
+    normalize_exchange_key,
+    supported_exchange_options,
+)
+from trader_app.services.exchanges.risk import DEFAULT_AUTO_TRADE_SETTINGS, normalize_auto_trade_mode, sanitize_float, sanitize_int
 
 public_bp = Blueprint("public", __name__)
 health_bp = Blueprint("health", __name__)
@@ -2532,41 +2542,322 @@ def auto_trading_page():
     return _dashboard_section("auto-trading")
 
 
+def _auto_trade_user():
+    if not session.get("user"):
+        return None
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT id, email, plan, is_admin, chat_id, spot_auto_trade_enabled,
+                   futures_auto_trade_enabled, trade_type
+            FROM users
+            WHERE LOWER(email) = %s
+            LIMIT 1
+        """, (session["user"].strip().lower(),))
+        user = c.fetchone()
+        conn.close()
+        return dict(user) if user else None
+    except Exception as e:
+        log(f"auto_trade_user unavailable: {e}")
+        return None
+
+
+def _auto_trade_plan_allowed(user):
+    plan = str((user or {}).get("plan") or "trial").lower()
+    return bool((user or {}).get("is_admin")) or plan in AUTO_TRADE_PLANS
+
+
+def _ensure_auto_trade_settings(user):
+    defaults = dict(DEFAULT_AUTO_TRADE_SETTINGS)
+    if not user:
+        return defaults
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            INSERT INTO auto_trade_settings (user_id, user_email)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO NOTHING
+        """, (user["id"], user["email"]))
+        c.execute("SELECT * FROM auto_trade_settings WHERE user_id = %s", (user["id"],))
+        row = c.fetchone()
+        conn.commit()
+        conn.close()
+        if row:
+            settings = dict(defaults)
+            settings.update(dict(row))
+            settings["mode"] = normalize_auto_trade_mode(settings.get("mode"))
+            return settings
+    except Exception as e:
+        log(f"auto_trade_settings unavailable: {e}")
+    return defaults
+
+
+def _load_exchange_connections(user_id):
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT *
+            FROM exchange_connections
+            WHERE user_id = %s
+              AND deleted_at IS NULL
+            ORDER BY primary_for_futures DESC, auto_trade_enabled DESC, created_at DESC
+        """, (user_id,))
+        rows = [dict(row) for row in c.fetchall()]
+        conn.close()
+        for row in rows:
+            row["masked_api_key"] = mask_credential(decrypt_credential(row.get("api_key_encrypted")))
+            row["capability"] = get_exchange_capability(row.get("exchange"))
+        return rows
+    except Exception as e:
+        log(f"exchange_connections unavailable: {e}")
+        return []
+
+
+def _save_exchange_connection(user, form):
+    exchange = normalize_exchange_key(form.get("exchange"))
+    capability = get_exchange_capability(exchange)
+    mode = str(form.get("mode") or "futures").strip().lower()
+    mode = "spot" if mode == "spot" else "futures"
+    api_key = str(form.get("api_key") or "").strip()
+    api_secret = str(form.get("api_secret") or "").strip()
+    passphrase = str(form.get("passphrase") or "").strip()
+    label = str(form.get("label") or capability["name"]).strip()[:80]
+    if not api_key or not api_secret:
+        return False, "API key and secret are required."
+    if exchange_requires_passphrase(exchange) and not passphrase:
+        return False, f"{capability['name']} requires an API passphrase."
+
+    spot_enabled = 1 if form.get("spot_enabled") == "1" else 0
+    futures_enabled = 1 if form.get("futures_enabled", "1") == "1" else 0
+    auto_trade_enabled = 1 if form.get("auto_trade_enabled") == "1" else 0
+    primary_for_futures = 1 if form.get("primary_for_futures", "1") == "1" else 0
+    primary_for_spot = 0
+
+    if mode == "spot" or spot_enabled:
+        spot_enabled = 0
+        primary_for_spot = 0
+        if auto_trade_enabled:
+            auto_trade_enabled = 0
+            flash("Spot Auto Trade is disabled until OCO/bracket exits are verified.", "warning")
+
+    if auto_trade_enabled and not capability.get("auto_trade_futures"):
+        auto_trade_enabled = 0
+        flash(f"{capability['name']} is saved for testing/monitoring. Live execution is not enabled for this exchange yet.", "warning")
+
+    test_result = test_exchange_connection(exchange, api_key, api_secret, passphrase, mode=mode)
+    status = "connected" if test_result.get("ok") else "needs_review"
+    permission_status = test_result.get("permission_status") or ("verified" if test_result.get("ok") else "unknown")
+
+    conn = db()
+    c = conn.cursor()
+    if primary_for_futures:
+        c.execute("""
+            UPDATE exchange_connections
+            SET primary_for_futures = 0
+            WHERE user_id = %s AND deleted_at IS NULL
+        """, (user["id"],))
+    c.execute("""
+        INSERT INTO exchange_connections (
+            user_id, user_email, exchange, label, api_key_encrypted, api_secret_encrypted,
+            passphrase_encrypted, mode, spot_enabled, futures_enabled, auto_trade_enabled,
+            primary_for_spot, primary_for_futures, status, permission_status, last_tested_at,
+            last_error, balance_snapshot
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s, %s)
+    """, (
+        user["id"], user["email"], exchange, label,
+        encrypt_credential(api_key), encrypt_credential(api_secret), encrypt_credential(passphrase),
+        mode, spot_enabled, futures_enabled, auto_trade_enabled, primary_for_spot,
+        primary_for_futures, status, permission_status, test_result.get("message"),
+        str(test_result.get("balance_summary") or {}),
+    ))
+    conn.commit()
+    conn.close()
+    audit_log("exchange_connection_saved", user["email"], f"exchange={exchange};status={status};auto={auto_trade_enabled}")
+    return True, test_result.get("message") or "Connection saved."
+
+
 @dashboard_bp.route("/auto-trade")
 def auto_trade_dashboard_page():
-    user = _safe_current_user_snapshot()
+    user = _auto_trade_user()
     if not user:
         return redirect("/login")
+    connections = _load_exchange_connections(user["id"])
+    settings = _ensure_auto_trade_settings(user)
     chat_id = str(user.get("chat_id") or "").strip()
     rows, source = _load_marketing_signals(chat_id, 25) if chat_id else ([], "telegram_not_linked")
-    auto_trade = {
-        "exchange": "Bybit",
-        "status": "Enabled" if int(user.get("spot_auto_trade_enabled") or 0) == 1 or int(user.get("futures_auto_trade_enabled") or 0) == 1 else "Disabled",
-        "spot": "Enabled" if int(user.get("spot_auto_trade_enabled") or 0) == 1 else "Disabled",
-        "futures": "Enabled" if int(user.get("futures_auto_trade_enabled") or 0) == 1 else "Disabled",
-        "api_status": "Not connected yet",
-        "open_positions": len([row for row in rows if str(row.get("status") or "").upper() == "OPEN"]),
-        "closed_today": "Not available",
-        "pnl_today": "Not available",
-        "guards": [
-            ("Entry freshness", "Active before dispatch/execution"),
-            ("Max deviation", "Configured in execution guard"),
-            ("Chase protection", "Blocks stale entries"),
-        ],
-    }
     return render_template(
-        "marketing_page.html",
-        page_key="auto-trade",
-        title="Auto Trade Dashboard",
-        eyebrow="Execution Readiness",
-        summary="Read-only overview of auto-trade readiness and safety guards. No orders are sent from this page.",
+        "auto_trade.html",
         user=user,
+        connections=connections,
+        settings=settings,
+        exchanges=supported_exchange_options(),
+        capabilities=EXCHANGE_CAPABILITIES,
+        plan_allowed=_auto_trade_plan_allowed(user),
         source=source,
         performance=_build_performance_snapshot(rows),
         signals=rows[:10],
-        ai=None,
-        auto_trade=auto_trade,
     )
+
+
+@dashboard_bp.route("/auto-trade/test-connection", methods=["POST"])
+def auto_trade_test_connection():
+    user = _auto_trade_user()
+    if not user:
+        return jsonify({"ok": False, "message": "Please login first."}), 401
+    if not _auto_trade_plan_allowed(user):
+        return jsonify({"ok": False, "message": "Auto Trade is available on Elite and Pro 2 Years plans."}), 403
+    exchange = normalize_exchange_key(request.form.get("exchange"))
+    mode = "spot" if str(request.form.get("mode") or "").lower() == "spot" else "futures"
+    result = test_exchange_connection(
+        exchange,
+        request.form.get("api_key"),
+        request.form.get("api_secret"),
+        request.form.get("passphrase"),
+        mode=mode,
+    )
+    audit_log("exchange_connection_tested", user["email"], f"exchange={exchange};ok={bool(result.get('ok'))}")
+    return jsonify(result)
+
+
+@dashboard_bp.route("/auto-trade/save-connection", methods=["POST"])
+def auto_trade_save_connection():
+    user = _auto_trade_user()
+    if not user:
+        return redirect("/login")
+    if not _auto_trade_plan_allowed(user):
+        flash("Auto Trade is available on Elite and Pro 2 Years plans.", "error")
+        return redirect("/auto-trade")
+    try:
+        ok, message = _save_exchange_connection(user, request.form)
+        flash(message, "success" if ok else "error")
+    except Exception as e:
+        log(f"save_exchange_connection error: {e}")
+        flash("Could not save exchange connection. Please check the credentials and try again.", "error")
+    return redirect("/auto-trade")
+
+
+@dashboard_bp.route("/auto-trade/settings", methods=["POST"])
+def auto_trade_save_risk_settings():
+    user = _auto_trade_user()
+    if not user:
+        return redirect("/login")
+    settings = {
+        "mode": normalize_auto_trade_mode(request.form.get("mode")),
+        "risk_per_trade": sanitize_float(request.form.get("risk_per_trade"), 1.0, 0.1, 5.0),
+        "max_daily_trades": sanitize_int(request.form.get("max_daily_trades"), 3, 1, 20),
+        "max_daily_loss": sanitize_float(request.form.get("max_daily_loss"), 3.0, 0.5, 20.0),
+        "max_position_size": sanitize_float(request.form.get("max_position_size"), 50.0, 5.0, 100000.0),
+        "allowed_symbols": str(request.form.get("allowed_symbols") or "").upper()[:500],
+    }
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO auto_trade_settings (
+                user_id, user_email, mode, risk_per_trade, max_daily_trades,
+                max_daily_loss, max_position_size, allowed_symbols, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id) DO UPDATE SET
+                user_email = EXCLUDED.user_email,
+                mode = EXCLUDED.mode,
+                risk_per_trade = EXCLUDED.risk_per_trade,
+                max_daily_trades = EXCLUDED.max_daily_trades,
+                max_daily_loss = EXCLUDED.max_daily_loss,
+                max_position_size = EXCLUDED.max_position_size,
+                allowed_symbols = EXCLUDED.allowed_symbols,
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            user["id"], user["email"], settings["mode"], settings["risk_per_trade"],
+            settings["max_daily_trades"], settings["max_daily_loss"],
+            settings["max_position_size"], settings["allowed_symbols"],
+        ))
+        conn.commit()
+        conn.close()
+        audit_log("auto_trade_settings_updated", user["email"], f"mode={settings['mode']}")
+        flash("Risk settings saved.", "success")
+    except Exception as e:
+        log(f"auto_trade_settings save error: {e}")
+        flash("Could not save risk settings.", "error")
+    return redirect("/auto-trade")
+
+
+@dashboard_bp.route("/auto-trade/emergency-stop", methods=["POST"])
+def auto_trade_emergency_stop():
+    user = _auto_trade_user()
+    if not user:
+        return redirect("/login")
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("""
+            INSERT INTO auto_trade_settings (user_id, user_email, emergency_stop)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (user_id) DO UPDATE SET emergency_stop = 1, updated_at = CURRENT_TIMESTAMP
+        """, (user["id"], user["email"]))
+        c.execute("""
+            UPDATE exchange_connections
+            SET auto_trade_enabled = 0, status = 'paused'
+            WHERE user_id = %s AND deleted_at IS NULL
+        """, (user["id"],))
+        c.execute("""
+            UPDATE users
+            SET spot_auto_trade_enabled = 0, futures_auto_trade_enabled = 0
+            WHERE id = %s
+        """, (user["id"],))
+        conn.commit()
+        conn.close()
+        audit_log("auto_trade_emergency_stop", user["email"])
+        flash("Emergency stop activated. Auto trade is disabled on all connected exchanges.", "success")
+    except Exception as e:
+        log(f"auto_trade_emergency_stop error: {e}")
+        flash("Could not activate emergency stop.", "error")
+    return redirect("/auto-trade")
+
+
+@dashboard_bp.route("/auto-trade/connection/<int:connection_id>/<action>", methods=["POST"])
+def auto_trade_connection_action(connection_id, action):
+    user = _auto_trade_user()
+    if not user:
+        return redirect("/login")
+    if action not in {"disable", "delete", "primary"}:
+        return "Invalid action", 400
+    try:
+        conn = db()
+        c = conn.cursor()
+        if action == "disable":
+            c.execute("""
+                UPDATE exchange_connections
+                SET auto_trade_enabled = 0, status = 'disabled'
+                WHERE id = %s AND user_id = %s
+            """, (connection_id, user["id"]))
+            flash("Connection disabled.", "success")
+        elif action == "delete":
+            c.execute("""
+                UPDATE exchange_connections
+                SET auto_trade_enabled = 0, status = 'deleted', deleted_at = CURRENT_TIMESTAMP
+                WHERE id = %s AND user_id = %s
+            """, (connection_id, user["id"]))
+            flash("Connection removed.", "success")
+        elif action == "primary":
+            c.execute("UPDATE exchange_connections SET primary_for_futures = 0 WHERE user_id = %s", (user["id"],))
+            c.execute("""
+                UPDATE exchange_connections
+                SET primary_for_futures = 1
+                WHERE id = %s AND user_id = %s AND deleted_at IS NULL
+            """, (connection_id, user["id"]))
+            flash("Primary futures exchange updated.", "success")
+        conn.commit()
+        conn.close()
+        audit_log(f"auto_trade_connection_{action}", user["email"], f"connection_id={connection_id}")
+    except Exception as e:
+        log(f"auto_trade_connection_action error: {e}")
+        flash("Could not update connection.", "error")
+    return redirect("/auto-trade")
 
 
 SAAS_FEATURE_NAV = [
@@ -3156,6 +3447,51 @@ def admin_product_features_page():
             "summary": page.get("summary") or "Product feature presentation page.",
         })
     return render_template("admin_product_features.html", features=features)
+
+
+@admin_bp.route("/admin/auto-trade-monitor")
+def admin_auto_trade_monitor_page():
+    if not session.get("user"):
+        return redirect("/login")
+    if not is_current_admin():
+        return "Forbidden", 403
+    metrics = {
+        "connections": 0,
+        "enabled_connections": 0,
+        "executed": 0,
+        "skipped": 0,
+        "rejected": 0,
+        "errors": 0,
+    }
+    rows = []
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("SELECT COUNT(*) AS count FROM exchange_connections WHERE deleted_at IS NULL")
+        metrics["connections"] = int((c.fetchone() or {}).get("count") or 0)
+        c.execute("SELECT COUNT(*) AS count FROM exchange_connections WHERE deleted_at IS NULL AND COALESCE(auto_trade_enabled, 0) = 1")
+        metrics["enabled_connections"] = int((c.fetchone() or {}).get("count") or 0)
+        c.execute("""
+            SELECT status, COUNT(*) AS count
+            FROM execution_log
+            WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+            GROUP BY status
+        """)
+        for row in c.fetchall():
+            key = str(row.get("status") or "").lower()
+            if key in metrics:
+                metrics[key] = int(row.get("count") or 0)
+        c.execute("""
+            SELECT user_email, exchange, symbol, direction, trade_type, status, reason, created_at
+            FROM execution_log
+            ORDER BY created_at DESC
+            LIMIT 80
+        """)
+        rows = [dict(row) for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        log(f"admin_auto_trade_monitor unavailable: {e}")
+    return render_template("admin_auto_trade_monitor.html", metrics=metrics, rows=rows)
 
 
 # ================= SIMPLE DATA API =================

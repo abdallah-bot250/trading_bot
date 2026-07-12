@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexora Auto Trade</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='premium.css') }}?v=20260712_multi_exchange">
+  <style>
+    :root {
+      --gold: #d4af37;
+      --green: #17c964;
+      --cyan: #00c2ff;
+      --bg: #07101f;
+      --panel: rgba(14, 24, 39, .82);
+      --line: rgba(212, 175, 55, .22);
+      --muted: #9fb0c6;
+      --text: #f7fbff;
+      --danger: #ff5b6e;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(212,175,55,.16), transparent 28%),
+        radial-gradient(circle at 84% 18%, rgba(0,194,255,.13), transparent 30%),
+        linear-gradient(135deg, #030812, #07111e 48%, #04070d);
+      color: var(--text);
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+    }
+    .at-shell { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+    .at-side {
+      position: sticky; top: 0; height: 100vh; padding: 28px 20px;
+      border-right: 1px solid rgba(212,175,55,.18);
+      background: linear-gradient(180deg, rgba(4,10,19,.96), rgba(5,12,22,.88));
+    }
+    .at-logo { display:flex; gap:14px; align-items:center; margin-bottom:30px; }
+    .at-logo-mark {
+      width:58px; height:58px; border-radius:18px; display:grid; place-items:center;
+      color:#06101a; font-weight:1000; font-size:30px;
+      background: linear-gradient(145deg, #fff1a8, #d4af37 48%, #8d6717);
+      box-shadow: 0 18px 42px rgba(212,175,55,.26);
+    }
+    .at-logo strong { display:block; letter-spacing:.08em; font-size:22px; }
+    .at-logo span { color:var(--muted); font-size:12px; letter-spacing:.22em; }
+    .at-nav { display:grid; gap:10px; }
+    .at-nav a {
+      color:#dce8f8; text-decoration:none; padding:13px 14px; border-radius:14px;
+      border:1px solid transparent; font-weight:800;
+    }
+    .at-nav a:hover, .at-nav .active {
+      border-color: rgba(212,175,55,.5); background: rgba(212,175,55,.09); color:#fff6c7;
+    }
+    .at-main { padding: 28px clamp(18px, 4vw, 46px) 50px; overflow:hidden; }
+    .at-top {
+      display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:20px;
+    }
+    .at-title h1 { margin:0; font-size: clamp(30px, 4vw, 48px); letter-spacing:-.04em; }
+    .at-title p { margin:8px 0 0; color:var(--muted); max-width:760px; }
+    .at-actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .at-btn {
+      border:1px solid rgba(212,175,55,.3); border-radius:14px; padding:12px 16px;
+      color:var(--text); background: rgba(255,255,255,.04); text-decoration:none; font-weight:900;
+      cursor:pointer;
+    }
+    .at-btn.primary {
+      color:#061016; background: linear-gradient(135deg, #ffe082, #d4af37 55%, #a67a17);
+      box-shadow:0 18px 38px rgba(212,175,55,.18);
+    }
+    .at-btn.danger { border-color:rgba(255,91,110,.35); color:#ffc2ca; }
+    .at-grid { display:grid; gap:18px; }
+    .at-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .at-card {
+      background: linear-gradient(145deg, rgba(14,25,42,.84), rgba(5,11,20,.78));
+      border:1px solid var(--line); border-radius:24px; padding:20px;
+      box-shadow: 0 24px 70px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.04);
+      backdrop-filter: blur(18px);
+    }
+    .at-card h2, .at-card h3 { margin:0 0 10px; }
+    .at-label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.14em; }
+    .at-value { font-size:26px; font-weight:1000; margin-top:8px; }
+    .at-pill {
+      display:inline-flex; align-items:center; gap:7px; padding:7px 10px; border-radius:999px;
+      background:rgba(23,201,100,.12); color:#6dffa8; border:1px solid rgba(23,201,100,.28);
+      font-size:12px; font-weight:900;
+    }
+    .at-pill.warn { background:rgba(212,175,55,.12); color:#ffe58a; border-color:rgba(212,175,55,.3); }
+    .at-pill.off { background:rgba(255,91,110,.11); color:#ffacb8; border-color:rgba(255,91,110,.28); }
+    .at-two { grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr); }
+    .at-form { display:grid; gap:14px; }
+    .at-form-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:14px; }
+    .at-field label { display:block; color:#c8d6e9; font-weight:800; margin-bottom:7px; }
+    .at-input, .at-select, .at-textarea {
+      width:100%; box-sizing:border-box; border-radius:14px; border:1px solid rgba(148,163,184,.22);
+      background:rgba(3,10,20,.72); color:var(--text); padding:13px 14px; outline:none;
+    }
+    .at-input:focus, .at-select:focus, .at-textarea:focus { border-color:rgba(212,175,55,.6); box-shadow:0 0 0 3px rgba(212,175,55,.12); }
+    .at-checks { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px; }
+    .at-checks label { display:flex; gap:9px; align-items:center; padding:12px; border:1px solid rgba(148,163,184,.18); border-radius:14px; background:rgba(255,255,255,.03); }
+    .at-table { width:100%; border-collapse:collapse; }
+    .at-table th, .at-table td { padding:13px 10px; border-bottom:1px solid rgba(148,163,184,.15); text-align:left; vertical-align:middle; }
+    .at-table th { color:#9fb0c6; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .at-row-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .at-mini { font-size:12px; color:var(--muted); }
+    .at-alert { padding:14px 16px; border-radius:18px; border:1px solid rgba(212,175,55,.28); background:rgba(212,175,55,.09); color:#fff3bf; margin-bottom:16px; }
+    .at-alert.error { border-color:rgba(255,91,110,.34); background:rgba(255,91,110,.1); color:#ffd1d6; }
+    .at-alert.success { border-color:rgba(23,201,100,.34); background:rgba(23,201,100,.1); color:#d6ffe4; }
+    .at-result { min-height:22px; color:#c8d6e9; font-weight:800; }
+    .at-steps { display:grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap:10px; margin:16px 0 18px; }
+    .at-step { border:1px solid rgba(212,175,55,.18); border-radius:16px; padding:12px; background:rgba(255,255,255,.03); color:#cbd8ea; }
+    .at-step strong { color:#fff; display:block; }
+    @media (max-width: 1040px) {
+      .at-shell { grid-template-columns: 1fr; }
+      .at-side { position:relative; height:auto; }
+      .at-kpis, .at-two, .at-form-grid { grid-template-columns: 1fr; }
+      .at-steps { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .at-table { min-width: 820px; }
+      .at-scroll { overflow-x:auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="at-shell">
+    <aside class="at-side">
+      <div class="at-logo">
+        <div class="at-logo-mark">N</div>
+        <div><strong>NEXORA</strong><span>TRADING CONSOLE</span></div>
+      </div>
+      <nav class="at-nav">
+        <a href="/dashboard">Dashboard</a>
+        <a class="active" href="/auto-trade">Auto Trade</a>
+        <a href="/signals">Signals</a>
+        <a href="/executions">Executions</a>
+        <a href="/exchanges">Exchanges</a>
+        <a href="/settings">Settings</a>
+      </nav>
+    </aside>
+
+    <main class="at-main">
+      <div class="at-top">
+        <div class="at-title">
+          <h1>Multi-Exchange Auto Trade</h1>
+          <p>Connect exchanges safely, test credentials server-side, and keep execution protected by risk settings. Futures-first. Spot auto trade stays disabled until protected exits are verified.</p>
+        </div>
+        <div class="at-actions">
+          <a class="at-btn" href="/dashboard">Back to Dashboard</a>
+          <form method="post" action="/auto-trade/emergency-stop">
+            <button class="at-btn danger" type="submit">Emergency Stop</button>
+          </form>
+        </div>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="at-alert {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <section class="at-grid at-kpis">
+        <div class="at-card"><div class="at-label">Plan Access</div><div class="at-value">{{ user.plan|upper }}</div><span class="at-pill {{ '' if plan_allowed else 'off' }}">{{ 'Eligible' if plan_allowed else 'Upgrade Required' }}</span></div>
+        <div class="at-card"><div class="at-label">Emergency Stop</div><div class="at-value">{{ 'ON' if settings.emergency_stop else 'OFF' }}</div><span class="at-pill {{ 'off' if settings.emergency_stop else '' }}">{{ 'Paused' if settings.emergency_stop else 'Ready' }}</span></div>
+        <div class="at-card"><div class="at-label">Primary Futures</div><div class="at-value">{{ connections[0].capability.name if connections else 'N/A' }}</div><span class="at-pill warn">{{ connections|length }} connection{{ '' if connections|length == 1 else 's' }}</span></div>
+        <div class="at-card"><div class="at-label">Spot Auto</div><div class="at-value">Disabled</div><span class="at-pill warn">Waiting for OCO/Bracket Safety</span></div>
+      </section>
+
+      <section class="at-card" style="margin-top:18px">
+        <h2>Professional Connection Wizard</h2>
+        <div class="at-steps">
+          <div class="at-step"><strong>1. Exchange</strong>Select provider.</div>
+          <div class="at-step"><strong>2. Mode</strong>Futures first.</div>
+          <div class="at-step"><strong>3. Keys</strong>Encrypted storage.</div>
+          <div class="at-step"><strong>4. Test</strong>Read-only check.</div>
+          <div class="at-step"><strong>5. Risk</strong>Limits and stop.</div>
+          <div class="at-step"><strong>6. Activate</strong>Protected execution.</div>
+        </div>
+        {% if not plan_allowed %}
+          <div class="at-alert error">Auto Trade is available for Elite and Pro 2 Years plans. You can still review the interface, but saving live credentials is locked.</div>
+        {% endif %}
+        <form class="at-form" method="post" action="/auto-trade/save-connection" id="connectionForm">
+          <div class="at-form-grid">
+            <div class="at-field">
+              <label>Exchange</label>
+              <select class="at-select" name="exchange" id="exchangeSelect">
+                {% for ex in exchanges %}
+                  <option value="{{ ex.key }}" data-passphrase="{{ 1 if ex.requires_passphrase else 0 }}" data-name="{{ ex.name }}">{{ ex.name }} - {{ ex.status }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="at-field">
+              <label>Mode</label>
+              <select class="at-select" name="mode">
+                <option value="futures">Futures / Perpetuals</option>
+                <option value="spot">Spot (auto disabled until protected exits)</option>
+              </select>
+            </div>
+            <div class="at-field">
+              <label>Label</label>
+              <input class="at-input" name="label" placeholder="Primary Bybit Futures">
+            </div>
+            <div class="at-field">
+              <label>API Key</label>
+              <input class="at-input" name="api_key" autocomplete="off" placeholder="Paste exchange API key">
+            </div>
+            <div class="at-field">
+              <label>API Secret</label>
+              <input class="at-input" name="api_secret" autocomplete="off" type="password" placeholder="Paste exchange API secret">
+            </div>
+            <div class="at-field" id="passphraseField" style="display:none">
+              <label>API Passphrase</label>
+              <input class="at-input" name="passphrase" autocomplete="off" type="password" placeholder="Required for OKX / KuCoin / Bitget">
+            </div>
+          </div>
+          <div class="at-checks">
+            <label><input type="checkbox" name="futures_enabled" value="1" checked> Futures enabled</label>
+            <label><input type="checkbox" name="primary_for_futures" value="1" checked> Make primary futures account</label>
+            <label><input type="checkbox" name="auto_trade_enabled" value="1"> Enable futures auto trade after test</label>
+            <label><input type="checkbox" name="spot_enabled" value="1"> Spot monitoring only</label>
+          </div>
+          <div class="at-actions" style="justify-content:flex-start">
+            <button class="at-btn" type="button" id="testConnectionBtn">Test Connection</button>
+            <button class="at-btn primary" type="submit" {% if not plan_allowed %}disabled{% endif %}>Save Secure Connection</button>
+          </div>
+          <div class="at-result" id="connectionResult"></div>
+        </form>
+      </section>
+
+      <section class="at-grid at-two" style="margin-top:18px">
+        <div class="at-card">
+          <h2>Connected Exchanges</h2>
+          <div class="at-scroll">
+            <table class="at-table">
+              <thead><tr><th>Exchange</th><th>Key</th><th>Mode</th><th>Status</th><th>Auto</th><th>Primary</th><th>Actions</th></tr></thead>
+              <tbody>
+                {% for row in connections %}
+                  <tr>
+                    <td><strong>{{ row.capability.name }}</strong><div class="at-mini">{{ row.label }}</div></td>
+                    <td>{{ row.masked_api_key or 'Hidden' }}</td>
+                    <td>{{ row.mode|upper }}</td>
+                    <td><span class="at-pill {{ '' if row.status in ['connected','imported'] else 'warn' }}">{{ row.status }}</span></td>
+                    <td>{{ 'Enabled' if row.auto_trade_enabled else 'Off' }}</td>
+                    <td>{{ 'Futures' if row.primary_for_futures else 'No' }}</td>
+                    <td>
+                      <div class="at-row-actions">
+                        <form method="post" action="/auto-trade/connection/{{ row.id }}/primary"><button class="at-btn" type="submit">Primary</button></form>
+                        <form method="post" action="/auto-trade/connection/{{ row.id }}/disable"><button class="at-btn" type="submit">Disable</button></form>
+                        <form method="post" action="/auto-trade/connection/{{ row.id }}/delete"><button class="at-btn danger" type="submit">Remove</button></form>
+                      </div>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="7">No exchange connected yet. Add a read-only/test key first, then enable futures auto trade when ready.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="at-card">
+          <h2>Risk Profile</h2>
+          <form class="at-form" method="post" action="/auto-trade/settings">
+            <div class="at-field"><label>Mode</label><select class="at-select" name="mode">
+              {% for mode in ['conservative','balanced','expert','manual_confirm','full_auto'] %}
+                <option value="{{ mode }}" {% if settings.mode == mode %}selected{% endif %}>{{ mode.replace('_',' ')|title }}</option>
+              {% endfor %}
+            </select></div>
+            <div class="at-form-grid">
+              <div class="at-field"><label>Risk Per Trade %</label><input class="at-input" name="risk_per_trade" value="{{ settings.risk_per_trade }}"></div>
+              <div class="at-field"><label>Max Daily Trades</label><input class="at-input" name="max_daily_trades" value="{{ settings.max_daily_trades }}"></div>
+              <div class="at-field"><label>Max Daily Loss %</label><input class="at-input" name="max_daily_loss" value="{{ settings.max_daily_loss }}"></div>
+              <div class="at-field"><label>Max Position Size USDT</label><input class="at-input" name="max_position_size" value="{{ settings.max_position_size }}"></div>
+            </div>
+            <div class="at-field"><label>Allowed Symbols (optional)</label><textarea class="at-textarea" name="allowed_symbols" rows="3" placeholder="BTCUSDT, ETHUSDT, SOLUSDT">{{ settings.allowed_symbols }}</textarea></div>
+            <button class="at-btn primary" type="submit">Save Risk Settings</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="at-card" style="margin-top:18px">
+        <h2>Exchange Capability Matrix</h2>
+        <div class="at-scroll">
+          <table class="at-table">
+            <thead><tr><th>Exchange</th><th>Status</th><th>Futures Auto</th><th>Spot Auto</th><th>Passphrase</th><th>Notes</th></tr></thead>
+            <tbody>
+              {% for key, ex in capabilities.items() %}
+                <tr>
+                  <td><strong>{{ ex.name }}</strong></td>
+                  <td><span class="at-pill {{ '' if ex.status == 'production_ready' else 'warn' }}">{{ ex.status.replace('_',' ')|title }}</span></td>
+                  <td>{{ 'Yes' if ex.auto_trade_futures else 'Test/Monitor' }}</td>
+                  <td>{{ 'Yes' if ex.auto_trade_spot else 'Disabled' }}</td>
+                  <td>{{ 'Required' if ex.requires_passphrase else 'No' }}</td>
+                  <td>{{ ex.notes }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var exchange = document.getElementById("exchangeSelect");
+      var passphraseField = document.getElementById("passphraseField");
+      var result = document.getElementById("connectionResult");
+      function syncPassphrase() {
+        var opt = exchange.options[exchange.selectedIndex];
+        passphraseField.style.display = opt && opt.dataset.passphrase === "1" ? "block" : "none";
+      }
+      exchange.addEventListener("change", syncPassphrase);
+      syncPassphrase();
+      document.getElementById("testConnectionBtn").addEventListener("click", function () {
+        var form = document.getElementById("connectionForm");
+        var body = new FormData(form);
+        result.textContent = "Testing securely...";
+        fetch("/auto-trade/test-connection", { method: "POST", body: body, credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            result.textContent = (data.ok ? "Connected: " : "Needs review: ") + (data.message || "No message");
+            result.style.color = data.ok ? "#6dffa8" : "#ffe58a";
+          })
+          .catch(function () {
+            result.textContent = "Connection test failed safely. No credentials were exposed.";
+            result.style.color = "#ffacb8";
+          });
+      });
+    })();
+  </script>
+</body>
+</html>
