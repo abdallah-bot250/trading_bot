@@ -441,7 +441,14 @@
 
   function buildMap() {
     if (current === "en") return translations.en;
-    return translations[current] || {};
+    const target = translations[current] || {};
+    if (current === "ar") return target;
+
+    const bridge = {};
+    Object.entries(arToEn).forEach(([arabicText, englishText]) => {
+      if (target[englishText]) bridge[arabicText] = target[englishText];
+    });
+    return Object.assign({}, target, bridge);
   }
 
   function translateText(value, map) {
