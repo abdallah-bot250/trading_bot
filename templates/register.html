@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨ | Nexora AI Trader</title>
+<title>إنشاء حساب | Nexora AI Trader</title>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
@@ -24,26 +24,26 @@
   </a>
 
   <div class="language-switcher" aria-label="Language switcher">
-    <button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">â—</span><span class="light-icon">â˜€</span></button>
+    <button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
-    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
   </div>
 
   <main class="nx-auth-page">
     <section class="nx-auth-copy" aria-label="Nexora intro">
-      <h1>Ø§Ø¨Ø¯Ø£ Ø±Ø­Ù„ØªÙƒ Ø§Ù„Ø§Ø­ØªØ±Ø§ÙÙŠØ© <em>Ù…Ø¹ Nexora AI Trader</em></h1>
-      <p>Ø§Ù†Ø¶Ù… Ø¥Ù„Ù‰ Ø§Ù„Ù…ØªØ¯Ø§ÙˆÙ„ÙŠÙ† Ø§Ù„Ø°ÙŠÙ† ÙŠØ¹ØªÙ…Ø¯ÙˆÙ† Ø¹Ù„Ù‰ Ø§Ù„Ø°ÙƒØ§Ø¡ Ø§Ù„Ø§ØµØ·Ù†Ø§Ø¹ÙŠ Ù„Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ø¥Ø´Ø§Ø±Ø§Øª Ø¯Ù‚ÙŠÙ‚Ø© ÙˆØ¢Ù…Ù†Ø© ÙÙŠ Ø³ÙˆÙ‚ Ø§Ù„Ø¹Ù…Ù„Ø§Øª Ø§Ù„Ø±Ù‚Ù…ÙŠØ©.</p>
-      <div class="nx-auth-badges"><span>Ø¥Ø´Ø§Ø±Ø§Øª Ø¯Ù‚ÙŠÙ‚Ø©</span><span>Ø­Ù…Ø§ÙŠØ© Ø°ÙƒÙŠØ©</span><span>Ù†ØªØ§Ø¦Ø¬ Ù†Ù…ÙˆØ°Ø¬ÙŠØ©</span></div>
+      <h1>ابدأ رحلتك الاحترافية <em>مع Nexora AI Trader</em></h1>
+      <p>انضم إلى المتداولين الذين يعتمدون على الذكاء الاصطناعي للحصول على إشارات دقيقة وآمنة في سوق العملات الرقمية.</p>
+      <div class="nx-auth-badges"><span>إشارات دقيقة</span><span>حماية ذكية</span><span>نتائج نموذجية</span></div>
       <div class="nx-auth-stats">
-        <div class="nx-auth-stat"><strong>+1000</strong><span>Ù…ØªØ¯Ø§ÙˆÙ„ Ù†Ø´Ø·</span></div>
-        <div class="nx-auth-stat"><strong>+90%</strong><span>Ø¯Ù‚Ø© Ø§Ù„Ø¥Ø´Ø§Ø±Ø§Øª</span></div>
-        <div class="nx-auth-stat"><strong>24/7</strong><span>Ø¯Ø¹Ù… ÙÙ†ÙŠ</span></div>
-        <div class="nx-auth-stat"><strong>+12K</strong><span>Ø¥Ø´Ø§Ø±Ø© Ù†Ø§Ø¬Ø­Ø©</span></div>
+        <div class="nx-auth-stat"><strong>+1000</strong><span>متداول نشط</span></div>
+        <div class="nx-auth-stat"><strong>+90%</strong><span>دقة الإشارات</span></div>
+        <div class="nx-auth-stat"><strong>24/7</strong><span>دعم فني</span></div>
+        <div class="nx-auth-stat"><strong>+12K</strong><span>إشارة ناجحة</span></div>
       </div>
     </section>
 
     <section class="nx-auth-card-final" aria-label="Register form">
-      <h2 class="nx-auth-title">Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨ Ø¬Ø¯ÙŠØ¯</h2>
+      <h2 class="nx-auth-title">إنشاء حساب جديد</h2>
       <p class="nx-auth-subtitle">Create your account directly, then link Telegram from the dashboard or official bot.</p>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
@@ -56,19 +56,19 @@
 
       <form method="POST" action="{{ url_for('auth.register', chat_id=chat_id, ref=ref) if chat_id else url_for('auth.register', ref=ref) }}">
         {{ csrf_field() }}
-        <div class="form-group"><label for="name">Ø§Ù„Ø§Ø³Ù… Ø§Ù„ÙƒØ§Ù…Ù„</label><input id="name" name="name" placeholder="Ø£Ø¯Ø®Ù„ Ø§Ø³Ù…Ùƒ Ø§Ù„ÙƒØ§Ù…Ù„" required autocomplete="name"></div>
-        <div class="form-group"><label for="email">Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ</label><input id="email" name="email" type="email" placeholder="Ø£Ø¯Ø®Ù„ Ø¨Ø±ÙŠØ¯Ùƒ Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠ" required autocomplete="email"></div>
-        <div class="form-group"><label for="password">ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±</label><input id="password" name="password" type="password" placeholder="Ø£Ø¯Ø®Ù„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±" required minlength="6" autocomplete="new-password"></div>
+        <div class="form-group"><label for="name">الاسم الكامل</label><input id="name" name="name" placeholder="أدخل اسمك الكامل" required autocomplete="name"></div>
+        <div class="form-group"><label for="email">البريد الإلكتروني</label><input id="email" name="email" type="email" placeholder="أدخل بريدك الإلكتروني" required autocomplete="email"></div>
+        <div class="form-group"><label for="password">كلمة المرور</label><input id="password" name="password" type="password" placeholder="أدخل كلمة المرور" required minlength="6" autocomplete="new-password"></div>
         <input type="hidden" name="chat_id" value="{{chat_id}}">
-        <button type="submit" class="main-btn">Ø¥Ù†Ø´Ø§Ø¡ Ø­Ø³Ø§Ø¨</button>
+        <button type="submit" class="main-btn">إنشاء حساب</button>
       </form>
 
-      <div class="nx-auth-links">Ù„Ø¯ÙŠÙƒ Ø­Ø³Ø§Ø¨ Ø¨Ø§Ù„ÙØ¹Ù„ØŸ <a href="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„</a></div>
-      <p class="nx-auth-small">Ø¨Ø¥Ù†Ø´Ø§Ø¡ Ø§Ù„Ø­Ø³Ø§Ø¨ Ø£Ù†Øª ØªÙˆØ§ÙÙ‚ Ø¹Ù„Ù‰ Ø§Ù„Ø´Ø±ÙˆØ· ÙˆØ§Ù„Ø£Ø­ÙƒØ§Ù… ÙˆØ³ÙŠØ§Ø³Ø© Ø§Ù„Ø®ØµÙˆØµÙŠØ©. Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ Ø¨Ø¹Ø¯ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ù„Ø±Ø¨Ø· ØªÙŠÙ„ÙŠØ¬Ø±Ø§Ù….</p>
+      <div class="nx-auth-links">لديك حساب بالفعل؟ <a href="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">تسجيل الدخول</a></div>
+      <p class="nx-auth-small">بإنشاء الحساب أنت توافق على الشروط والأحكام وسياسة الخصوصية. افتح البوت الرسمي بعد التسجيل لربط تيليجرام.</p>
     </section>
   </main>
 <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
-<script src="/static/i18n.js?v=20260713_lang2"></script>
+<script src="/static/i18n.js?v=20260713_lang3"></script>
 <script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„ | Nexora AI Trader</title>
+<title>تسجيل الدخول | Nexora AI Trader</title>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
@@ -24,9 +24,9 @@
   </a>
 
   <div class="language-switcher" aria-label="Language switcher">
-    <button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">â—</span><span class="light-icon">â˜€</span></button>
+    <button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
-    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
   </div>
 
   <main class="nx-auth-page">
@@ -45,8 +45,8 @@
     </section>
 
     <section class="nx-auth-card-final" aria-label="Login form">
-      <h2 class="nx-auth-title">ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„</h2>
-      <p class="nx-auth-subtitle">Ù…Ø±Ø­Ø¨Ù‹Ø§ Ø¨Ø¹ÙˆØ¯ØªÙƒØŒ Ø§Ø¯Ø®Ù„ Ù„Ø­Ø³Ø§Ø¨Ùƒ ÙˆØ±Ø¨Ø· Ø§Ù„Ø¨ÙˆØª Ø¨Ø³Ù‡ÙˆÙ„Ø©.</p>
+      <h2 class="nx-auth-title">تسجيل الدخول</h2>
+      <p class="nx-auth-subtitle">مرحبًا بعودتك، ادخل لحسابك وربط البوت بسهولة.</p>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -57,10 +57,10 @@
       {% endwith %}
 
       <div class="telegram-note">
-        <strong>âš ï¸ Ù…Ø´ Ø¨ØªÙˆØµÙ„Ùƒ SignalsØŸ</strong><br>
-        Ø§ÙØªØ­ Ø§Ù„Ø¨ÙˆØª Ø§Ù„Ø±Ø³Ù…ÙŠ ÙˆØ§ØªØ¨Ø¹ Ø±Ø§Ø¨Ø· Ø§Ù„Ø±Ø¨Ø· Ø§Ù„Ø¢Ù…Ù†ØŒ Ø«Ù… Ø³Ø¬Ù„ Ø¯Ø®ÙˆÙ„Ùƒ Ù…Ù† Ø§Ù„Ù…ÙˆÙ‚Ø¹ Ù„ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø³Ø§Ø¨.<br>
+        <strong>⚠️ مش بتوصلك Signals؟</strong><br>
+        افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد الحساب.<br>
         <a href="{{ bot_link }}" target="_blank">Open Bot</a>
-        <a href="/bot-check">Verify Bot Ø§Ù„Ø±Ø³Ù…ÙŠ</a>
+        <a href="/bot-check">Verify Bot الرسمي</a>
       </div>
 
       <form method="POST" action="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">
@@ -74,19 +74,19 @@
           <label for="password">Password</label>
           <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
         </div>
-        <button type="submit" class="btn">Sign In / ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø¯Ø®ÙˆÙ„</button>
+        <button type="submit" class="btn">Sign In / تسجيل الدخول</button>
       </form>
 
       <div class="nx-auth-links">
-        <a href="/forgot-password">Forgot Password? / Ù†Ø³ÙŠØª ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±ØŸ</a><br>
+        <a href="/forgot-password">Forgot Password? / نسيت كلمة المرور؟</a><br>
         Do not have an account? <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">Create Account</a>
       </div>
-      <p class="nx-auth-small">Ø¨Ø¹Ø¯ Ø§Ù„Ø¯Ø®ÙˆÙ„ ÙŠÙ…ÙƒÙ†Ùƒ ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø®Ø·Ø©ØŒ Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„ÙÙˆØ§ØªÙŠØ±ØŒ ÙˆØ±Ø¨Ø· ØªÙŠÙ„ÙŠØ¬Ø±Ø§Ù… Ø¨Ø£Ù…Ø§Ù†.</p>
+      <p class="nx-auth-small">بعد الدخول يمكنك تفعيل الخطة، مراجعة الفواتير، وربط تيليجرام بأمان.</p>
     </section>
   </main>
 
 <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
-<script src="/static/i18n.js?v=20260713_lang2"></script>
+<script src="/static/i18n.js?v=20260713_lang3"></script>
 <script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>
 </html>

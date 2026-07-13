@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% if current_lang == 'ar' %}Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ{% else %}Manual Payment{% endif %} | Nexora AI Trader</title>
+<title>{% if current_lang == 'ar' %}الدفع اليدوي{% else %}Manual Payment{% endif %} | Nexora AI Trader</title>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
@@ -171,48 +171,48 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
     <header class="topbar">
         <a class="brand" href="/">
             <img src="/static/brand/nexora-logo.svg" alt="Nexora AI Trader">
-            <span><strong>Nexora AI Trader</strong><span>{% if current_lang == 'ar' %}Ø¨ÙˆØ§Ø¨Ø© Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ø§Ù„Ø¢Ù…Ù†Ø©{% else %}Secure manual payment desk{% endif %}</span></span>
+            <span><strong>Nexora AI Trader</strong><span>{% if current_lang == 'ar' %}بوابة الدفع اليدوي الآمنة{% else %}Secure manual payment desk{% endif %}</span></span>
         </a>
         <div class="top-actions">
-            <a href="/dashboard">{% if current_lang == 'ar' %}Ø§Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯{% else %}Dashboard{% endif %}</a>
-            <a href="/bot-check">{% if current_lang == 'ar' %}ÙØ­Øµ Ø§Ù„Ø¨ÙˆØª{% else %}Bot Check{% endif %}</a>
+            <a href="/dashboard">{% if current_lang == 'ar' %}الداشبورد{% else %}Dashboard{% endif %}</a>
+            <a href="/bot-check">{% if current_lang == 'ar' %}فحص البوت{% else %}Bot Check{% endif %}</a>
             <div class="language-switcher" aria-label="Language switcher">
-<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">â—</span><span class="light-icon">â˜€</span></button>
+<button class="nexora-theme-toggle theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
                 <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
-                <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</a>
+                <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
             </div>
         </div>
     </header>
 
     <section class="hero">
         <div class="hero-card">
-            <div class="kicker">{% if current_lang == 'ar' %}Ø¨Ø¯ÙˆÙ† Ø¹Ù…ÙˆÙ„Ø© Ø¥Ø¶Ø§ÙÙŠØ© â€¢ Ù…Ø±Ø§Ø¬Ø¹Ø© ÙŠØ¯ÙˆÙŠØ©{% else %}No extra fees â€¢ Manual review{% endif %}</div>
-            <h1>{% if current_lang == 'ar' %}Ø£ÙƒÙ…Ù„ Ø§Ø´ØªØ±Ø§ÙƒÙƒ Ø¨Ø£Ù…Ø§Ù† Ø¹Ø¨Ø± Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ{% else %}Complete your subscription with secure manual payment{% endif %}</h1>
+            <div class="kicker">{% if current_lang == 'ar' %}بدون عمولة إضافية • مراجعة يدوية{% else %}No extra fees • Manual review{% endif %}</div>
+            <h1>{% if current_lang == 'ar' %}أكمل اشتراكك بأمان عبر الدفع اليدوي{% else %}Complete your subscription with secure manual payment{% endif %}</h1>
             <p>
                 {% if current_lang == 'ar' %}
-                Ø§Ø®ØªØ± Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ Ø§Ù„Ù…Ù†Ø§Ø³Ø¨Ø©ØŒ Ø§Ù†Ø³Ø® Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø¨Ø¯Ù‚Ø©ØŒ Ø«Ù… Ø£Ø±Ø³Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ù„Ù„Ø¯Ø¹Ù…. Ø§Ù„ØªÙØ¹ÙŠÙ„ Ø§Ù„ÙŠØ¯ÙˆÙŠ ÙŠØªÙ… Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø£Ø¯Ù…Ù† Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø© ÙÙ‚Ø·.
+                اختر طريقة الدفع المناسبة، انسخ البيانات بدقة، ثم أرسل إثبات التحويل للدعم. التفعيل اليدوي يتم من لوحة الأدمن بعد المراجعة فقط.
                 {% else %}
                 Choose your preferred payment method, copy the details carefully, then send payment proof to support. Manual payments are activated from the admin panel after review only.
                 {% endif %}
             </p>
             <div class="hero-grid">
-                <div class="mini"><strong>0%</strong><span>{% if current_lang == 'ar' %}Ø¹Ù…ÙˆÙ„Ø© Ø¥Ø¶Ø§ÙÙŠØ©{% else %}Extra payment fees{% endif %}</span></div>
-                <div class="mini"><strong>24h</strong><span>{% if current_lang == 'ar' %}Ù…Ø±Ø§Ø¬Ø¹Ø© ÙˆØªÙØ¹ÙŠÙ„{% else %}Review window{% endif %}</span></div>
-                <div class="mini"><strong>3</strong><span>{% if current_lang == 'ar' %}Ø·Ø±Ù‚ Ø¯ÙØ¹ Ù…ØªØ§Ø­Ø©{% else %}Payment methods{% endif %}</span></div>
+                <div class="mini"><strong>0%</strong><span>{% if current_lang == 'ar' %}عمولة إضافية{% else %}Extra payment fees{% endif %}</span></div>
+                <div class="mini"><strong>24h</strong><span>{% if current_lang == 'ar' %}مراجعة وتفعيل{% else %}Review window{% endif %}</span></div>
+                <div class="mini"><strong>3</strong><span>{% if current_lang == 'ar' %}طرق دفع متاحة{% else %}Payment methods{% endif %}</span></div>
             </div>
         </div>
 
         <aside class="summary-card">
-            <span class="plan-badge">{% if current_lang == 'ar' %}Ø¹Ø±Ø¶ Ù„ÙØªØ±Ø© Ù…Ø­Ø¯ÙˆØ¯Ø©{% else %}Limited Time Offer{% endif %}</span>
+            <span class="plan-badge">{% if current_lang == 'ar' %}عرض لفترة محدودة{% else %}Limited Time Offer{% endif %}</span>
             <div class="plan-name">{{ plan_label }}</div>
             <div class="price-row">
                 <span class="original-price">${{ "%.0f"|format(original_price|default(price)) }}</span>
                 <span class="current-price">${{ "%.2f"|format(price) }}</span>
             </div>
-            <div class="save-chip">{% if current_lang == 'ar' %}ÙˆÙÙ‘Ø±{% else %}Save{% endif %} {{ discount_percent|default(0) }}%</div>
+            <div class="save-chip">{% if current_lang == 'ar' %}وفّر{% else %}Save{% endif %} {{ discount_percent|default(0) }}%</div>
             <p class="summary-note">
                 {% if current_lang == 'ar' %}
-                Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø­Ù‚ÙŠÙ‚ÙŠ Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ Ù‡Ùˆ Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ø£Ø®Ø¶Ø± ÙÙ‚Ø·. Ø§Ù„Ø³Ø¹Ø± Ø§Ù„Ù…Ø´Ø·ÙˆØ¨ Ù„Ù„ØªÙˆØ¶ÙŠØ­ Ø§Ù„ØªØ³ÙˆÙŠÙ‚ÙŠ Ù„Ù„Ø®ØµÙ… Ø§Ù„Ø­Ø§Ù„ÙŠ.
+                السعر الحقيقي المطلوب هو السعر الأخضر فقط. السعر المشطوب للتوضيح التسويقي للخصم الحالي.
                 {% else %}
                 The payable amount is the green price only. The crossed price shows the current promotional discount.
                 {% endif %}
@@ -222,25 +222,25 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
 
     <section class="methods-head">
         <div>
-            <h2>{% if current_lang == 'ar' %}Ø§Ø®ØªØ± Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹{% else %}Choose payment method{% endif %}</h2>
-            <p>{% if current_lang == 'ar' %}ÙƒÙ„ Ø·Ø±ÙŠÙ‚Ø© ÙÙŠ Ø¨Ø·Ø§Ù‚Ø© Ù…Ù†ÙØµÙ„Ø© Ù„ØªÙ‚Ù„ÙŠÙ„ Ø§Ù„Ø£Ø®Ø·Ø§Ø¡ Ø£Ø«Ù†Ø§Ø¡ Ø§Ù„ØªØ­ÙˆÙŠÙ„.{% else %}Each method has its own secure card to reduce transfer mistakes.{% endif %}</p>
+            <h2>{% if current_lang == 'ar' %}اختر طريقة الدفع{% else %}Choose payment method{% endif %}</h2>
+            <p>{% if current_lang == 'ar' %}كل طريقة في بطاقة منفصلة لتقليل الأخطاء أثناء التحويل.{% else %}Each method has its own secure card to reduce transfer mistakes.{% endif %}</p>
         </div>
     </section>
 
     <section class="methods-grid">
         <article class="method-card featured">
-            <div class="method-top"><div class="logo-mark logo-binance">â—‡</div><span class="plan-badge">USDT TRC20</span></div>
+            <div class="method-top"><div class="logo-mark logo-binance">◇</div><span class="plan-badge">USDT TRC20</span></div>
             <h3>Binance</h3>
-            <p class="method-desc">{% if current_lang == 'ar' %}Ø§Ù„Ø£ÙØ¶Ù„ Ù„Ù„Ø¯ÙØ¹ Ø§Ù„Ø³Ø±ÙŠØ¹ Ø¹Ø¨Ø± USDT Ø¹Ù„Ù‰ Ø´Ø¨ÙƒØ© TRC20.{% else %}Best for fast USDT transfers over the TRC20 network.{% endif %}</p>
+            <p class="method-desc">{% if current_lang == 'ar' %}الأفضل للدفع السريع عبر USDT على شبكة TRC20.{% else %}Best for fast USDT transfers over the TRC20 network.{% endif %}</p>
             <div class="value-box" id="binanceAddress">{{ manual_wallet }}</div>
-            <button class="copy-btn" type="button" data-copy-target="binanceAddress">{% if current_lang == 'ar' %}Ù†Ø³Ø® Ø¹Ù†ÙˆØ§Ù† Binance{% else %}Copy Binance Address{% endif %}</button>
-            <div class="qr-card"><div class="qr" aria-hidden="true"></div><p>{% if current_lang == 'ar' %}ØªØ£ÙƒØ¯ Ø£Ù† Ø§Ù„Ø´Ø¨ÙƒØ© TRC20 ÙÙ‚Ø· Ù‚Ø¨Ù„ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„.{% else %}Make sure the network is TRC20 before sending.{% endif %}</p></div>
+            <button class="copy-btn" type="button" data-copy-target="binanceAddress">{% if current_lang == 'ar' %}نسخ عنوان Binance{% else %}Copy Binance Address{% endif %}</button>
+            <div class="qr-card"><div class="qr" aria-hidden="true"></div><p>{% if current_lang == 'ar' %}تأكد أن الشبكة TRC20 فقط قبل الإرسال.{% else %}Make sure the network is TRC20 before sending.{% endif %}</p></div>
         </article>
 
         <article class="method-card">
             <div class="method-top"><div class="logo-mark logo-adcb">A</div><span class="plan-badge">AED Bank</span></div>
             <h3>ADCB Bank</h3>
-            <p class="method-desc">{% if current_lang == 'ar' %}ØªØ­ÙˆÙŠÙ„ Ø¨Ù†ÙƒÙŠ Ù…Ø­Ù„ÙŠ Ø£Ùˆ Ø¯ÙˆÙ„ÙŠ Ø¥Ù„Ù‰ Ø­Ø³Ø§Ø¨ Ø£Ø¨Ùˆ Ø¸Ø¨ÙŠ Ø§Ù„ØªØ¬Ø§Ø±ÙŠ.{% else %}Local or international bank transfer to Abu Dhabi Commercial Bank.{% endif %}</p>
+            <p class="method-desc">{% if current_lang == 'ar' %}تحويل بنكي محلي أو دولي إلى حساب أبو ظبي التجاري.{% else %}Local or international bank transfer to Abu Dhabi Commercial Bank.{% endif %}</p>
             <div class="detail-list" id="bankDetails">
                 <div class="detail-row"><span>Bank</span><strong>{{ bank_name }}</strong></div>
                 <div class="detail-row"><span>Holder</span><strong>{{ bank_account_title }}</strong></div>
@@ -249,49 +249,49 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
                 <div class="detail-row"><span>SWIFT</span><strong>{{ bank_swift }}</strong></div>
                 <div class="detail-row"><span>Currency</span><strong>{{ bank_currency }}</strong></div>
             </div>
-            <button class="copy-btn secondary" type="button" data-copy-text="Bank Name: {{ bank_name }}\nAccount Title: {{ bank_account_title }}\nAccount Number: {{ bank_account_number }}\nIBAN: {{ bank_iban }}\nCurrency: {{ bank_currency }}\nSWIFT: {{ bank_swift }}">{% if current_lang == 'ar' %}Ù†Ø³Ø® Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø¨Ù†Ùƒ{% else %}Copy Bank Details{% endif %}</button>
+            <button class="copy-btn secondary" type="button" data-copy-text="Bank Name: {{ bank_name }}\nAccount Title: {{ bank_account_title }}\nAccount Number: {{ bank_account_number }}\nIBAN: {{ bank_iban }}\nCurrency: {{ bank_currency }}\nSWIFT: {{ bank_swift }}">{% if current_lang == 'ar' %}نسخ بيانات البنك{% else %}Copy Bank Details{% endif %}</button>
         </article>
 
         <article class="method-card">
             <div class="method-top"><div class="logo-mark logo-instapay">IP</div><span class="plan-badge">InstaPay</span></div>
             <h3>InstaPay</h3>
-            <p class="method-desc">{% if current_lang == 'ar' %}Ø·Ø±ÙŠÙ‚Ø© Ø¨Ø¯ÙŠÙ„Ø© Ù„Ù„ØªØ­ÙˆÙŠÙ„ Ø§Ù„Ø³Ø±ÙŠØ¹ Ø¹Ø¨Ø± InstaPay.{% else %}Alternative fast transfer option through InstaPay.{% endif %}</p>
+            <p class="method-desc">{% if current_lang == 'ar' %}طريقة بديلة للتحويل السريع عبر InstaPay.{% else %}Alternative fast transfer option through InstaPay.{% endif %}</p>
             <div class="value-box" id="instapayHandle">{{ instapay_handle }}</div>
-            <button class="copy-btn secondary" type="button" data-copy-target="instapayHandle">{% if current_lang == 'ar' %}Ù†Ø³Ø® InstaPay{% else %}Copy InstaPay{% endif %}</button>
-            <div class="notice">{% if current_lang == 'ar' %}Ø£Ø±Ø³Ù„ Ø§Ù„Ø¥ÙŠØµØ§Ù„ Ø¨Ø¹Ø¯ Ø§Ù„ØªØ­ÙˆÙŠÙ„ Ø­ØªÙ‰ ÙŠØªÙ… Ø§Ù„ØªÙØ¹ÙŠÙ„ Ù…Ù† Ø§Ù„Ø£Ø¯Ù…Ù†.{% else %}Send your receipt after transfer so admin can activate the plan.{% endif %}</div>
+            <button class="copy-btn secondary" type="button" data-copy-target="instapayHandle">{% if current_lang == 'ar' %}نسخ InstaPay{% else %}Copy InstaPay{% endif %}</button>
+            <div class="notice">{% if current_lang == 'ar' %}أرسل الإيصال بعد التحويل حتى يتم التفعيل من الأدمن.{% else %}Send your receipt after transfer so admin can activate the plan.{% endif %}</div>
         </article>
     </section>
 
     <section class="proof-grid">
         <div class="proof-card">
-            <h2>{% if current_lang == 'ar' %}Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø«Ø¨Ø§Øª Ø§Ù„Ø¯ÙØ¹{% else %}Send payment proof{% endif %}</h2>
+            <h2>{% if current_lang == 'ar' %}إرسال إثبات الدفع{% else %}Send payment proof{% endif %}</h2>
             <ol class="steps">
-                <li><span class="step-num">1</span><span>{% if current_lang == 'ar' %}Ø§Ø¯ÙØ¹ Ù…Ø¨Ù„Øº Ø§Ù„Ø®Ø·Ø© Ø¨Ø§Ù„Ø¶Ø¨Ø· Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø¥Ø­Ø¯Ù‰ Ø§Ù„Ø·Ø±Ù‚ Ø¨Ø§Ù„Ø£Ø¹Ù„Ù‰.{% else %}Pay the exact plan amount using one of the methods above.{% endif %}</span></li>
-                <li><span class="step-num">2</span><span>{% if current_lang == 'ar' %}Ø§Ø­ØªÙØ¸ Ø¨ØµÙˆØ±Ø© Ø§Ù„Ø¥ÙŠØµØ§Ù„ Ø£Ùˆ Ø±Ù‚Ù… Ø§Ù„Ø¹Ù…Ù„ÙŠØ©.{% else %}Keep a screenshot or transaction reference.{% endif %}</span></li>
-                <li><span class="step-num">3</span><span>{% if current_lang == 'ar' %}Ø£Ø±Ø³Ù„ Ø§Ù„Ø¥Ø«Ø¨Ø§Øª Ù„Ù„Ø¯Ø¹Ù… Ù…Ø¹ Ø§Ù„Ø¨Ø±ÙŠØ¯ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… ÙÙŠ Ø­Ø³Ø§Ø¨Ùƒ.{% else %}Send proof to support with the email used on your account.{% endif %}</span></li>
-                <li><span class="step-num">4</span><span>{% if current_lang == 'ar' %}Ø³ÙŠØªÙ… Ø§Ù„ØªÙØ¹ÙŠÙ„ ÙŠØ¯ÙˆÙŠÙ‹Ø§ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø£Ø¯Ù…Ù† Ø¨Ø¹Ø¯ Ø§Ù„Ù…Ø±Ø§Ø¬Ø¹Ø©.{% else %}Your plan will be manually activated from admin after review.{% endif %}</span></li>
+                <li><span class="step-num">1</span><span>{% if current_lang == 'ar' %}ادفع مبلغ الخطة بالضبط باستخدام إحدى الطرق بالأعلى.{% else %}Pay the exact plan amount using one of the methods above.{% endif %}</span></li>
+                <li><span class="step-num">2</span><span>{% if current_lang == 'ar' %}احتفظ بصورة الإيصال أو رقم العملية.{% else %}Keep a screenshot or transaction reference.{% endif %}</span></li>
+                <li><span class="step-num">3</span><span>{% if current_lang == 'ar' %}أرسل الإثبات للدعم مع البريد المستخدم في حسابك.{% else %}Send proof to support with the email used on your account.{% endif %}</span></li>
+                <li><span class="step-num">4</span><span>{% if current_lang == 'ar' %}سيتم التفعيل يدويًا من لوحة الأدمن بعد المراجعة.{% else %}Your plan will be manually activated from admin after review.{% endif %}</span></li>
             </ol>
-            <div class="upload-box"><strong>{% if current_lang == 'ar' %}PNG / JPG / PDF{% else %}PNG / JPG / PDF{% endif %}</strong><span>{% if current_lang == 'ar' %}Ø§Ø±ÙØ¹ Ø£Ùˆ Ø£Ø±Ø³Ù„ Ø§Ù„Ø¥ÙŠØµØ§Ù„ Ø¹Ø¨Ø± Ø§Ù„Ø¯Ø¹Ù…. Ù„Ø§ ØªØ´Ø§Ø±Ùƒ ÙƒÙ„Ù…Ø§Øª Ù…Ø±ÙˆØ± Ø£Ùˆ Ù…ÙØ§ØªÙŠØ­ API.{% else %}Upload or send the receipt via support. Never share passwords or API keys.{% endif %}</span></div>
+            <div class="upload-box"><strong>{% if current_lang == 'ar' %}PNG / JPG / PDF{% else %}PNG / JPG / PDF{% endif %}</strong><span>{% if current_lang == 'ar' %}ارفع أو أرسل الإيصال عبر الدعم. لا تشارك كلمات مرور أو مفاتيح API.{% else %}Upload or send the receipt via support. Never share passwords or API keys.{% endif %}</span></div>
             <div class="actions">
-                <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">{% if current_lang == 'ar' %}Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø¥Ø«Ø¨Ø§Øª Ù„Ù„Ø¯Ø¹Ù…{% else %}Send Proof to Support{% endif %}</a>
-                <a class="btn btn-secondary" href="/dashboard">{% if current_lang == 'ar' %}Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯{% else %}Back to Dashboard{% endif %}</a>
+                <a class="btn btn-primary" href="{{ support_link }}" target="_blank" rel="noopener">{% if current_lang == 'ar' %}إرسال الإثبات للدعم{% else %}Send Proof to Support{% endif %}</a>
+                <a class="btn btn-secondary" href="/dashboard">{% if current_lang == 'ar' %}العودة للداشبورد{% else %}Back to Dashboard{% endif %}</a>
             </div>
         </div>
 
         <aside class="trust-card">
-            <h2>{% if current_lang == 'ar' %}Ù„Ù…Ø§Ø°Ø§ Ù‡Ø°Ù‡ Ø§Ù„ØµÙØ­Ø© Ø¢Ù…Ù†Ø©ØŸ{% else %}Why this page is safe{% endif %}</h2>
+            <h2>{% if current_lang == 'ar' %}لماذا هذه الصفحة آمنة؟{% else %}Why this page is safe{% endif %}</h2>
             <div class="trust-list">
-                <div class="trust-item"><span class="check">âœ“</span><span>{% if current_lang == 'ar' %}Ù„Ø§ ØªÙˆØ¬Ø¯ Ø¹Ù…ÙˆÙ„Ø© Ø¯ÙØ¹ Ø¥Ø¶Ø§ÙÙŠØ©{% else %}No additional manual payment fees{% endif %}</span></div>
-                <div class="trust-item"><span class="check">âœ“</span><span>{% if current_lang == 'ar' %}Ù…Ø±Ø§Ø¬Ø¹Ø© ÙŠØ¯ÙˆÙŠØ© Ù‚Ø¨Ù„ Ø§Ù„ØªÙØ¹ÙŠÙ„{% else %}Manual verification before activation{% endif %}</span></div>
-                <div class="trust-item"><span class="check">âœ“</span><span>{% if current_lang == 'ar' %}Ø¨ÙŠØ§Ù†Ø§Øª Ø¯ÙØ¹ Ù…Ù†ÙØµÙ„Ø© Ù„ÙƒÙ„ Ø·Ø±ÙŠÙ‚Ø©{% else %}Separate payment card for each method{% endif %}</span></div>
-                <div class="trust-item"><span class="check">âœ“</span><span>{% if current_lang == 'ar' %}ØªØ­Ø°ÙŠØ± ÙˆØ§Ø¶Ø­ Ø¨Ø¹Ø¯Ù… Ù…Ø´Ø§Ø±ÙƒØ© Ø§Ù„Ø£Ø³Ø±Ø§Ø±{% else %}Clear warning not to share secrets{% endif %}</span></div>
+                <div class="trust-item"><span class="check">✓</span><span>{% if current_lang == 'ar' %}لا توجد عمولة دفع إضافية{% else %}No additional manual payment fees{% endif %}</span></div>
+                <div class="trust-item"><span class="check">✓</span><span>{% if current_lang == 'ar' %}مراجعة يدوية قبل التفعيل{% else %}Manual verification before activation{% endif %}</span></div>
+                <div class="trust-item"><span class="check">✓</span><span>{% if current_lang == 'ar' %}بيانات دفع منفصلة لكل طريقة{% else %}Separate payment card for each method{% endif %}</span></div>
+                <div class="trust-item"><span class="check">✓</span><span>{% if current_lang == 'ar' %}تحذير واضح بعدم مشاركة الأسرار{% else %}Clear warning not to share secrets{% endif %}</span></div>
             </div>
-            <div class="notice">{% if current_lang == 'ar' %}Ø§Ù„Ø¯ÙØ¹ Ø§Ù„ÙŠØ¯ÙˆÙŠ Ù„Ø§ ÙŠÙØ¹Ù„ Ø§Ù„Ø§Ø´ØªØ±Ø§Ùƒ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§. Ø§Ù„ØªÙØ¹ÙŠÙ„ ÙŠØªÙ… ÙÙ‚Ø· Ù…Ù† Ø§Ù„Ø£Ø¯Ù…Ù† Ø¨Ø¹Ø¯ Ø§Ù„ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„ØªØ­ÙˆÙŠÙ„.{% else %}Manual payment does not auto-activate. Activation is done only by admin after confirming the transfer.{% endif %}</div>
+            <div class="notice">{% if current_lang == 'ar' %}الدفع اليدوي لا يفعل الاشتراك تلقائيًا. التفعيل يتم فقط من الأدمن بعد التأكد من التحويل.{% else %}Manual payment does not auto-activate. Activation is done only by admin after confirming the transfer.{% endif %}</div>
         </aside>
     </section>
 </main>
 
-<div class="toast" id="copyToast">{% if current_lang == 'ar' %}ØªÙ… Ø§Ù„Ù†Ø³Ø® Ø¨Ù†Ø¬Ø§Ø­{% else %}Copied successfully{% endif %}</div>
+<div class="toast" id="copyToast">{% if current_lang == 'ar' %}تم النسخ بنجاح{% else %}Copied successfully{% endif %}</div>
 <script>
 (function () {
     const toast = document.getElementById('copyToast');
@@ -330,7 +330,7 @@ h1 { margin:18px 0 14px; font-size:clamp(34px, 5vw, 58px); line-height:1.05; let
 })();
 </script>
 <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
-<script src="/static/i18n.js?v=20260713_lang2"></script>
+<script src="/static/i18n.js?v=20260713_lang3"></script>
 <script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>
 </html>

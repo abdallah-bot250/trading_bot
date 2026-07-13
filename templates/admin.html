@@ -663,9 +663,9 @@ tbody tr:hover {
 
 <body class="nexora-shell nx-page-admin nx-admin-premium-page">
 <div class="language-switcher" aria-label="Language switcher">
-<button class="theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">â—</span><span class="light-icon">â˜€</span></button>
+<button class="theme-toggle" type="button" aria-label="Toggle theme"><span class="dark-icon">◐</span><span class="light-icon">☀</span></button>
     <a class="{% if current_lang == 'en' %}active{% endif %}" href="{{ language_url('en') }}">English</a>
-    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©</a>
+    <a class="{% if current_lang == 'ar' %}active{% endif %}" href="{{ language_url('ar') }}">العربية</a>
 </div>
 
 <header class="topbar">
@@ -673,8 +673,8 @@ tbody tr:hover {
         <div class="brand">
             <div class="brand-mark">N</div>
             <div>
-                <h1>Ù„ÙˆØ­Ø© ØªØ­ÙƒÙ… Ø§Ù„Ø£Ø¯Ù…Ù†</h1>
-                <p>Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†ØŒ Ø§Ù„Ø®Ø·Ø·ØŒ ÙˆØ±Ø¨Ø· Ø§Ù„Ø¨ÙˆØª Ù…Ù† Ù…ÙƒØ§Ù† ÙˆØ§Ø­Ø¯</p>
+                <h1>لوحة تحكم الأدمن</h1>
+                <p>إدارة المستخدمين، الخطط، وربط البوت من مكان واحد</p>
             </div>
         </div>
 
@@ -682,9 +682,9 @@ tbody tr:hover {
             <a href="/admin/ai-monitor"><button class="btn secondary" type="button">AI Monitor</button></a>
             <a href="/admin/product-features"><button class="btn secondary" type="button">Product Features</button></a>
             <a href="/admin/auto-trade-monitor"><button class="btn secondary" type="button">Auto Trade Monitor</button></a>
-            <a href="/dashboard"><button class="btn secondary" type="button">Ø±Ø¬ÙˆØ¹ Ù„Ù„Ø¯Ø§Ø´Ø¨ÙˆØ±Ø¯</button></a>
-            <a href="/proof"><button class="btn secondary" type="button">ØµÙØ­Ø© Ø§Ù„Ø¥Ø«Ø¨Ø§ØªØ§Øª</button></a>
-            <a href="/bot-check"><button class="btn secondary" type="button">ÙØ­Øµ Ø§Ù„Ø¨ÙˆØª</button></a>
+            <a href="/dashboard"><button class="btn secondary" type="button">رجوع للداشبورد</button></a>
+            <a href="/proof"><button class="btn secondary" type="button">صفحة الإثباتات</button></a>
+            <a href="/bot-check"><button class="btn secondary" type="button">فحص البوت</button></a>
 <!-- Legacy owner upgrade button removed from commercial UI. -->
         </div>
     </div>
@@ -695,45 +695,45 @@ tbody tr:hover {
         <div class="hero-main">
             <h2>Control Center</h2>
             <p>
-                Ù‡Ù†Ø§ ØªÙ‚Ø¯Ø± ØªØªØ§Ø¨Ø¹ Ø£Ø±Ù‚Ø§Ù… Ø§Ù„Ù…Ø´Ø±ÙˆØ¹ Ø¨Ø³Ø±Ø¹Ø©ØŒ ØªÙØ¹Ù„ Ø£ÙŠ Ø®Ø·Ø© ÙŠØ¯ÙˆÙŠØŒ ØªØ±Ø§Ø¬Ø¹ Ø±Ø¨Ø· ØªÙ„ÙŠØ¬Ø±Ø§Ù…ØŒ ÙˆØªØºÙ„Ù‚ Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø³Ø­Ø¨ Ù…Ù† ØºÙŠØ± Ù…Ø§ ØªØ¯Ø®Ù„ Ø¹Ù„Ù‰ Ø£ÙƒØ«Ø± Ù…Ù† Ù…ÙƒØ§Ù†.
+                هنا تقدر تتابع أرقام المشروع بسرعة، تفعل أي خطة يدوي، تراجع ربط تليجرام، وتغلق طلبات السحب من غير ما تدخل على أكثر من مكان.
             </p>
 
             <div class="quick-grid">
                 <div class="quick-card">
-                    <span>Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</span>
+                    <span>إجمالي المستخدمين</span>
                     <strong>{{ total_users }}</strong>
                 </div>
                 <div class="quick-card">
-                    <span>Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† Ù…Ø¯ÙÙˆØ¹ÙŠÙ†</span>
+                    <span>مستخدمين مدفوعين</span>
                     <strong>{{ paid_users }}</strong>
                 </div>
                 <div class="quick-card">
-                    <span>Ø¥ÙŠØ±Ø§Ø¯ Ø§Ù„Ø®Ø·Ø·</span>
+                    <span>إيراد الخطط</span>
                     <strong>${{ revenue }}</strong>
                 </div>
                 <div class="quick-card">
-                    <span>Ø³Ø­ÙˆØ¨Ø§Øª Ù…Ø¹Ù„Ù‚Ø©</span>
+                    <span>سحوبات معلقة</span>
                     <strong>{{ pending_withdrawals }}</strong>
                 </div>
             </div>
         </div>
 
         <aside class="health-panel">
-            <h3>Ø­Ø§Ù„Ø© Ø§Ù„ØªØ´ØºÙŠÙ„</h3>
+            <h3>حالة التشغيل</h3>
             <div class="health-row">
-                <span>Ø­Ø³Ø§Ø¨Ø§Øª Ù…Ø±Ø¨ÙˆØ·Ø© Ø¨ØªÙ„ÙŠØ¬Ø±Ø§Ù…</span>
+                <span>حسابات مربوطة بتليجرام</span>
                 <strong>{{ linked_users }}</strong>
             </div>
             <div class="health-row">
-                <span>Ø¨ÙˆØªØ§Øª Ù…ÙØ¹Ù„Ø©</span>
+                <span>بوتات مفعلة</span>
                 <strong>{{ active_bots }}</strong>
             </div>
             <div class="health-row">
-                <span>Ø¹Ù…ÙˆÙ„Ø§Øª Affiliate Ù…Ø³Ø¬Ù„Ø©</span>
+                <span>عمولات Affiliate مسجلة</span>
                 <strong>${{ total_affiliate_paid }}</strong>
             </div>
             <div class="health-row">
-                <span>Ù‚ÙŠÙ…Ø© Ø§Ù„Ø³Ø­ÙˆØ¨Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©</span>
+                <span>قيمة السحوبات المعلقة</span>
                 <strong>${{ pending_withdrawal_amount }}</strong>
             </div>
         </aside>
@@ -750,7 +750,7 @@ tbody tr:hover {
         <div class="nx-admin-card"><span>AI Engine Health</span><strong>{{ admin_overview.ai_engine_health }}</strong><small>Derived from tracked signal score.</small></div>
         <div class="nx-admin-card"><span>Queue Monitor</span><strong>{{ admin_overview.queue_monitor }}</strong><small>Pending payments, withdrawals, and open signals.</small></div>
         <div class="nx-admin-card"><span>System</span><strong>{{ admin_overview.database_status }}</strong><small>Database status and worker checks.</small></div>
-        <div class="nx-admin-card"><span>Free Earn Unlocks</span><strong>{{ admin_overview.free_earn_unlocks }}</strong><small>Locked: {{ admin_overview.free_earn_locked }} Â· Credits: {{ admin_overview.free_earn_credits }} Â· Users: {{ admin_overview.free_earn_users }} Â· AdsGram: {{ admin_overview.adsgram_rewarded }}/{{ admin_overview.adsgram_rewards }}</small><br><a href="/adsgram/reward-url-info">AdsGram Reward URL</a></div>
+        <div class="nx-admin-card"><span>Free Earn Unlocks</span><strong>{{ admin_overview.free_earn_unlocks }}</strong><small>Locked: {{ admin_overview.free_earn_locked }} · Credits: {{ admin_overview.free_earn_credits }} · Users: {{ admin_overview.free_earn_users }} · AdsGram: {{ admin_overview.adsgram_rewarded }}/{{ admin_overview.adsgram_rewards }}</small><br><a href="/adsgram/reward-url-info">AdsGram Reward URL</a></div>
     </section>
 
     <section class="nx-admin-tables" aria-label="Recent operations">
@@ -807,7 +807,7 @@ tbody tr:hover {
         <div class="overview-card">
             <div class="label">Revenue</div>
             <div class="value">${{ admin_overview.revenue }}</div>
-            <div class="sub">Last 7 days: ${{ admin_overview.revenue_7d }} Â· Paid conversion {{ admin_overview.paid_conversion }}%</div>
+            <div class="sub">Last 7 days: ${{ admin_overview.revenue_7d }} · Paid conversion {{ admin_overview.paid_conversion }}%</div>
             <div class="bar"><span style="width: {{ [admin_overview.paid_conversion, 100]|min }}%;"></span></div>
         </div>
         <div class="overview-card">
@@ -819,19 +819,19 @@ tbody tr:hover {
         <div class="overview-card">
             <div class="label">Payments</div>
             <div class="value">{{ admin_overview.payments_paid }}/{{ admin_overview.payments_total }}</div>
-            <div class="sub">Pending: {{ admin_overview.payments_pending }} Â· Failed tracked: {{ admin_overview.payments_failed }} Â· Renewals: {{ admin_overview.renewals_count }}</div>
+            <div class="sub">Pending: {{ admin_overview.payments_pending }} · Failed tracked: {{ admin_overview.payments_failed }} · Renewals: {{ admin_overview.renewals_count }}</div>
             <div class="bar"><span style="width: {{ [(admin_overview.payments_paid / admin_overview.payments_total * 100) if admin_overview.payments_total else 0, 100]|min }}%;"></span></div>
         </div>
         <div class="overview-card">
             <div class="label">Signals</div>
             <div class="value">{{ admin_overview.signals_total }}</div>
-            <div class="sub">Open: {{ admin_overview.signals_open }} Â· Closed: {{ admin_overview.signals_closed }} Â· Win rate: {{ admin_overview.signal_win_rate }}%</div>
+            <div class="sub">Open: {{ admin_overview.signals_open }} · Closed: {{ admin_overview.signals_closed }} · Win rate: {{ admin_overview.signal_win_rate }}%</div>
             <div class="bar"><span style="width: {{ [admin_overview.signal_win_rate, 100]|min }}%;"></span></div>
         </div>
         <div class="overview-card">
             <div class="label">Today</div>
             <div class="value">{{ admin_overview.todays_registrations }}</div>
-            <div class="sub">Payments today: {{ admin_overview.todays_payments }} Â· Worker: {{ admin_overview.worker_status }}</div>
+            <div class="sub">Payments today: {{ admin_overview.todays_payments }} · Worker: {{ admin_overview.worker_status }}</div>
             <div class="bar"><span style="width: {{ [admin_overview.todays_registrations * 10, 100]|min }}%;"></span></div>
         </div>
     </section>
@@ -945,7 +945,7 @@ tbody tr:hover {
                             {% endif %}
                         </td>
                         <td class="ltr">{{ coupon[4] or '-' }}</td>
-                        <td class="ltr">{{ coupon[6] or 0 }} / {{ coupon[5] or 'âˆž' }}</td>
+                        <td class="ltr">{{ coupon[6] or 0 }} / {{ coupon[5] or '∞' }}</td>
                         <td class="ltr">{{ coupon[7] or '-' }}</td>
                         <td>
                             <form action="/admin/coupons/toggle" method="POST">
@@ -969,13 +969,13 @@ tbody tr:hover {
     <section class="section">
         <div class="section-head">
             <div class="section-title">
-                <h2>Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</h2>
-                <p>Ø¨Ø­Ø«ØŒ ÙÙ„ØªØ±Ø©ØŒ ÙˆØªÙØ¹ÙŠÙ„ Ø®Ø·Ø· Basic Ùˆ Pro Ùˆ Elite Ùˆ Pro 2 Years Ø¨Ø¯ÙˆÙ† ØªØºÙŠÙŠØ± Ù…Ø³Ø§Ø± Ø§Ù„Ø¯ÙØ¹.</p>
+                <h2>إدارة المستخدمين</h2>
+                <p>بحث، فلترة، وتفعيل خطط Basic و Pro و Elite و Pro 2 Years بدون تغيير مسار الدفع.</p>
             </div>
             <div class="tools">
-                <input class="search" id="userSearch" type="search" placeholder="Ø§Ø¨Ø­Ø« Ø¨Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ø£Ùˆ Chat ID Ø£Ùˆ ID">
+                <input class="search" id="userSearch" type="search" placeholder="ابحث بالإيميل أو Chat ID أو ID">
                 <select class="filter" id="planFilter">
-                    <option value="all">ÙƒÙ„ Ø§Ù„Ø®Ø·Ø·</option>
+                    <option value="all">كل الخطط</option>
                     <option value="basic">Basic</option>
                     <option value="pro">Pro</option>
                     <option value="vip">Elite</option>
@@ -983,30 +983,30 @@ tbody tr:hover {
                     <option value="trial">Trial / Free</option>
                 </select>
                 <select class="filter" id="paidFilter">
-                    <option value="all">ÙƒÙ„ Ø§Ù„Ø­Ø§Ù„Ø§Øª</option>
+                    <option value="all">كل الحالات</option>
                     <option value="paid">Paid</option>
                     <option value="free">Free</option>
                 </select>
             </div>
         </div>
-        <div class="mobile-note">Ù…Ø±Ø± Ø§Ù„Ø¬Ø¯ÙˆÙ„ ÙŠÙ…ÙŠÙ† ÙˆÙŠØ³Ø§Ø± Ù„Ù…Ø´Ø§Ù‡Ø¯Ø© ÙƒÙ„ Ø§Ù„Ø£Ø¹Ù…Ø¯Ø©.</div>
+        <div class="mobile-note">مرر الجدول يمين ويسار لمشاهدة كل الأعمدة.</div>
 
         <div class="table-wrap">
             <table>
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…</th>
-                        <th>Ø§Ù„Ø®Ø·Ø©</th>
-                        <th>Ø§Ù„Ø¯ÙØ¹</th>
-                        <th>ØªØ§Ø±ÙŠØ® Ø§Ù„Ø§Ù†ØªÙ‡Ø§Ø¡</th>
+                        <th>المستخدم</th>
+                        <th>الخطة</th>
+                        <th>الدفع</th>
+                        <th>تاريخ الانتهاء</th>
                         <th>Start</th>
                         <th>Chat ID</th>
                         <th>Remaining</th>
                         <th>Free Signals</th>
                         <th>Affiliate Balance</th>
                         <th>Referrals</th>
-                        <th>Ø§Ù„ØªØ­ÙƒÙ…</th>
+                        <th>التحكم</th>
                     </tr>
                 </thead>
                 <tbody id="usersTable">
@@ -1081,7 +1081,7 @@ tbody tr:hover {
                                     <input type="hidden" name="plan" value="pro_2y">
                                     <button class="btn pro" type="submit">Pro 2Y</button>
                                 </form>
-<form action="/delete-user" method="POST" onsubmit="return confirm('Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ù…Ù† Ø­Ø°Ù Ù‡Ø°Ø§ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ØŸ');">
+<form action="/delete-user" method="POST" onsubmit="return confirm('هل أنت متأكد من حذف هذا المستخدم؟');">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ u[0] }}">
                                     <button class="btn delete" type="submit">Delete</button>
@@ -1098,19 +1098,19 @@ tbody tr:hover {
     <section class="section">
         <div class="section-head">
             <div class="section-title">
-                <h2>Ø·Ù„Ø¨Ø§Øª Ø³Ø­Ø¨ Ø§Ù„Ø£Ø±Ø¨Ø§Ø­</h2>
-                <p>Ø±Ø§Ø¬Ø¹ Ø§Ù„Ù…Ø­Ø§ÙØ¸ ÙˆØ§Ù„Ù…Ø¨Ø§Ù„ØºØŒ Ø«Ù… Ø¹Ù„Ù… Ø§Ù„Ø·Ù„Ø¨ ÙƒÙ…Ø¯ÙÙˆØ¹ Ø¨Ø¹Ø¯ Ø§Ù„ØªØ­ÙˆÙŠÙ„.</p>
+                <h2>طلبات سحب الأرباح</h2>
+                <p>راجع المحافظ والمبالغ، ثم علم الطلب كمدفوع بعد التحويل.</p>
             </div>
             <div class="tools">
-                <input class="search" id="withdrawalSearch" type="search" placeholder="Ø§Ø¨Ø­Ø« Ø¨Ù…Ø­ÙØ¸Ø© Ø£Ùˆ Chat ID">
+                <input class="search" id="withdrawalSearch" type="search" placeholder="ابحث بمحفظة أو Chat ID">
                 <select class="filter" id="withdrawalFilter">
-                    <option value="all">ÙƒÙ„ Ø§Ù„Ø·Ù„Ø¨Ø§Øª</option>
+                    <option value="all">كل الطلبات</option>
                     <option value="pending">Pending</option>
                     <option value="paid">Paid</option>
                 </select>
             </div>
         </div>
-        <div class="mobile-note">Ù…Ø±Ø± Ø§Ù„Ø¬Ø¯ÙˆÙ„ ÙŠÙ…ÙŠÙ† ÙˆÙŠØ³Ø§Ø± Ù„Ù…Ø´Ø§Ù‡Ø¯Ø© Ø§Ù„Ù…Ø­Ø§ÙØ¸ Ø§Ù„Ø·ÙˆÙŠÙ„Ø©.</div>
+        <div class="mobile-note">مرر الجدول يمين ويسار لمشاهدة المحافظ الطويلة.</div>
 
         <div class="table-wrap">
             <table>
@@ -1146,7 +1146,7 @@ tbody tr:hover {
                         <td>
                             {% if w[4] != 'paid' %}
                             <div class="actions">
-                                <form action="/mark-withdrawal-paid" method="POST" onsubmit="return confirm('ØªØ£ÙƒÙŠØ¯ Ø£Ù† Ø·Ù„Ø¨ Ø§Ù„Ø³Ø­Ø¨ ØªÙ… Ø¯ÙØ¹Ù‡ØŸ');">
+                                <form action="/mark-withdrawal-paid" method="POST" onsubmit="return confirm('تأكيد أن طلب السحب تم دفعه؟');">
                                     {{ csrf_field() }}
                                     <input type="hidden" name="id" value="{{ w[0] }}">
                                     <button class="btn paid" type="submit">Mark Paid</button>
@@ -1210,7 +1210,7 @@ setupFilter("withdrawalsTable", "withdrawalSearch", [
 <script>
 window.NEXORA_LANG = "{{ current_lang }}";
 </script>
-<script src="/static/i18n.js?v=20260713_lang2"></script>
+<script src="/static/i18n.js?v=20260713_lang3"></script>
 
 <script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>
