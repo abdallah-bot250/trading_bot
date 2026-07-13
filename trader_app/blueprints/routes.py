@@ -186,9 +186,10 @@ def referral_landing(referral_code):
 
 @public_bp.route("/set-language/<lang>")
 def set_language(lang):
+    from trader_app.i18n import normalize_language
+
     lang = (lang or "").strip().lower()
-    if lang not in {"en", "ar"}:
-        lang = "en"
+    lang = normalize_language(lang)
 
     session["lang"] = lang
     next_url = request.args.get("next") or request.referrer or url_for("public.landing")
