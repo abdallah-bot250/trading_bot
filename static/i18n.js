@@ -280,6 +280,311 @@
   }
 })();
 
+// === NEXORA EXTENDED PAGE COPY TRANSLATION PACK ===
+(function () {
+  const root = document.documentElement;
+  const lang = (window.NEXORA_LANG || root.lang || "en").toLowerCase();
+  if (lang === "en") return;
+
+  const copy = {
+    ar: {
+      "Nexora AI Trader is a risk-managed AI crypto signal platform with SMC, support and resistance targets, Telegram delivery, dashboard tracking, and a free trial.": "Nexora AI Trader منصة إشارات كريبتو مدعومة بالذكاء الاصطناعي مع إدارة مخاطر، أهداف دعم ومقاومة، توصيل عبر تيليجرام، تتبع من الداشبورد، وتجربة مجانية.",
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "منصة إشارات كريبتو مدعومة بالذكاء الاصطناعي مع تنبيهات تيليجرام وإدارة مخاطر وتتبع من الداشبورد.",
+      "AI crypto signal platform for serious traders": "منصة إشارات كريبتو ذكية للمتداول الجاد",
+      "Professional BTC/USDT trading terminal.": "منصة تداول احترافية BTC/USDT.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "عرض TradingView كامل لقراءة الاتجاه وحركة السعر ومراجعة السوق قبل فتح الداشبورد.",
+      "Built for traders who want clarity before entry.": "مصمم للمتداولين الذين يريدون وضوحًا قبل الدخول.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "تركز المنصة على دعم القرار وجودة الإشارة ووضوح الأهداف بدل التنبيهات العشوائية.",
+      "A simple flow from website to Telegram to dashboard.": "رحلة بسيطة من الموقع إلى تيليجرام ثم الداشبورد.",
+      "More than signals. A full AI trading workspace.": "أكثر من إشارات. مساحة تداول كاملة مدعومة بالذكاء الاصطناعي.",
+      "Rules, paper trading, AI optimization, strategy templates, exchanges, executions, academy, and platform tools.": "قواعد تداول، تجربة ورقية، تحسينات ذكاء اصطناعي، قوالب استراتيجيات، منصات، تنفيذ، أكاديمية، وأدوات للمنصة.",
+      "Built to feel like a trading automation platform, positioned around safer AI signal delivery.": "مصمم ليبدو كمنصة أتمتة تداول احترافية مع تركيز على توصيل إشارات AI أكثر أمانًا.",
+      "Clear plans without renaming production plan IDs.": "خطط واضحة بدون تغيير معرفات الخطط الإنتاجية.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "اختر الخطة المناسبة لاستخدامك. الدفع اليدوي متاح دائمًا.",
+      "Review examples before subscribing.": "راجع الأمثلة قبل الاشتراك.",
+      "Use the proof page and official bot check to verify what the platform shows. Avoid fake Telegram accounts and never trust guaranteed profit claims.": "استخدم صفحة الإثبات وفحص البوت الرسمي للتحقق من المنصة. تجنب حسابات تيليجرام المزيفة ولا تثق بأي وعود ربح مضمونة.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader برنامج لدعم القرار. تداول العملات الرقمية عالي المخاطر. الإشارات والداشبورد وتحليل الذكاء الاصطناعي لا تضمن الربح. أدِر رأس مالك واتخذ قرارك النهائي بنفسك.",
+      "Animated dashboard preview built around real product workflows.": "معاينة داشبورد متحركة مبنية على تدفقات المنتج الحقيقية.",
+      "No fake profit guarantees. The interface highlights plan status, Telegram linking, signal quality, and performance tracking.": "بدون وعود أرباح وهمية. الواجهة تعرض حالة الخطة، ربط تيليجرام، جودة الإشارات، وتتبع الأداء.",
+      "Performance is displayed only when tracked data exists.": "يتم عرض الأداء فقط عند وجود بيانات تتبع حقيقية.",
+      "Nexora avoids fake results. New accounts see clear empty states until real signals and closed outcomes are recorded.": "Nexora يتجنب النتائج الوهمية. الحسابات الجديدة ترى حالات فارغة واضحة حتى يتم تسجيل إشارات ونتائج مغلقة حقيقية.",
+      "Built with production safety in mind.": "مصمم مع مراعاة أمان الإنتاج.",
+      "A clear path for buyers and operators.": "مسار واضح للمشترين والمشغلين.",
+      "Use verified customer quotes when available.": "استخدم آراء عملاء موثقة عند توفرها.",
+      "Until real testimonials are approved, this section stays honest and product-focused.": "حتى يتم اعتماد شهادات حقيقية، يظل هذا القسم صادقًا ومركزًا على المنتج.",
+      "Common questions before subscribing.": "أسئلة شائعة قبل الاشتراك.",
+      "Does Nexora guarantee profit?": "هل تضمن Nexora الربح؟",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "لا. تقدم تحليل سوق مدعوم بالذكاء الاصطناعي وتنبيهات منظمة. نتائج التداول غير مضمونة.",
+      "How do I receive signals?": "كيف أستقبل الإشارات؟",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "أنشئ حسابًا، اربط البوت الرسمي على تيليجرام، وحافظ على الاتصال من الداشبورد.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "ذكاء إشارات كريبتو احترافي مع توصيل مُدار بالمخاطر، ربط تيليجرام، وداشبورد نظيف.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "أنشئ حسابك مباشرة، ثم اربط تيليجرام من الداشبورد أو البوت الرسمي."
+    },
+    es: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Plataforma de señales cripto asistida por IA con alertas de Telegram gestionadas por riesgo y seguimiento en panel.",
+      "AI crypto signal platform for serious traders": "Plataforma de señales cripto con IA para traders serios",
+      "Professional BTC/USDT trading terminal.": "Terminal profesional de trading BTC/USDT.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Vista completa de TradingView para contexto del gráfico, lectura de tendencia y revisión del precio antes de abrir el panel.",
+      "Built for traders who want clarity before entry.": "Creado para traders que quieren claridad antes de entrar.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "La plataforma prioriza soporte de decisión, señales más limpias y objetivos transparentes en lugar de alertas ruidosas.",
+      "A simple flow from website to Telegram to dashboard.": "Un flujo simple del sitio web a Telegram y luego al panel.",
+      "More than signals. A full AI trading workspace.": "Más que señales. Un espacio completo de trading con IA.",
+      "Clear plans without renaming production plan IDs.": "Planes claros sin renombrar los IDs de producción.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Elige el plan que se adapte a tu uso. El pago manual sigue disponible.",
+      "Review examples before subscribing.": "Revisa ejemplos antes de suscribirte.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader es software de apoyo a decisiones. El trading cripto implica riesgo. Las señales, paneles y análisis de IA no garantizan ganancias.",
+      "Performance is displayed only when tracked data exists.": "El rendimiento solo se muestra cuando existen datos reales rastreados.",
+      "Common questions before subscribing.": "Preguntas frecuentes antes de suscribirse.",
+      "Does Nexora guarantee profit?": "¿Nexora garantiza ganancias?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "No. Proporciona análisis de mercado asistido por IA y alertas estructuradas. Los resultados nunca están garantizados.",
+      "How do I receive signals?": "¿Cómo recibo señales?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Crea una cuenta, vincula el bot oficial de Telegram y mantenlo conectado desde tu panel.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Inteligencia premium de señales cripto con entrega gestionada por riesgo, conexión Telegram y panel limpio.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Crea tu cuenta directamente y luego vincula Telegram desde el panel o el bot oficial."
+    },
+    fr: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Plateforme de signaux crypto assistée par IA avec alertes Telegram à risque maîtrisé et suivi dans le tableau de bord.",
+      "AI crypto signal platform for serious traders": "Plateforme de signaux crypto IA pour traders sérieux",
+      "Professional BTC/USDT trading terminal.": "Terminal de trading BTC/USDT professionnel.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Vue TradingView pleine largeur pour analyser le graphique, la tendance et l'action des prix avant d'ouvrir le tableau de bord.",
+      "Built for traders who want clarity before entry.": "Conçu pour les traders qui veulent de la clarté avant l'entrée.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "La plateforme privilégie l'aide à la décision, la qualité des signaux et des objectifs transparents plutôt que des alertes bruyantes.",
+      "A simple flow from website to Telegram to dashboard.": "Un parcours simple du site vers Telegram puis le tableau de bord.",
+      "More than signals. A full AI trading workspace.": "Plus que des signaux. Un espace de trading IA complet.",
+      "Clear plans without renaming production plan IDs.": "Des plans clairs sans renommer les IDs de production.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Choisissez le plan adapté à votre usage. Le paiement manuel reste disponible.",
+      "Review examples before subscribing.": "Consultez les exemples avant de vous abonner.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader est un logiciel d'aide à la décision. Le trading crypto est risqué. Les signaux, tableaux de bord et analyses IA ne garantissent pas de profits.",
+      "Performance is displayed only when tracked data exists.": "La performance s'affiche uniquement lorsque des données suivies existent.",
+      "Common questions before subscribing.": "Questions fréquentes avant l'abonnement.",
+      "Does Nexora guarantee profit?": "Nexora garantit-il des profits ?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Non. Il fournit une analyse de marché assistée par IA et des alertes structurées. Les résultats ne sont jamais garantis.",
+      "How do I receive signals?": "Comment recevoir les signaux ?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Créez un compte, liez le bot Telegram officiel et gardez-le connecté depuis votre tableau de bord.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Intelligence premium de signaux crypto avec livraison maîtrisée, connexion Telegram et tableau de bord clair.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Créez votre compte directement, puis liez Telegram depuis le tableau de bord ou le bot officiel."
+    },
+    de: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "KI-gestützte Krypto-Signalplattform mit risikogesteuerten Telegram-Alerts und Dashboard-Tracking.",
+      "AI crypto signal platform for serious traders": "KI-Krypto-Signalplattform für ernsthafte Trader",
+      "Professional BTC/USDT trading terminal.": "Professionelles BTC/USDT-Trading-Terminal.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Vollbreite TradingView-Ansicht für Chart-Kontext, Trendanalyse und Price-Action-Prüfung vor dem Dashboard.",
+      "Built for traders who want clarity before entry.": "Für Trader gebaut, die vor dem Einstieg Klarheit wollen.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "Die Plattform fokussiert Entscheidungshilfe, saubere Signalqualität und transparente Ziele statt lauter Alerts.",
+      "A simple flow from website to Telegram to dashboard.": "Ein einfacher Ablauf von Website zu Telegram zum Dashboard.",
+      "More than signals. A full AI trading workspace.": "Mehr als Signale. Ein kompletter KI-Trading-Arbeitsbereich.",
+      "Clear plans without renaming production plan IDs.": "Klare Pläne ohne Umbenennung produktiver Plan-IDs.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Wählen Sie den passenden Plan. Manuelle Zahlung bleibt verfügbar.",
+      "Review examples before subscribing.": "Prüfen Sie Beispiele vor dem Abonnieren.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader ist Entscheidungssoftware. Krypto-Trading ist riskant. Signale, Dashboards und KI-Analysen garantieren keine Gewinne.",
+      "Performance is displayed only when tracked data exists.": "Performance wird nur angezeigt, wenn echte Tracking-Daten vorhanden sind.",
+      "Common questions before subscribing.": "Häufige Fragen vor dem Abo.",
+      "Does Nexora guarantee profit?": "Garantiert Nexora Gewinn?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Nein. Es bietet KI-gestützte Marktanalyse und strukturierte Alerts. Ergebnisse sind nie garantiert.",
+      "How do I receive signals?": "Wie erhalte ich Signale?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Konto erstellen, offiziellen Telegram-Bot verbinden und im Dashboard verbunden halten.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Premium-Krypto-Signalintelligenz mit risikogesteuerter Zustellung, Telegram-Verbindung und klarem Dashboard.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Erstellen Sie Ihr Konto direkt und verbinden Sie Telegram danach im Dashboard oder offiziellen Bot."
+    },
+    tr: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Risk yönetimli Telegram uyarıları ve panel takibi olan yapay zekâ destekli kripto sinyal platformu.",
+      "AI crypto signal platform for serious traders": "Ciddi yatırımcılar için yapay zekâ kripto sinyal platformu",
+      "Professional BTC/USDT trading terminal.": "Profesyonel BTC/USDT işlem terminali.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Kullanıcılar panele girmeden önce grafik bağlamı, trend ve fiyat hareketini incelemek için tam genişlik TradingView görünümü.",
+      "Built for traders who want clarity before entry.": "İşleme girmeden önce netlik isteyen traderlar için tasarlandı.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "Platform gürültülü uyarılar yerine karar desteği, temiz sinyal kalitesi ve şeffaf hedeflere odaklanır.",
+      "A simple flow from website to Telegram to dashboard.": "Web sitesinden Telegram'a ve ardından panele uzanan basit akış.",
+      "More than signals. A full AI trading workspace.": "Sinyallerden fazlası. Tam bir yapay zekâ işlem alanı.",
+      "Clear plans without renaming production plan IDs.": "Üretim plan kimliklerini değiştirmeden net planlar.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Kullanımınıza uygun planı seçin. Manuel ödeme kullanılabilir kalır.",
+      "Review examples before subscribing.": "Abone olmadan önce örnekleri inceleyin.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader karar destek yazılımıdır. Kripto işlemleri risklidir. Sinyaller ve analizler kâr garantisi vermez.",
+      "Performance is displayed only when tracked data exists.": "Performans yalnızca takip edilen gerçek veri varsa gösterilir.",
+      "Common questions before subscribing.": "Abonelik öncesi sık sorular.",
+      "Does Nexora guarantee profit?": "Nexora kâr garantisi verir mi?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Hayır. Yapay zekâ destekli piyasa analizi ve yapılandırılmış uyarılar sunar. Sonuçlar garanti değildir.",
+      "How do I receive signals?": "Sinyalleri nasıl alırım?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Hesap oluşturun, resmi Telegram botunu bağlayın ve panelden bağlı tutun.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Risk yönetimli gönderim, Telegram bağlantısı ve temiz panel ile premium kripto sinyal zekâsı.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Hesabınızı doğrudan oluşturun, ardından panelden veya resmi bottan Telegram'ı bağlayın."
+    },
+    pt: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Plataforma de sinais cripto com IA, alertas Telegram com gestão de risco e acompanhamento no painel.",
+      "AI crypto signal platform for serious traders": "Plataforma de sinais cripto com IA para traders sérios",
+      "Professional BTC/USDT trading terminal.": "Terminal profissional de trading BTC/USDT.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Visão TradingView em largura total para contexto do gráfico, leitura de tendência e revisão do preço antes do painel.",
+      "Built for traders who want clarity before entry.": "Criado para traders que querem clareza antes da entrada.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "A plataforma foca em apoio à decisão, qualidade de sinal e alvos transparentes em vez de alertas ruidosos.",
+      "A simple flow from website to Telegram to dashboard.": "Um fluxo simples do site para o Telegram e depois para o painel.",
+      "More than signals. A full AI trading workspace.": "Mais que sinais. Um espaço completo de trading com IA.",
+      "Clear plans without renaming production plan IDs.": "Planos claros sem renomear IDs de produção.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Escolha o plano que combina com seu uso. Pagamento manual continua disponível.",
+      "Review examples before subscribing.": "Revise exemplos antes de assinar.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader é software de apoio à decisão. Trading cripto é arriscado. Sinais e análises não garantem lucro.",
+      "Performance is displayed only when tracked data exists.": "O desempenho só aparece quando existem dados reais rastreados.",
+      "Common questions before subscribing.": "Perguntas comuns antes da assinatura.",
+      "Does Nexora guarantee profit?": "A Nexora garante lucro?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Não. Ela fornece análise de mercado com IA e alertas estruturados. Resultados nunca são garantidos.",
+      "How do I receive signals?": "Como recebo sinais?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Crie uma conta, conecte o bot oficial do Telegram e mantenha-o conectado no painel.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Inteligência premium de sinais cripto com entrega gerida por risco, Telegram e painel limpo.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Crie sua conta diretamente e depois conecte o Telegram pelo painel ou bot oficial."
+    },
+    ru: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Платформа крипто-сигналов с ИИ, Telegram-уведомлениями с контролем риска и отслеживанием в панели.",
+      "AI crypto signal platform for serious traders": "Платформа ИИ крипто-сигналов для серьезных трейдеров",
+      "Professional BTC/USDT trading terminal.": "Профессиональный торговый терминал BTC/USDT.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Полноширинный TradingView для анализа графика, тренда и движения цены перед открытием панели.",
+      "Built for traders who want clarity before entry.": "Создано для трейдеров, которым нужна ясность перед входом.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "Платформа делает акцент на поддержке решений, качестве сигналов и прозрачных целях вместо шумных уведомлений.",
+      "A simple flow from website to Telegram to dashboard.": "Простой путь: сайт, Telegram, затем панель.",
+      "More than signals. A full AI trading workspace.": "Больше, чем сигналы. Полное рабочее пространство трейдинга с ИИ.",
+      "Clear plans without renaming production plan IDs.": "Понятные планы без переименования production ID.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Выберите план под ваши задачи. Ручная оплата доступна.",
+      "Review examples before subscribing.": "Посмотрите примеры перед подпиской.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader — ПО для поддержки решений. Криптотрейдинг рискован. Сигналы и ИИ-анализ не гарантируют прибыль.",
+      "Performance is displayed only when tracked data exists.": "Показатели отображаются только при наличии реальных данных.",
+      "Common questions before subscribing.": "Частые вопросы перед подпиской.",
+      "Does Nexora guarantee profit?": "Nexora гарантирует прибыль?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Нет. Она дает ИИ-анализ рынка и структурированные уведомления. Результаты не гарантируются.",
+      "How do I receive signals?": "Как получать сигналы?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Создайте аккаунт, подключите официальный Telegram-бот и держите его подключенным в панели.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Премиальная аналитика крипто-сигналов с контролем риска, Telegram и удобной панелью.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Создайте аккаунт, затем подключите Telegram через панель или официальный бот."
+    },
+    zh: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "由 AI 辅助的加密信号平台，提供风险管理的 Telegram 提醒和仪表盘跟踪。",
+      "AI crypto signal platform for serious traders": "面向专业交易者的 AI 加密信号平台",
+      "Professional BTC/USDT trading terminal.": "专业 BTC/USDT 交易终端。",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "全宽 TradingView 市场视图，用于在进入仪表盘前查看图表、趋势和价格行为。",
+      "Built for traders who want clarity before entry.": "为希望在入场前获得清晰判断的交易者打造。",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "平台专注于决策支持、更干净的信号质量和透明目标，而不是噪音提醒。",
+      "A simple flow from website to Telegram to dashboard.": "从网站到 Telegram 再到仪表盘的简单流程。",
+      "More than signals. A full AI trading workspace.": "不只是信号，而是完整的 AI 交易工作区。",
+      "Clear plans without renaming production plan IDs.": "清晰套餐，不改变生产计划 ID。",
+      "Choose the plan that matches your usage. Manual payment stays available.": "选择适合你使用方式的套餐。仍支持手动付款。",
+      "Review examples before subscribing.": "订阅前先查看示例。",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader 是决策辅助软件。加密交易有风险，信号、仪表盘和 AI 分析不保证盈利。",
+      "Performance is displayed only when tracked data exists.": "只有存在真实跟踪数据时才显示表现。",
+      "Common questions before subscribing.": "订阅前常见问题。",
+      "Does Nexora guarantee profit?": "Nexora 保证盈利吗？",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "不保证。它提供 AI 辅助市场分析和结构化提醒，交易结果永远无法保证。",
+      "How do I receive signals?": "如何接收信号？",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "创建账户，绑定官方 Telegram 机器人，并在仪表盘保持连接。",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "高级加密信号智能，支持风险管理投递、Telegram 连接和清晰仪表盘。",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "直接创建账户，然后从仪表盘或官方机器人绑定 Telegram。"
+    },
+    hi: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "AI-सहायता वाली क्रिप्टो सिग्नल प्लेटफॉर्म, जोखिम-प्रबंधित Telegram अलर्ट और डैशबोर्ड ट्रैकिंग के साथ।",
+      "AI crypto signal platform for serious traders": "गंभीर ट्रेडरों के लिए AI क्रिप्टो सिग्नल प्लेटफॉर्म",
+      "Professional BTC/USDT trading terminal.": "प्रोफेशनल BTC/USDT ट्रेडिंग टर्मिनल।",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "डैशबोर्ड खोलने से पहले चार्ट, ट्रेंड और प्राइस एक्शन देखने के लिए फुल-विथ TradingView व्यू।",
+      "Built for traders who want clarity before entry.": "उन ट्रेडरों के लिए बनाया गया जो एंट्री से पहले स्पष्टता चाहते हैं।",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "प्लेटफॉर्म शोर वाले अलर्ट की जगह निर्णय सहायता, बेहतर सिग्नल गुणवत्ता और साफ लक्ष्यों पर केंद्रित है।",
+      "A simple flow from website to Telegram to dashboard.": "वेबसाइट से Telegram और फिर डैशबोर्ड तक सरल प्रवाह।",
+      "More than signals. A full AI trading workspace.": "सिग्नल से अधिक। पूरा AI ट्रेडिंग वर्कस्पेस।",
+      "Clear plans without renaming production plan IDs.": "प्रोडक्शन प्लान IDs बदले बिना साफ प्लान।",
+      "Choose the plan that matches your usage. Manual payment stays available.": "अपने उपयोग के अनुसार प्लान चुनें। मैनुअल पेमेंट उपलब्ध रहता है।",
+      "Review examples before subscribing.": "सब्सक्राइब करने से पहले उदाहरण देखें।",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader निर्णय-सहायता सॉफ्टवेयर है। क्रिप्टो ट्रेडिंग जोखिमपूर्ण है। सिग्नल और AI विश्लेषण लाभ की गारंटी नहीं देते।",
+      "Performance is displayed only when tracked data exists.": "प्रदर्शन तभी दिखता है जब वास्तविक ट्रैक डेटा मौजूद हो।",
+      "Common questions before subscribing.": "सब्सक्रिप्शन से पहले सामान्य प्रश्न।",
+      "Does Nexora guarantee profit?": "क्या Nexora लाभ की गारंटी देता है?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "नहीं। यह AI-सहायता वाला मार्केट विश्लेषण और संरचित अलर्ट देता है। परिणामों की गारंटी नहीं होती।",
+      "How do I receive signals?": "मुझे सिग्नल कैसे मिलेंगे?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "खाता बनाएं, आधिकारिक Telegram bot लिंक करें और डैशबोर्ड से कनेक्ट रखें।",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "जोखिम-प्रबंधित डिलीवरी, Telegram कनेक्शन और साफ डैशबोर्ड के साथ प्रीमियम क्रिप्टो सिग्नल इंटेलिजेंस।",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "सीधे खाता बनाएं, फिर डैशबोर्ड या आधिकारिक bot से Telegram लिंक करें।"
+    },
+    ur: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "AI کی مدد سے کرپٹو سگنل پلیٹ فارم، رسک مینجڈ Telegram الرٹس اور ڈیش بورڈ ٹریکنگ کے ساتھ۔",
+      "AI crypto signal platform for serious traders": "سنجیدہ ٹریڈرز کے لیے AI کرپٹو سگنل پلیٹ فارم",
+      "Professional BTC/USDT trading terminal.": "پروفیشنل BTC/USDT ٹریڈنگ ٹرمینل۔",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "ڈیش بورڈ کھولنے سے پہلے چارٹ، ٹرینڈ اور پرائس ایکشن کے لیے مکمل TradingView مارکیٹ ویو۔",
+      "Built for traders who want clarity before entry.": "ان ٹریڈرز کے لیے جو انٹری سے پہلے واضح فیصلہ چاہتے ہیں۔",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "یہ پلیٹ فارم شور والے الرٹس کے بجائے فیصلہ سازی، بہتر سگنل کوالٹی اور واضح اہداف پر توجہ دیتا ہے۔",
+      "A simple flow from website to Telegram to dashboard.": "ویب سائٹ سے Telegram اور پھر ڈیش بورڈ تک آسان فلو۔",
+      "More than signals. A full AI trading workspace.": "صرف سگنلز نہیں، مکمل AI ٹریڈنگ ورک اسپیس۔",
+      "Clear plans without renaming production plan IDs.": "پروڈکشن پلان IDs بدلے بغیر واضح پلانز۔",
+      "Choose the plan that matches your usage. Manual payment stays available.": "اپنے استعمال کے مطابق پلان منتخب کریں۔ دستی ادائیگی دستیاب رہتی ہے۔",
+      "Review examples before subscribing.": "سبسکرائب کرنے سے پہلے مثالیں دیکھیں۔",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader فیصلہ سازی میں مدد دینے والا سافٹ ویئر ہے۔ کرپٹو ٹریڈنگ خطرناک ہے۔ سگنلز اور AI تجزیہ منافع کی ضمانت نہیں دیتے۔",
+      "Performance is displayed only when tracked data exists.": "کارکردگی صرف تب دکھائی جاتی ہے جب حقیقی ٹریک شدہ ڈیٹا موجود ہو۔",
+      "Common questions before subscribing.": "سبسکرائب کرنے سے پہلے عام سوالات۔",
+      "Does Nexora guarantee profit?": "کیا Nexora منافع کی ضمانت دیتا ہے؟",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "نہیں۔ یہ AI مارکیٹ تجزیہ اور منظم الرٹس فراہم کرتا ہے۔ نتائج کبھی ضمانت شدہ نہیں ہوتے۔",
+      "How do I receive signals?": "مجھے سگنلز کیسے ملیں گے؟",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "اکاؤنٹ بنائیں، آفیشل Telegram bot لنک کریں، اور ڈیش بورڈ سے اسے کنیکٹ رکھیں۔",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "رسک مینجڈ ڈیلیوری، Telegram کنکشن اور صاف ڈیش بورڈ کے ساتھ پریمیم کرپٹو سگنل انٹیلیجنس۔",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "اپنا اکاؤنٹ براہ راست بنائیں، پھر ڈیش بورڈ یا آفیشل bot سے Telegram لنک کریں۔"
+    },
+    id: {
+      "AI-assisted crypto signal platform with risk-managed Telegram alerts and dashboard tracking.": "Platform sinyal kripto berbantuan AI dengan alert Telegram berbasis manajemen risiko dan pelacakan dasbor.",
+      "AI crypto signal platform for serious traders": "Platform sinyal kripto AI untuk trader serius",
+      "Professional BTC/USDT trading terminal.": "Terminal trading BTC/USDT profesional.",
+      "Full-width TradingView market view for chart context, trend reading, and price action review before users open the dashboard.": "Tampilan TradingView penuh untuk konteks grafik, pembacaan tren, dan review price action sebelum membuka dasbor.",
+      "Built for traders who want clarity before entry.": "Dibuat untuk trader yang ingin kejelasan sebelum entry.",
+      "The platform focuses on decision support, cleaner signal quality, and transparent targets instead of noisy alerts.": "Platform berfokus pada dukungan keputusan, kualitas sinyal lebih bersih, dan target transparan, bukan alert yang bising.",
+      "A simple flow from website to Telegram to dashboard.": "Alur sederhana dari website ke Telegram lalu ke dasbor.",
+      "More than signals. A full AI trading workspace.": "Lebih dari sinyal. Workspace trading AI lengkap.",
+      "Clear plans without renaming production plan IDs.": "Paket jelas tanpa mengganti ID paket produksi.",
+      "Choose the plan that matches your usage. Manual payment stays available.": "Pilih paket sesuai penggunaan Anda. Pembayaran manual tetap tersedia.",
+      "Review examples before subscribing.": "Lihat contoh sebelum berlangganan.",
+      "Nexora AI Trader is decision-support software. Crypto trading is risky. Signals, dashboards, and AI analysis do not guarantee profits. Always manage capital and make your own final decision.": "Nexora AI Trader adalah software pendukung keputusan. Trading kripto berisiko. Sinyal dan analisis AI tidak menjamin profit.",
+      "Performance is displayed only when tracked data exists.": "Performa hanya ditampilkan ketika data nyata tersedia.",
+      "Common questions before subscribing.": "Pertanyaan umum sebelum berlangganan.",
+      "Does Nexora guarantee profit?": "Apakah Nexora menjamin profit?",
+      "No. It provides AI-assisted market analysis and structured alerts. Trading outcomes are never guaranteed.": "Tidak. Nexora menyediakan analisis pasar berbantuan AI dan alert terstruktur. Hasil trading tidak pernah dijamin.",
+      "How do I receive signals?": "Bagaimana saya menerima sinyal?",
+      "Create an account, link the official Telegram bot, and keep the bot connected from your dashboard.": "Buat akun, hubungkan bot Telegram resmi, dan jaga koneksi dari dasbor.",
+      "Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.": "Intelijen sinyal kripto premium dengan pengiriman berbasis risiko, koneksi Telegram, dan dasbor bersih.",
+      "Create your account directly, then link Telegram from the dashboard or official bot.": "Buat akun langsung, lalu hubungkan Telegram dari dasbor atau bot resmi."
+    }
+  };
+
+  const phrases = copy[lang];
+  if (!phrases) return;
+  const ignored = new Set(["SCRIPT", "STYLE", "TEXTAREA", "CODE", "PRE", "NOSCRIPT"]);
+  const keys = Object.keys(phrases).sort((a, b) => b.length - a.length);
+
+  function translateValue(value) {
+    if (!value || !value.trim()) return value;
+    let next = value;
+    keys.forEach((key) => {
+      next = next.split(key).join(phrases[key]);
+    });
+    return next;
+  }
+
+  function runExtendedCopyTranslation() {
+    if (!document.body) return;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.parentElement || ignored.has(node.parentElement.tagName)) continue;
+      if (node.parentElement.closest("[data-no-translate], .no-translate, .nx-language-menu")) continue;
+      nodes.push(node);
+    }
+    nodes.forEach((node) => {
+      node.nodeValue = translateValue(node.nodeValue);
+    });
+    document.querySelectorAll("[placeholder], [alt], [title], [aria-label], input[type='submit']").forEach((el) => {
+      if (el.closest("[data-no-translate], .no-translate, .nx-language-menu")) return;
+      ["placeholder", "alt", "title", "aria-label", "value"].forEach((attr) => {
+        if (el.hasAttribute(attr)) el.setAttribute(attr, translateValue(el.getAttribute(attr)));
+      });
+    });
+    if (document.title) document.title = translateValue(document.title);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", runExtendedCopyTranslation);
+  } else {
+    runExtendedCopyTranslation();
+  }
+})();
+
 
 // === NEXORA V3 ULTIMATE UI BOOT ===
 (function(){
