@@ -44,7 +44,8 @@ PLAN_PRICES = {
     "pro": 59.99,
     "vip": 99.99,
     "pro_2y": 999,
-    "vip_all_forex": _env_float("VIP_ALL_FOREX_PRICE", 0),
+    "vip_all_forex": _env_float("VIP_ALL_FOREX_PRICE", 150),
+    "vip_all_forex_yearly": _env_float("VIP_ALL_FOREX_YEARLY_PRICE", 1250),
 }
 
 PLAN_ORIGINAL_PRICES = {
@@ -52,7 +53,8 @@ PLAN_ORIGINAL_PRICES = {
     "pro": 119,
     "vip": 199,
     "pro_2y": 1499,
-    "vip_all_forex": _env_float("VIP_ALL_FOREX_ORIGINAL_PRICE", os.environ.get("VIP_ALL_FOREX_PRICE", 0) or 0),
+    "vip_all_forex": _env_float("VIP_ALL_FOREX_ORIGINAL_PRICE", 299),
+    "vip_all_forex_yearly": _env_float("VIP_ALL_FOREX_YEARLY_ORIGINAL_PRICE", 1800),
 }
 
 PLAN_DURATIONS_DAYS = {
@@ -60,7 +62,8 @@ PLAN_DURATIONS_DAYS = {
     "pro": 30,
     "vip": 30,
     "pro_2y": 730,
-    "vip_all_forex": _env_int("VIP_ALL_FOREX_DAYS", 365),
+    "vip_all_forex": _env_int("VIP_ALL_FOREX_DAYS", 30),
+    "vip_all_forex_yearly": _env_int("VIP_ALL_FOREX_YEARLY_DAYS", 365),
 }
 
 PLAN_LABELS = {
@@ -70,6 +73,7 @@ PLAN_LABELS = {
     "vip": "Elite",
     "pro_2y": "Pro 2 Years",
     "vip_all_forex": "VIP ALL FOREX",
+    "vip_all_forex_yearly": "VIP ALL FOREX Yearly",
 }
 
 AUTO_TRADE_PLANS = {"vip", "pro_2y"}

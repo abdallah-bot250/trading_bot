@@ -1537,20 +1537,28 @@ input, select {
     <div class="card featured">
         <div class="current-badge">Separate Market Subscription</div>
         <h2>VIP ALL FOREX</h2>
-        <div class="price">Admin configured</div>
+        <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$299</span> $150 <small>/ month</small></div>
+        <div class="current-badge">Yearly: $1250 instead of $1800</div>
         <ul>
             <li>Forex-only signal access</li>
             <li>Gold, Silver, Oil, and Indices coverage</li>
             <li>Runs alongside your crypto plan</li>
             <li>Does not replace Basic / Pro / Elite / Pro 2 Years</li>
+            <li>Monthly or one-year subscription</li>
             <li>Forex auto trade capability prepared, execution disabled until verified</li>
         </ul>
         <form action="/create-payment" method="GET">
             <input type="hidden" name="plan" value="vip_all_forex">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
-            <button class="pay">💳 Subscribe</button>
+            <button class="pay">💳 Subscribe Monthly</button>
         </form>
-        <a href="/manual-payment/vip_all_forex"><button class="manual">💸 Manual Payment - No Fees</button></a>
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="vip_all_forex_yearly">
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:10px 0; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">💳 Subscribe Yearly</button>
+        </form>
+        <a href="/manual-payment/vip_all_forex"><button class="manual">💸 Manual Monthly - No Fees</button></a>
+        <a href="/manual-payment/vip_all_forex_yearly"><button class="manual">💸 Manual Yearly - No Fees</button></a>
     </div>
 </div>
 

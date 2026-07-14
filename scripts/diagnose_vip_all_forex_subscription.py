@@ -23,12 +23,16 @@ def main():
     subscriptions = read("trader_app/services/subscriptions.py")
 
     assert_contains(runtime, '"vip_all_forex"', "runtime product code")
+    assert_contains(runtime, '"vip_all_forex_yearly"', "runtime yearly payment code")
     assert_contains(runtime, "VIP_ALL_FOREX_PRICE", "runtime price env")
+    assert_contains(runtime, "VIP_ALL_FOREX_YEARLY_PRICE", "runtime yearly price env")
+    assert_contains(runtime, "VIP_ALL_FOREX_YEARLY_DAYS", "runtime yearly duration env")
     assert_contains(subscriptions, "CREATE TABLE IF NOT EXISTS user_subscriptions", "subscription table")
     assert_contains(subscriptions, "get_user_active_subscriptions", "active subscription helper")
     assert_contains(subscriptions, "get_user_market_capabilities", "market capability helper")
     assert_contains(routes, "activate_vip_all_forex", "payment/admin activation hook")
-    assert_contains(routes, "if plan == VIP_ALL_FOREX_CODE", "payment branch")
+    assert_contains(routes, "is_vip_all_forex_payment_code(plan)", "monthly/yearly payment branch")
+    assert_contains(routes, "manual_admin_yearly", "admin yearly activation")
     assert_contains(routes, "SET is_paid = 1,\n                    plan = %s", "legacy crypto update remains isolated")
     assert_contains(telegram, "VIP ALL FOREX", "telegram plan display")
     assert_contains(sender, "vip_all_forex_required", "delivery gate")
@@ -41,4 +45,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

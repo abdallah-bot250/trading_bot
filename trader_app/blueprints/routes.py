@@ -27,12 +27,14 @@ from trader_app.services.telegram import (
 from trader_app.services.subscriptions import (
     VIP_ALL_FOREX_CODE,
     VIP_ALL_FOREX_DISPLAY_NAME,
+    VIP_ALL_FOREX_YEARLY_CODE,
     activate_vip_all_forex,
     ensure_user_subscriptions_table,
     get_subscription_duration_days,
     get_user_active_subscriptions,
     get_user_market_capabilities,
     get_user_subscription_cards,
+    is_vip_all_forex_payment_code,
 )
 from trader_app.services.exchanges.connection_test import test_exchange_connection
 from trader_app.services.exchanges.encryption import encrypt_credential, decrypt_credential, mask_credential
@@ -3364,7 +3366,11 @@ def admin_subscriptions_page():
       <form method='post' action='/admin/subscriptions/vip-all-forex/activate' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>
         {{ csrf_field()|safe }}
         <input name='email' placeholder='Customer email' required>
-        <input name='days' type='number' min='1' value='365' required>
+        <select name='cycle' style='border-radius:12px;border:1px solid rgba(148,163,184,.28);padding:12px;background:#08111f;color:#e5eefb'>
+          <option value='monthly'>Monthly - $150 / 30 days</option>
+          <option value='yearly'>Yearly - $1250 / 365 days</option>
+        </select>
+        <input name='days' type='number' min='1' value='' placeholder='Custom days optional'>
         <button type='submit'>Activate / Extend</button>
       </form>
     </section>
@@ -3390,7 +3396,17 @@ def admin_activate_vip_all_forex():
     if not admin_required():
         return "Forbidden", 403
     email = (request.form.get("email") or "").strip().lower()
-    days = sanitize_int(request.form.get("days"), 365, min_value=1, max_value=3650)
+    cycle = (request.form.get("cycle") or "monthly").strip().lower()
+    custom_days = (request.form.get("days") or "").strip()
+    if custom_days:
+        days = sanitize_int(custom_days, 30, min_value=1, max_value=3650)
+        payment_label = "manual_admin_custom"
+    elif cycle == "yearly":
+        days = get_subscription_duration_days(VIP_ALL_FOREX_YEARLY_CODE)
+        payment_label = "manual_admin_yearly"
+    else:
+        days = get_subscription_duration_days(VIP_ALL_FOREX_CODE)
+        payment_label = "manual_admin_monthly"
     try:
         conn = db()
         c = conn.cursor()
@@ -3414,7 +3430,7 @@ def admin_activate_vip_all_forex():
         activate_vip_all_forex(
             user_id=user[0],
             expires_at=new_expiry,
-            payment_provider="manual_admin",
+            payment_provider=payment_label,
             payment_reference=f"admin:{datetime.utcnow().isoformat()}",
             conn=conn,
         )
@@ -3721,7 +3737,7 @@ def create_payment():
     plan = request.args.get("plan", "basic").strip().lower()
     coupon_code = normalize_coupon_code(request.args.get("coupon", ""))
 
-    if plan == VIP_ALL_FOREX_CODE and float(PLAN_PRICES.get(plan) or 0) <= 0:
+    if is_vip_all_forex_payment_code(plan) and float(PLAN_PRICES.get(plan) or 0) <= 0:
         return "VIP ALL FOREX price is not configured yet. Please contact support or use manual payment."
 
     if plan not in PLAN_PRICES:
@@ -5595,7 +5611,7 @@ def payment_webhook():
         """, (chat_id,))
         buyer = c.fetchone()
         previous_expiry = buyer[3] if buyer else None
-        if plan == VIP_ALL_FOREX_CODE and buyer:
+        if is_vip_all_forex_payment_code(plan) and buyer:
             ensure_user_subscriptions_table(conn)
             c.execute("""
                 SELECT expires_at
@@ -5610,7 +5626,7 @@ def payment_webhook():
             previous_expiry = forex_existing[0] if forex_existing else None
             new_expiry, is_renewal = calculate_subscription_expiry(
                 previous_expiry,
-                days=get_subscription_duration_days(VIP_ALL_FOREX_CODE),
+                days=get_subscription_duration_days(plan),
             )
             activate_vip_all_forex(
                 user_id=buyer[0],

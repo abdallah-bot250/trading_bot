@@ -12,9 +12,11 @@ from .runtime import (
 
 
 VIP_ALL_FOREX_CODE = "vip_all_forex"
+VIP_ALL_FOREX_YEARLY_CODE = "vip_all_forex_yearly"
 VIP_ALL_FOREX_DISPLAY_NAME = "VIP ALL FOREX"
 VIP_ALL_FOREX_MARKET_TYPE = "forex"
 CRYPTO_PRODUCT_CODES = {"basic", "pro", "vip", "pro_2y"}
+VIP_ALL_FOREX_PAYMENT_CODES = {VIP_ALL_FOREX_CODE, VIP_ALL_FOREX_YEARLY_CODE}
 
 
 def _as_bool(value):
@@ -289,6 +291,10 @@ def get_user_market_capabilities(user_id, user=None, conn=None):
 
 def get_subscription_duration_days(product_code):
     return PLAN_DURATIONS_DAYS.get(product_code) or 365
+
+
+def is_vip_all_forex_payment_code(product_code):
+    return str(product_code or "").strip().lower() in VIP_ALL_FOREX_PAYMENT_CODES
 
 
 def format_subscriptions_for_telegram(user, conn=None):

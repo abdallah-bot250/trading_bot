@@ -104,11 +104,11 @@ def plan_explainer_message():
         "PAID PLANS",
         "Direct ad-free access according to the selected plan.",
     ]
-    for plan_id in ("basic", "pro", "vip", "pro_2y", VIP_ALL_FOREX_CODE):
+    for plan_id in ("basic", "pro", "vip", "pro_2y", VIP_ALL_FOREX_CODE, "vip_all_forex_yearly"):
         label = PLAN_LABELS.get(plan_id, plan_id.title())
         price = PLAN_PRICES.get(plan_id)
         days = PLAN_DURATIONS_DAYS.get(plan_id)
-        duration = "2 years" if days and days >= 700 else ("annual" if plan_id == VIP_ALL_FOREX_CODE else "monthly")
+        duration = "2 years" if days and days >= 700 else ("1 year" if plan_id == "vip_all_forex_yearly" else "monthly")
         if plan_id == "basic":
             who = "For users who want direct Telegram delivery without ads."
             access = "Qualified opportunities with dashboard tracking."
@@ -121,9 +121,12 @@ def plan_explainer_message():
         elif plan_id == "pro_2y":
             who = "For long-term users who want the highest available Nexora access."
             access = "Highest direct ad-free access according to the real product configuration."
-        else:
+        elif plan_id == VIP_ALL_FOREX_CODE:
             who = "For users who want Forex, metals, indices, and oil signal access."
-            access = "Forex-only signal delivery. Crypto plans remain separate. Forex auto execution stays disabled until verified."
+            access = "Monthly Forex-only signal delivery. Crypto plans remain separate. Forex auto execution stays disabled until verified."
+        else:
+            who = "For users who want one full year of Forex, metals, indices, and oil access."
+            access = "Yearly VIP ALL FOREX access. It activates the same Forex product for 365 days."
         lines.extend([
             "",
             label.upper(),
