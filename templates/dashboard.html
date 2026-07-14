@@ -802,24 +802,24 @@ input, select {
 {% if not is_linked %}
 <div class="notice-box notice-warning">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        ⚠️ حسابك غير مربوط بالبوت
+        ⚠️ Telegram is not linked
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #fef3c7;">
-        علشان تستلم الإشارات المجانية أو المدفوعة لازم تكمل خطوة واحدة فقط:
+        To receive free or paid signals, complete one secure step:
         <br><br>
-        1️⃣ افتح البوت
+        1️⃣ Open the bot
         <br>
-        افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد Telegram.
+        Open the official bot, follow the secure linking link, then log in from the website to confirm Telegram.
         <br><br>
-        ❗ بدون الخطوة دي الإشارات مش هتوصلك
+        ❗ Without this step, signals will not reach you.
         <br><br>
         <strong>Telegram not linked — open the bot and send /start or use the secure link below.</strong>
     </div>
 
     <a href="{{ telegram_connect_link|default(bot_link) }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#22c55e; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       🤖 افتح البوت الآن
+       🤖 Open Bot Now
     </a>
     <a href="/bot-check"
        style="display:inline-block; margin-top:16px; margin-inline-start:10px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
@@ -829,18 +829,18 @@ input, select {
 {% else %}
 <div class="notice-box notice-success">
     <div style="font-size: 18px; font-weight: bold; margin-bottom: 10px;">
-        ✅ حسابك مربوط بالبوت
+        ✅ Telegram is linked
     </div>
 
     <div style="font-size: 14px; line-height: 1.9; color: #dcfce7;">
-        ممتاز — الإشارات هتوصلك على تيليجرام حسب الباقة الخاصة بك وحالة السوق.
+        Great — signals will reach you on Telegram according to your plan and market conditions.
         <br>
-        لو البوت شغال والفرصة قوية، هتوصلك مباشرة.
+        If the bot is active and the opportunity is strong, you will receive it directly.
     </div>
 
     <a href="{{ telegram_connect_link|default(bot_link) }}" target="_blank"
        style="display:inline-block; margin-top:16px; background:#38bdf8; color:white; padding:12px 20px; border-radius:12px; text-decoration:none; font-weight:bold;">
-       💬 افتح البوت
+       💬 Open Bot
     </a>
 </div>
 {% endif %}
@@ -910,7 +910,7 @@ input, select {
     {% endif %}
 
     <div class="helper-text">
-        ⚠️ البوت لا يرسل صفقات عشوائية — يتم الإرسال فقط عند وجود فرصة واضحة وقوية
+        ⚠️ The bot does not send random trades — delivery happens only when a clear, strong opportunity exists.
     </div>
 
     <div class="quick-actions">
@@ -952,13 +952,13 @@ input, select {
 
         <a href="/manual" style="text-decoration:none;">
             <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
-                📘 دليل الاستخدام
+                📘 User Guide
             </button>
         </a>
 
         <a href="/logout">
             <button type="button" style="background:#ef4444; color:white;">
-                🚪 تسجيل الخروج
+                🚪 Logout
             </button>
         </a>
     </div>
@@ -1180,9 +1180,9 @@ input, select {
     <!-- AFFILIATE PROGRAM -->
     <div class="glass-box" style="margin-top:30px; padding:24px; max-width:1000px; margin-left:auto; margin-right:auto;">
         <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">💸 Affiliate Program</h2>
-        <p style="color:#cbd5e1; margin-top:0;">اكسب من مشاركة البوت مع غيرك — وكل اشتراك جديد من رابطك يتحسب لك.</p>
+        <p style="color:#cbd5e1; margin-top:0;">Earn by sharing the bot — every new subscription from your link is tracked for you.</p>
 
-        <p>🔗 <b>رابط الإحالة الخاص بك:</b></p>
+        <p>🔗 <b>Your referral link:</b></p>
 
         <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-bottom:15px;">
             <input id="refLink" type="text" value="{{referral_link}}" readonly
@@ -1232,8 +1232,8 @@ input, select {
         </div>
 
         <div style="margin-top:28px;">
-            <h3 style="color:#22c55e;">🏧 طلب سحب العمولة</h3>
-            <p style="color:#cbd5e1;">الحد الأدنى: $25 | الحد الأقصى: $300 | خلال 24 ساعة</p>
+            <h3 style="color:#22c55e;">🏧 Commission Withdrawal Request</h3>
+            <p style="color:#cbd5e1;">Minimum: $25 | Maximum: $300 | within 24 hours</p>
 
             <form action="/request-withdrawal" method="POST" style="max-width:500px; margin:auto;">
                 {{ csrf_field() }}
@@ -1264,27 +1264,27 @@ input, select {
 <div class="box" style="max-width:850px; margin-top:25px;">
     <h2 style="margin-top:0;">🤖 Bot Control</h2>
     <p style="color:#cbd5e1; line-height:1.8;">
-        تحكم في استقبال الإشارات أو تنفيذ التداول التلقائي حسب باقتك وإعداداتك الحالية.
+        Control signal delivery or auto-trading execution based on your plan and current settings.
     </p>
 
     <form action="/toggle-bot" method="POST" style="text-align:center; margin-top:15px;">
         {{ csrf_field() }}
         {% if bot_active == 1 %}
             <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
-                🔴 إيقاف البوت
+                🔴 Pause Bot
             </button>
         {% else %}
             <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
-                🟢 تشغيل البوت
+                🟢 Start Bot
             </button>
         {% endif %}
     </form>
 
     <div class="helper-text">
         {% if bot_active == 1 %}
-            🟢 البوت يعمل الآن وسيرسل الصفقات تلقائيًا حسب حالة السوق والخطة الخاصة بك
+            🟢 The bot is active and will send trades automatically based on market conditions and your plan.
         {% else %}
-            🔴 البوت متوقف حاليًا — قم بتشغيله لتلقي الإشارات أو تنفيذ التداول التلقائي
+            🔴 The bot is paused — start it to receive signals or run auto-trading.
         {% endif %}
     </div>
 </div>
@@ -1292,7 +1292,7 @@ input, select {
 <div class="box" style="max-width:900px; margin-top:25px;">
     <h2 style="margin-top:0;">Spot & Futures Signal Preferences</h2>
     <p style="color:#cbd5e1; line-height:1.8;">
-        تحكم في أنواع الإشارات التي يستقبلها حسابك. المحرك سيقيّم Spot و Futures بشكل مستقل ويختار الأفضل حسب الجودة.
+        Control the signal types your account receives. The engine evaluates Spot and Futures independently and selects the best opportunities by quality.
     </p>
 
     <form action="/save-settings" method="POST" style="max-width:720px; margin:auto;">
@@ -1311,14 +1311,14 @@ input, select {
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
                 <span>
                     <strong style="display:block;">Spot Signals</strong>
-                    <small style="color:#94a3b8;">تفعيل أو إيقاف فرص Spot</small>
+                    <small style="color:#94a3b8;">Enable or disable Spot opportunities</small>
                 </span>
                 <input name="spot_enabled" type="checkbox" value="1" {% if spot_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
             </label>
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
                 <span>
                     <strong style="display:block;">Futures Signals</strong>
-                    <small style="color:#94a3b8;">تفعيل أو إيقاف فرص Futures</small>
+                    <small style="color:#94a3b8;">Enable or disable Futures opportunities</small>
                 </span>
                 <input name="futures_enabled" type="checkbox" value="1" {% if futures_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
             </label>
@@ -1333,12 +1333,12 @@ input, select {
 <div id="vip-settings" class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
     <h2 style="color:#facc15; margin-top:0;">Elite Auto Trading Settings</h2>
     <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
-        اربط الـ API الخاص بك واضبط إعدادات التداول — البوت لا يستطيع السحب أو الإيداع، فقط تنفيذ الصفقات.
+        Connect your API and configure trading settings — the bot cannot withdraw or deposit, only execute trades.
     </p>
 
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
         {{ csrf_field() }}
-        <h3>🔐 ربط API</h3>
+        <h3>🔐 API Connection</h3>
         <input name="api_key" type="text" placeholder="Bybit API Key (or exchange set in AUTO_TRADE_EXCHANGE)"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
         <input name="api_secret" type="text" placeholder="Bybit API Secret"
@@ -1348,7 +1348,7 @@ input, select {
 
     <form action="/save-settings" method="POST">
         {{ csrf_field() }}
-        <h3>📊 إعدادات التداول</h3>
+        <h3>📊 Trading Settings</h3>
 
         <input name="trade_amount" type="number" step="0.01" min="1" value="{{trade_amount}}"
                placeholder="Trade Amount"
@@ -1364,14 +1364,14 @@ input, select {
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
                 <span>
                     <strong style="display:block;">Spot Signals</strong>
-                    <small style="color:#94a3b8;">استقبال فرص Spot عند الجودة المناسبة</small>
+                    <small style="color:#94a3b8;">Receive Spot opportunities when quality is suitable</small>
                 </span>
                 <input name="spot_enabled" type="checkbox" value="1" {% if spot_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
             </label>
             <label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px; border-radius:8px; background:rgba(15,23,42,0.86); border:1px solid rgba(226,232,240,0.12);">
                 <span>
                     <strong style="display:block;">Futures Signals</strong>
-                    <small style="color:#94a3b8;">استقبال فرص Futures عند الجودة المناسبة</small>
+                    <small style="color:#94a3b8;">Receive Futures opportunities when quality is suitable</small>
                 </span>
                 <input name="futures_enabled" type="checkbox" value="1" {% if futures_enabled == 1 %}checked{% endif %} style="width:22px; height:22px;">
             </label>
@@ -1442,7 +1442,7 @@ input, select {
         <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$119</span> $59.99</div><div class="current-badge">Limited Time Offer</div>
 
         <ul>
-            <li>كل Basic +</li>
+            <li>Everything in Basic +</li>
             <li>AI Analysis</li>
             <li>Portfolio Tracker</li>
             <li>Email Alerts</li>
@@ -1468,7 +1468,7 @@ input, select {
         <div class="price"><span style="text-decoration:line-through;color:#94a3b8;font-size:18px;margin-inline-end:8px;">$199</span> $99.99</div><div class="current-badge">Limited Time Offer</div>
 
         <ul>
-            <li>كل Pro +</li>
+            <li>Everything in Pro +</li>
             <li>AI Chat</li>
             <li>Whale Alerts</li>
             <li>Private Community</li>
@@ -1515,7 +1515,7 @@ input, select {
 <!-- PROFIT -->
 <div class="box">
     <h2>💰 Profit</h2>
-    <p style="color:#38bdf8; margin-top:0;">📊 النتائج المعروضة هنا مرتبطة بحسابك وبيانات تداولك الحالية</p>
+    <p style="color:#38bdf8; margin-top:0;">📊 Results shown here are linked to your account and current trading data.</p>
 
     <p id="profit">{{profit}} USDT</p>
     <p>📊 Trades: {{trades}}</p>
@@ -1528,7 +1528,7 @@ input, select {
 <!-- CHART -->
 <div class="box">
     <h2>📊 Performance</h2>
-    <p style="color:#cbd5e1;">أداء الأرباح يتم تحديثه تلقائيًا</p>
+    <p style="color:#cbd5e1;">Profit performance updates automatically.</p>
     <canvas id="chart"></canvas>
 </div>
 
@@ -1541,7 +1541,7 @@ function copyRef() {
     copyText.select();
     copyText.setSelectionRange(0, 99999);
     navigator.clipboard.writeText(copyText.value);
-    alert("✅ تم نسخ رابط الإحالة");
+    alert("✅ Referral link copied");
 }
 
 let chart = new Chart(document.getElementById("chart"), {
@@ -1676,7 +1676,7 @@ setInterval(async ()=>{
 <script>
 window.NEXORA_LANG = "{{ current_lang }}";
 </script>
-<script src="/static/i18n.js?v=20260714_lang4"></script>
+<script src="/static/i18n.js?v=20260714_lang5"></script>
 
 <script src="/static/nexora-ui.js?v=20260704_ui3"></script>
 </body>
