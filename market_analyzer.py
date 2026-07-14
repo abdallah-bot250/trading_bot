@@ -212,7 +212,7 @@ def b_plus_calibration_eligible(signal):
             return False, "setup_not_confirmed"
         if setup not in B_PLUS_CONFIRMED_SETUPS:
             return False, f"setup_not_allowed:{setup or 'unknown'}"
-        if not (62 <= confidence <= 69):
+        if not (62 <= confidence <= 74):
             return False, f"confidence_outside_b_plus_band:{confidence}"
         if rr < 1.5:
             return False, f"bad_rr:{rr}"
@@ -250,6 +250,60 @@ def apply_b_plus_calibration(signal):
         signal["auto_trade_block_reason"] = "b_plus_risk_score_too_high"
     print(f"B_PLUS_CALIBRATION_APPLIED symbol={symbol} setup={setup} confidence={confidence} rr={rr}")
     return True, "b_plus_calibration_applied"
+
+
+SUPPLY_SOFT_CHECKS = {"Volume", "Session"}
+SUPPLY_HARD_CHECKS = {"Trend", "Momentum", "Liquidity", "MTF", "Risk", "RR", "Entry", "Structure", "News"}
+
+
+def adaptive_supply_calibration(signal, checklist):
+    """Allow confirmed B+ opportunities when only soft supply checks fail."""
+    try:
+        symbol = signal.get("pair") or signal.get("symbol")
+        failed = checklist.get("failed", []) if isinstance(checklist, dict) else []
+        failed_names = {str(item.get("name")) for item in failed if isinstance(item, dict)}
+        hard_failed = failed_names.intersection(SUPPLY_HARD_CHECKS)
+        soft_failed = failed_names.difference(SUPPLY_SOFT_CHECKS)
+        percent = _safe_float(checklist.get("percent"), 0)
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        risk_score = _safe_float(signal.get("risk_score"), 100)
+        display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence")), 0)
+        setup = _b_plus_setup_name(signal)
+
+        if "Volatility" in failed_names and signal.get("volatility_filter_relaxed") is True:
+            failed_names.discard("Volatility")
+            soft_failed.discard("Volatility")
+
+        if hard_failed:
+            return False, f"hard_check_failed:{','.join(sorted(hard_failed))}"
+        if soft_failed:
+            return False, f"non_soft_check_failed:{','.join(sorted(soft_failed))}"
+        if percent < 83.0:
+            return False, f"checklist_too_low:{percent}"
+        if rr < 1.5:
+            return False, f"bad_rr:{rr}"
+        if risk_score >= 72:
+            return False, f"risk_too_high:{risk_score}"
+        if display_conf < 62:
+            return False, f"display_conf_too_low:{display_conf}"
+        if str(signal.get("setup_lifecycle") or "").upper() != "CONFIRMED":
+            return False, "setup_not_confirmed"
+        if setup not in B_PLUS_CONFIRMED_SETUPS:
+            return False, f"setup_not_allowed:{setup or 'unknown'}"
+
+        signal["quality_tier"] = "B_PLUS"
+        signal["opportunity_tier"] = "B_PLUS"
+        signal["b_plus_calibrated"] = True
+        signal["supply_calibrated"] = True
+        signal["confidence_cap_reason"] = "adaptive_supply_soft_checks_only"
+        signal["risk_warning"] = "B+ opportunity: confirmed setup passed hard safety checks; manage risk carefully."
+        print(
+            f"SUPPLY_CALIBRATION_APPLIED symbol={symbol} setup={setup} "
+            f"display_conf={display_conf} checklist={percent} soft_failed={','.join(sorted(failed_names)) or 'none'} rr={rr}"
+        )
+        return True, "adaptive_supply_calibration_applied"
+    except Exception as e:
+        return False, f"supply_calibration_error:{e}"
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -2717,8 +2771,10 @@ def expert_quality_checklist(signal, regime_info, expert_context):
 
 def expert_self_review(signal, checklist):
     try:
-        if checklist.get("percent", 0) < EXPERT_QUALITY_MIN_PERCENT:
+        if checklist.get("percent", 0) < EXPERT_QUALITY_MIN_PERCENT and signal.get("supply_calibrated") is not True:
             return False, "Would I risk my own money? No - checklist below fund-manager standard"
+        if signal.get("supply_calibrated") is True and checklist.get("percent", 0) < 83:
+            return False, "Would I risk my own money? No - calibrated checklist below B+ minimum"
         if _safe_float(signal.get("risk_score"), 100) >= 78:
             return False, "Would I risk my own money? No - risk score too high"
         if _safe_float(signal.get("risk_reward"), 0) < 1.5:
@@ -3775,7 +3831,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         b_plus_pending = False
         if confidence < min_conf:
             pre_signal_ok = (
-                62 <= confidence <= 69
+                62 <= confidence <= 74
                 and playbook.get("strategy_name") in B_PLUS_CONFIRMED_SETUPS
                 and levels.get("risk_reward", 0) >= playbook.get("rr_min", 1.5)
                 and smart_entry.get("ok") is True
@@ -3843,6 +3899,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "btc_alignment_score": btc_info.get("btc_alignment_score"),
             "risk_mode": risk_brain.get("risk_mode"),
             "risk_mode_reason": risk_brain.get("risk_mode_reason"),
+            "volatility_filter_relaxed": bool(regime_info.get("volatility_filter_relaxed")),
             "entry_location_grade": 86 if smart_entry.get("ok") else 45,
             "setup_validity_score": confidence,
         }
@@ -3942,9 +3999,13 @@ def finalize_adaptive_signal(signal, df, paid=True):
         signal["quality_checklist"] = checklist
         signal["quality_checklist_score"] = checklist["percent"]
         if checklist["percent"] < EXPERT_QUALITY_MIN_PERCENT:
-            failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
-            _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
-            return None, f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}"
+            supply_ok, supply_reason = adaptive_supply_calibration(signal, checklist)
+            if supply_ok:
+                signal["quality_gate_override_reason"] = supply_reason
+            else:
+                failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
+                _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
+                return None, f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}"
         self_ok, self_reason = expert_self_review(signal, checklist)
         signal["self_review"] = self_reason
         if not self_ok:
