@@ -19,6 +19,11 @@
 - `MANUAL_PAYMENT_WALLET`
 - `MANUAL_PAYMENT_NETWORK`
 
+## VIP ALL FOREX
+- `VIP_ALL_FOREX_PRICE` - automatic NOWPayments price. Keep `0` until the paid checkout price is configured.
+- `VIP_ALL_FOREX_ORIGINAL_PRICE` - optional crossed-out/reference price for UI.
+- `VIP_ALL_FOREX_DAYS` - subscription duration in days, default `365`.
+
 ## Free Earn / AdsGram
 - `FREE_EARN_MODE`
 - `FREE_SIGNALS_LIFETIME`

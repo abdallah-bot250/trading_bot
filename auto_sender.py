@@ -59,6 +59,9 @@ PAIR_COOLDOWN_MINUTES = 45
 GLOBAL_LOOP_SLEEP = 80
 MIN_CONFIDENCE = 66
 AUTO_TRADE_PLANS = {"vip", "pro_2y"}
+VIP_ALL_FOREX_CODE = "vip_all_forex"
+FOREX_MARKET_TYPES = {"forex", "metal", "metals", "indices", "index", "oil", "commodities", "commodity"}
+FOREX_PRODUCT_LABEL = "VIP ALL FOREX"
 DUPLICATE_WINDOW_SECONDS = 300
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
@@ -1340,6 +1343,81 @@ def get_users():
     users = c.fetchall()
     conn.close()
     return users
+
+
+def ensure_user_subscriptions_table(conn):
+    c = conn.cursor()
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS user_subscriptions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        product_code TEXT NOT NULL,
+        display_name TEXT,
+        market_type TEXT,
+        status TEXT DEFAULT 'active',
+        is_paid INTEGER DEFAULT 0,
+        starts_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NULL,
+        payment_provider TEXT,
+        payment_reference TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+
+def has_active_product_subscription(user_id, product_code):
+    if not user_id or not product_code:
+        return False
+    conn = None
+    try:
+        conn = db()
+        ensure_user_subscriptions_table(conn)
+        c = conn.cursor()
+        c.execute("""
+            SELECT 1
+            FROM user_subscriptions
+            WHERE user_id = %s
+              AND product_code = %s
+              AND status = 'active'
+              AND COALESCE(is_paid, 0) = 1
+              AND (expires_at IS NULL OR expires_at >= NOW())
+            LIMIT 1
+        """, (user_id, product_code))
+        return c.fetchone() is not None
+    except Exception as e:
+        log(f"SUBSCRIPTION_CAPABILITY_CHECK_FAILED user_id={user_id} product={product_code} error={e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+def signal_market_bucket(signal):
+    market_type = str(
+        signal.get("market_type")
+        or signal.get("market")
+        or signal.get("asset_class")
+        or ""
+    ).strip().lower()
+    if market_type in FOREX_MARKET_TYPES:
+        return "forex"
+
+    pair = str(signal.get("pair") or signal.get("symbol") or "").upper().replace("/", "")
+    forex_prefixes = ("EUR", "GBP", "JPY", "AUD", "NZD", "CHF", "CAD")
+    if pair.startswith(("XAU", "XAG")) or pair in {"US30", "NAS100", "SPX500", "GER40", "UK100", "WTI", "BRENT", "OIL"}:
+        return "forex"
+    if pair.endswith("USD") and not pair.endswith("USDT") and pair[:3] in forex_prefixes:
+        return "forex"
+    return "crypto"
+
+
+def delivery_product_for_signal(user_info, signal):
+    if signal_market_bucket(signal) == "forex":
+        if has_active_product_subscription(user_info.get("user_id"), VIP_ALL_FOREX_CODE):
+            return VIP_ALL_FOREX_CODE, True, "eligible"
+        return VIP_ALL_FOREX_CODE, False, "vip_all_forex_required"
+    return str(user_info.get("plan") or "trial").strip().lower(), True, "eligible"
 
 # ================= VALIDATION =================
 def valid_signal(signal):
@@ -2936,8 +3014,19 @@ def run():
                         log_pro_2y_block(plan, "missing_chat_id")
                         continue
 
+                    delivery_product, market_allowed, market_reason = delivery_product_for_signal(user_info, signal)
+                    is_forex_signal = delivery_product == VIP_ALL_FOREX_CODE
+                    if not market_allowed:
+                        log(
+                            f"SIGNAL_PLAN_BLOCKED plan={plan} product={delivery_product} pair={signal.get('pair')} "
+                            f"display_conf={display_confidence} risk_score={signal.get('risk_score')} "
+                            f"reason={market_reason}"
+                        )
+                        log_plan_delivery_diag(email, plan, chat_id, False, market_reason)
+                        continue
+
                     # ===== ACCESS CHECK =====
-                    if plan != "trial":
+                    if not is_forex_signal and plan != "trial":
                         if not is_paid_plan_active(plan, expiry, is_paid):
                             log_plan_delivery_diag(email, plan, chat_id, False, "subscription_inactive")
                             log_pro_2y_block(plan, "subscription_inactive")
@@ -2945,7 +3034,7 @@ def run():
 
                     # ===== PLAN FILTER =====
                     # Trial/Free Earn access is handled separately from paid-plan filters.
-                    plan_filter_required = plan != "trial"
+                    plan_filter_required = (not is_forex_signal) and plan != "trial"
                     if plan_filter_required and not signal_allowed_for_plan(plan, signal):
                         block_reason = signal_plan_block_reason(plan, signal)
                         log(
@@ -2957,7 +3046,7 @@ def run():
                         log_pro_2y_block(plan, block_reason)
                         continue
 
-                    if not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
+                    if not is_forex_signal and not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
                         reason = "signal_type_disabled"
                         log(
                             f"SIGNAL_PLAN_BLOCKED plan={plan} pair={signal.get('pair')} "
@@ -2983,7 +3072,7 @@ def run():
                         continue
 
                     # ===== FREE EARN / SEND SIGNAL =====
-                    free_earn_state = maybe_handle_free_earn_delivery(chat_id, plan, trades, signal)
+                    free_earn_state = "paid_direct" if is_forex_signal else maybe_handle_free_earn_delivery(chat_id, plan, trades, signal)
                     if free_earn_state == "locked_prompt_sent":
                         try:
                             from market_analyzer import _scan_diag_inc
@@ -2998,22 +3087,22 @@ def run():
                     if free_earn_state == "credit_used":
                         log(f"FREE_UNLOCK_CREDIT_USED chat_id={chat_id} pair={signal.get('pair')}")
 
-                    msg = format_signal(signal, plan)
+                    msg = format_signal(signal, delivery_product)
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:
                         signal_sent_users += 1
-                        log_plan_delivery_diag(email, plan, chat_id, True, "sent")
+                        log_plan_delivery_diag(email, delivery_product, chat_id, True, "sent")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")
-                        record_sent_signal(chat_id, plan, signal, delivery_mode=("free_earn_credit" if str(plan).lower() == "trial" else "paid"), locked=False, unlocked=True)
-                        if plan != "trial":
+                        record_sent_signal(chat_id, delivery_product, signal, delivery_mode=("forex_paid" if is_forex_signal else "free_earn_credit" if str(plan).lower() == "trial" else "paid"), locked=False, unlocked=True)
+                        if delivery_product != "trial":
                             try:
                                 from market_analyzer import _scan_diag_inc
                                 _scan_diag_inc("paid_deliveries")
                             except Exception:
                                 pass
 
-                        if plan == "trial":
+                        if plan == "trial" and not is_forex_signal:
                             increment_trade(chat_id)
                     else:
                         log(f"SIGNAL_SEND_FAILED chat_id={chat_id} pair={signal.get('pair')}")
@@ -3021,6 +3110,10 @@ def run():
                         log_pro_2y_block(plan, "telegram_send_failed")
 
                     # ===== AUTO TRADE FOR VIP =====
+                    if is_forex_signal:
+                        log(f"FOREX_AUTO_TRADE_DISABLED product={FOREX_PRODUCT_LABEL} pair={signal.get('pair')} reason=execution_not_verified")
+                        continue
+
                     if plan in AUTO_TRADE_PLANS and bot_active == 1:
                         try:
                             signal_trade_type = "futures" if signal.get("type") == "FUTURES" else "spot"

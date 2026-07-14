@@ -21,6 +21,19 @@ from cryptography.fernet import Fernet
 
 # ================= RUNTIME SETTINGS =================
 
+def _env_float(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _env_int(name, default):
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return int(default)
+
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
 BOT_LINK = os.environ.get("BOT_LINK", "https://t.me/your_bot_username")
@@ -31,6 +44,7 @@ PLAN_PRICES = {
     "pro": 59.99,
     "vip": 99.99,
     "pro_2y": 999,
+    "vip_all_forex": _env_float("VIP_ALL_FOREX_PRICE", 0),
 }
 
 PLAN_ORIGINAL_PRICES = {
@@ -38,6 +52,7 @@ PLAN_ORIGINAL_PRICES = {
     "pro": 119,
     "vip": 199,
     "pro_2y": 1499,
+    "vip_all_forex": _env_float("VIP_ALL_FOREX_ORIGINAL_PRICE", os.environ.get("VIP_ALL_FOREX_PRICE", 0) or 0),
 }
 
 PLAN_DURATIONS_DAYS = {
@@ -45,6 +60,7 @@ PLAN_DURATIONS_DAYS = {
     "pro": 30,
     "vip": 30,
     "pro_2y": 730,
+    "vip_all_forex": _env_int("VIP_ALL_FOREX_DAYS", 365),
 }
 
 PLAN_LABELS = {
@@ -53,6 +69,7 @@ PLAN_LABELS = {
     "pro": "Pro",
     "vip": "Elite",
     "pro_2y": "Pro 2 Years",
+    "vip_all_forex": "VIP ALL FOREX",
 }
 
 AUTO_TRADE_PLANS = {"vip", "pro_2y"}

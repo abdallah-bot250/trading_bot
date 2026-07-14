@@ -1,6 +1,12 @@
 from datetime import datetime
 
 from .runtime import send, format_signal, telegram_referral_link, ensure_user_has_referral_code, generate_referral_code, PLAN_LABELS, PLAN_PRICES, PLAN_DURATIONS_DAYS
+from .subscriptions import (
+    VIP_ALL_FOREX_CODE,
+    VIP_ALL_FOREX_DISPLAY_NAME,
+    format_subscriptions_for_telegram,
+    get_user_market_capabilities,
+)
 
 
 def command_menu(is_admin=False):
@@ -98,11 +104,11 @@ def plan_explainer_message():
         "PAID PLANS",
         "Direct ad-free access according to the selected plan.",
     ]
-    for plan_id in ("basic", "pro", "vip", "pro_2y"):
+    for plan_id in ("basic", "pro", "vip", "pro_2y", VIP_ALL_FOREX_CODE):
         label = PLAN_LABELS.get(plan_id, plan_id.title())
         price = PLAN_PRICES.get(plan_id)
         days = PLAN_DURATIONS_DAYS.get(plan_id)
-        duration = "2 years" if days and days >= 700 else "monthly"
+        duration = "2 years" if days and days >= 700 else ("annual" if plan_id == VIP_ALL_FOREX_CODE else "monthly")
         if plan_id == "basic":
             who = "For users who want direct Telegram delivery without ads."
             access = "Qualified opportunities with dashboard tracking."
@@ -112,13 +118,16 @@ def plan_explainer_message():
         elif plan_id == "vip":
             who = "For users who want Elite access and eligible automation controls."
             access = "Priority direct delivery plus Bybit-ready controls for eligible accounts."
-        else:
+        elif plan_id == "pro_2y":
             who = "For long-term users who want the highest available Nexora access."
             access = "Highest direct ad-free access according to the real product configuration."
+        else:
+            who = "For users who want Forex, metals, indices, and oil signal access."
+            access = "Forex-only signal delivery. Crypto plans remain separate. Forex auto execution stays disabled until verified."
         lines.extend([
             "",
             label.upper(),
-            f"Price: ${price}" if price is not None else "Price: shown on website",
+            f"Price: ${price}" if price else "Price: configured by admin on website/manual payment",
             f"Duration: {duration}",
             f"For: {who}",
             f"Access: {access}",
@@ -129,7 +138,7 @@ def plan_explainer_message():
         "COMPARISON",
         "FREE EARN: watch rewarded videos to unlock eligible opportunities.",
         "PAID PLANS: direct ad-free access according to the selected plan.",
-        "Highest plan: maximum available access according to the real product configuration.",
+        "VIP ALL FOREX: separate Forex-only subscription that can run alongside crypto plans.",
         "",
         "Trading involves risk. Signals support trading decisions and do not guarantee profits.",
     ])
@@ -149,16 +158,26 @@ def subscription_message(user):
 
     status = "Active" if is_paid == 1 else "Free trial / inactive"
     bot_status = "Running" if bot_active == 1 else "Paused"
+    subscription_lines = format_subscriptions_for_telegram(user)
+    capabilities = get_user_market_capabilities(user.get("id"), user)
 
     return f"""NEXORA SUBSCRIPTION STATUS
 
-Plan: {plan}
+Crypto plan: {PLAN_LABELS.get(plan, plan)}
 Status: {status}
 Expiry: {expiry}
 Free signals used: {trades}/2
 Bot: {bot_status}
 Spot signals: {'Enabled' if spot_enabled else 'Paused'}
 Futures signals: {'Enabled' if futures_enabled else 'Paused'}
+
+Active subscriptions:
+{chr(10).join(subscription_lines)}
+
+Market access:
+Crypto: {'Enabled' if capabilities.get('can_receive_crypto') else 'Disabled'}
+Forex/Gold/Indices/Oil: {'Enabled' if capabilities.get('can_receive_forex') else 'VIP ALL FOREX required'}
+Forex auto trade: {capabilities.get('forex_auto_trade_status')}
 
 Open your dashboard to manage plan, Telegram connection and signal preferences."""
 

@@ -24,6 +24,16 @@ from trader_app.services.telegram import (
     user_statistics_message,
     welcome_message,
 )
+from trader_app.services.subscriptions import (
+    VIP_ALL_FOREX_CODE,
+    VIP_ALL_FOREX_DISPLAY_NAME,
+    activate_vip_all_forex,
+    ensure_user_subscriptions_table,
+    get_subscription_duration_days,
+    get_user_active_subscriptions,
+    get_user_market_capabilities,
+    get_user_subscription_cards,
+)
 from trader_app.services.exchanges.connection_test import test_exchange_connection
 from trader_app.services.exchanges.encryption import encrypt_credential, decrypt_credential, mask_credential
 from trader_app.services.exchanges.registry import (
@@ -1833,6 +1843,8 @@ def dashboard():
         telegram_connect_link = f"{current_bot_link()}?start=link_{telegram_link_token}"
         if not is_linked:
             log(f"TELEGRAM_USER_NOT_LINKED email={user.get('email')}")
+        active_subscriptions = get_user_subscription_cards(user, conn)
+        market_capabilities = get_user_market_capabilities(user.get("id"), user, conn)
         conn.commit()
         conn.close()
 
@@ -1983,6 +1995,8 @@ def dashboard():
             recent_signals=recent_signals,
             performance_chart=performance_chart,
             free_earn_stats=free_earn_stats,
+            active_subscriptions=active_subscriptions,
+            market_capabilities=market_capabilities,
             bot_link=current_bot_link(),
             telegram_connect_link=telegram_connect_link
         )
@@ -3316,7 +3330,133 @@ def admin_signal_supply_page():
 
 @admin_bp.route("/admin/subscriptions")
 def admin_subscriptions_page():
-    return _admin_section("subscriptions")
+    if not admin_required():
+        return "Forbidden", 403
+    rows = []
+    try:
+        conn = db()
+        ensure_user_subscriptions_table(conn)
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT s.id, s.product_code, s.display_name, s.market_type, s.status, s.is_paid,
+                   s.starts_at, s.expires_at, s.payment_provider, s.payment_reference,
+                   u.email, u.chat_id
+            FROM user_subscriptions s
+            LEFT JOIN users u ON u.id = s.user_id
+            ORDER BY s.updated_at DESC, s.id DESC
+            LIMIT 100
+        """)
+        rows = c.fetchall() or []
+        conn.close()
+    except Exception as e:
+        log(f"admin subscriptions unavailable: {e}")
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+    return render_template_string("""
+    <!doctype html><html><head><meta charset='utf-8'><title>Nexora Subscriptions</title>
+    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1180px;margin:36px auto;padding:22px}.card{background:linear-gradient(145deg,rgba(15,27,42,.95),rgba(7,14,23,.98));border:1px solid rgba(212,175,55,.22);border-radius:18px;padding:18px;margin-bottom:18px;box-shadow:0 22px 70px rgba(0,0,0,.35)}input,button{border-radius:12px;border:1px solid rgba(148,163,184,.28);padding:12px;background:#08111f;color:#e5eefb}button{background:linear-gradient(135deg,#d4af37,#f7d774);color:#08111f;font-weight:800;cursor:pointer}table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left}th{color:#f7d774}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:rgba(23,201,100,.14);color:#17c964}.paused{background:rgba(239,68,68,.14);color:#f87171}a{color:#38bdf8}</style>
+    </head><body><main class='wrap'>
+    <h1>Subscription Control</h1><p>Manual VIP ALL FOREX activation works independently from legacy crypto plans.</p>
+    <section class='card'><h2>Activate / Extend VIP ALL FOREX</h2>
+      <form method='post' action='/admin/subscriptions/vip-all-forex/activate' style='display:flex;gap:10px;flex-wrap:wrap;align-items:center'>
+        {{ csrf_field()|safe }}
+        <input name='email' placeholder='Customer email' required>
+        <input name='days' type='number' min='1' value='365' required>
+        <button type='submit'>Activate / Extend</button>
+      </form>
+    </section>
+    <section class='card'><h2>Latest Subscriptions</h2>
+      {% if rows %}
+      <table><thead><tr><th>ID</th><th>Email</th><th>Product</th><th>Market</th><th>Status</th><th>Expires</th><th>Provider</th><th>Action</th></tr></thead><tbody>
+      {% for row in rows %}
+      <tr><td>{{row.id}}</td><td>{{row.email or 'N/A'}}</td><td>{{row.display_name or row.product_code}}</td><td>{{row.market_type}}</td><td><span class='badge {% if row.status != "active" %}paused{% endif %}'>{{row.status}}</span></td><td>{{row.expires_at or 'No expiry'}}</td><td>{{row.payment_provider or 'manual'}}</td><td>
+        {% if row.status == 'active' %}
+        <form method='post' action='/admin/subscriptions/{{row.id}}/pause'>{{ csrf_field()|safe }}<button type='submit'>Pause</button></form>
+        {% else %}Paused{% endif %}
+      </td></tr>
+      {% endfor %}
+      </tbody></table>
+      {% else %}<p>No independent subscriptions yet.</p>{% endif %}
+    </section>
+    <p><a href='/admin'>Back to Admin</a></p></main></body></html>
+    """, rows=rows)
+
+
+@admin_bp.route("/admin/subscriptions/vip-all-forex/activate", methods=["POST"])
+def admin_activate_vip_all_forex():
+    if not admin_required():
+        return "Forbidden", 403
+    email = (request.form.get("email") or "").strip().lower()
+    days = sanitize_int(request.form.get("days"), 365, min_value=1, max_value=3650)
+    try:
+        conn = db()
+        c = conn.cursor()
+        ensure_user_subscriptions_table(conn)
+        c.execute("SELECT id FROM users WHERE LOWER(email) = %s LIMIT 1", (email,))
+        user = c.fetchone()
+        if not user:
+            conn.close()
+            flash("User not found.")
+            return redirect("/admin/subscriptions")
+        c.execute("""
+            SELECT expires_at
+            FROM user_subscriptions
+            WHERE user_id = %s AND product_code = %s AND status = 'active'
+            ORDER BY expires_at DESC NULLS LAST, id DESC
+            LIMIT 1
+        """, (user[0], VIP_ALL_FOREX_CODE))
+        existing = c.fetchone()
+        previous_expiry = existing[0] if existing else None
+        new_expiry, _ = calculate_subscription_expiry(previous_expiry, days=days)
+        activate_vip_all_forex(
+            user_id=user[0],
+            expires_at=new_expiry,
+            payment_provider="manual_admin",
+            payment_reference=f"admin:{datetime.utcnow().isoformat()}",
+            conn=conn,
+        )
+        conn.commit()
+        conn.close()
+        flash("VIP ALL FOREX activated.")
+    except Exception as e:
+        log(f"admin vip_all_forex activation error: {e}")
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        flash("Activation failed.")
+    return redirect("/admin/subscriptions")
+
+
+@admin_bp.route("/admin/subscriptions/<int:subscription_id>/pause", methods=["POST"])
+def admin_pause_subscription(subscription_id):
+    if not admin_required():
+        return "Forbidden", 403
+    try:
+        conn = db()
+        ensure_user_subscriptions_table(conn)
+        c = conn.cursor()
+        c.execute("""
+            UPDATE user_subscriptions
+            SET status = 'paused', updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (subscription_id,))
+        conn.commit()
+        conn.close()
+        flash("Subscription paused.")
+    except Exception as e:
+        log(f"admin subscription pause error: {e}")
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        flash("Pause failed.")
+    return redirect("/admin/subscriptions")
 
 
 @admin_bp.route("/admin/payments")
@@ -3580,6 +3720,9 @@ def create_payment():
 
     plan = request.args.get("plan", "basic").strip().lower()
     coupon_code = normalize_coupon_code(request.args.get("coupon", ""))
+
+    if plan == VIP_ALL_FOREX_CODE and float(PLAN_PRICES.get(plan) or 0) <= 0:
+        return "VIP ALL FOREX price is not configured yet. Please contact support or use manual payment."
 
     if plan not in PLAN_PRICES:
         return "❌ باقة غير صحيحة"
@@ -5445,23 +5588,53 @@ def payment_webhook():
         """, (payment_id, chat_id, payment_status, plan, paid_amount, "usd", invoice_id, invoice_url, raw_payload))
 
         c.execute("""
-            SELECT email, referred_by, expiry, lifetime_owner
+            SELECT id, email, referred_by, expiry, lifetime_owner
             FROM users
             WHERE chat_id = %s
             LIMIT 1
         """, (chat_id,))
         buyer = c.fetchone()
-        previous_expiry = buyer[2] if buyer else None
-        new_expiry, is_renewal = calculate_subscription_expiry(previous_expiry, days=PLAN_DURATIONS_DAYS.get(plan) or 36500)
-        c.execute("""
-            UPDATE users
-            SET is_paid = 1,
-                plan = %s,
-                expiry = %s,
-                lifetime_owner = 0,
-                bot_active = CASE WHEN %s IN ('vip', 'pro_2y') THEN 1 ELSE bot_active END
-            WHERE chat_id = %s
-        """, (plan, new_expiry, plan, chat_id))
+        previous_expiry = buyer[3] if buyer else None
+        if plan == VIP_ALL_FOREX_CODE and buyer:
+            ensure_user_subscriptions_table(conn)
+            c.execute("""
+                SELECT expires_at
+                FROM user_subscriptions
+                WHERE user_id = %s
+                  AND product_code = %s
+                  AND status = 'active'
+                ORDER BY expires_at DESC NULLS LAST, id DESC
+                LIMIT 1
+            """, (buyer[0], VIP_ALL_FOREX_CODE))
+            forex_existing = c.fetchone()
+            previous_expiry = forex_existing[0] if forex_existing else None
+            new_expiry, is_renewal = calculate_subscription_expiry(
+                previous_expiry,
+                days=get_subscription_duration_days(VIP_ALL_FOREX_CODE),
+            )
+            activate_vip_all_forex(
+                user_id=buyer[0],
+                expires_at=new_expiry,
+                payment_provider="NOWPayments",
+                payment_reference=payment_id,
+                conn=conn,
+            )
+            c.execute("""
+                UPDATE users
+                SET bot_active = 1
+                WHERE chat_id = %s
+            """, (chat_id,))
+        else:
+            new_expiry, is_renewal = calculate_subscription_expiry(previous_expiry, days=PLAN_DURATIONS_DAYS.get(plan) or 36500)
+            c.execute("""
+                UPDATE users
+                SET is_paid = 1,
+                    plan = %s,
+                    expiry = %s,
+                    lifetime_owner = 0,
+                    bot_active = CASE WHEN %s IN ('vip', 'pro_2y') THEN 1 ELSE bot_active END
+                WHERE chat_id = %s
+            """, (plan, new_expiry, plan, chat_id))
 
         c.execute("""
             INSERT INTO subscription_renewals (
@@ -5470,7 +5643,7 @@ def payment_webhook():
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             chat_id,
-            buyer[0] if buyer else None,
+            buyer[1] if buyer else None,
             plan,
             payment_id,
             previous_expiry,
@@ -5499,8 +5672,8 @@ def payment_webhook():
             """, (str(coupon_code).upper(),))
 
         if buyer:
-            buyer_email = buyer[0]
-            referred_by = buyer[1]
+            buyer_email = buyer[1]
+            referred_by = buyer[2]
 
             if referred_by:
                 c.execute("""

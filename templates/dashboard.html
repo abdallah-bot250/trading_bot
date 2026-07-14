@@ -902,6 +902,30 @@ input, select {
             <small>Free users keep limited signals; paid users keep premium access.</small>
         </div>
     </section>
+    <section class="premium-status-grid" aria-label="Active subscriptions">
+        <div class="premium-status-card" style="grid-column:1/-1;">
+            <span>My Active Subscriptions</span>
+            {% if active_subscriptions %}
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:12px;">
+                    {% for sub in active_subscriptions %}
+                    <div style="border:1px solid rgba(212,175,55,.22);border-radius:16px;padding:14px;background:rgba(8,17,31,.72);">
+                        <strong>{{ sub.display_name or sub.product_code }}</strong>
+                        <small>Market: {{ (sub.market_type or "crypto")|upper }}</small>
+                        <small>Expires: {{ sub.expires_at or sub.expiry or "No expiry" }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <strong>No active paid subscriptions yet</strong>
+                <small>Your Free Earn account can still receive the first eligible signals.</small>
+            {% endif %}
+            {% if not market_capabilities.can_receive_forex %}
+                <div style="margin-top:14px;">
+                    <a href="/manual-payment/vip_all_forex" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;background:linear-gradient(135deg,#d4af37,#f7d774);color:#08111f;font-weight:800;padding:12px 18px;border-radius:14px;">Upgrade to VIP ALL FOREX</a>
+                </div>
+            {% endif %}
+        </div>
+    </section>
     {% if (plan or "trial") == "trial" %}
     <section class="premium-upgrade-box">
         <p><strong>Ready for more signals?</strong><br>Upgrade when you are ready. Payment routes and plan IDs are unchanged.</p>
@@ -1509,6 +1533,24 @@ input, select {
             <button class="pay">💳 Subscribe</button>
         </form>
         <a href="/manual-payment/pro_2y"><button class="manual">💸 Manual Payment - No Fees</button></a>
+    </div>
+    <div class="card featured">
+        <div class="current-badge">Separate Market Subscription</div>
+        <h2>VIP ALL FOREX</h2>
+        <div class="price">Admin configured</div>
+        <ul>
+            <li>Forex-only signal access</li>
+            <li>Gold, Silver, Oil, and Indices coverage</li>
+            <li>Runs alongside your crypto plan</li>
+            <li>Does not replace Basic / Pro / Elite / Pro 2 Years</li>
+            <li>Forex auto trade capability prepared, execution disabled until verified</li>
+        </ul>
+        <form action="/create-payment" method="GET">
+            <input type="hidden" name="plan" value="vip_all_forex">
+            <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
+            <button class="pay">💳 Subscribe</button>
+        </form>
+        <a href="/manual-payment/vip_all_forex"><button class="manual">💸 Manual Payment - No Fees</button></a>
     </div>
 </div>
 
