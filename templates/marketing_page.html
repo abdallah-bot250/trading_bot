@@ -136,7 +136,7 @@
               <th>Direction</th>
               <th>TF</th>
               <th>Entry</th>
-              <th>TP1 / TP2 / TP3</th>
+              <th>TP1 / TP2</th>
               <th>SL</th>
               <th>Confidence</th>
               <th>Status</th>
@@ -150,7 +150,7 @@
               <td><span class="nx-badge {{ (s.direction or '')|lower }}">{{ s.direction or '-' }}</span></td>
               <td>{{ s.timeframe or 'N/A' }}</td>
               <td>{{ s.entry if s.entry is not none else '-' }}</td>
-              <td>{{ s.tp1 if s.tp1 is not none else '-' }} / {{ s.tp2 if s.tp2 is not none else '-' }} / {{ s.tp3 if s.tp3 is not none else '-' }}</td>
+              <td>{{ s.tp1 if s.tp1 is not none else '-' }} / {{ s.tp2 if s.tp2 is not none else '-' }}</td>
               <td>{{ s.sl if s.sl is not none else '-' }}</td>
               <td>{% if s.confidence is not none %}{{ s.confidence }}%{% else %}N/A{% endif %}</td>
               <td><span class="nx-badge">{{ s.status or 'Open' }}</span></td>

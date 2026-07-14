@@ -468,7 +468,6 @@ def format_signal(s):
 
     tp1 = s.get("tp1", s.get("tp", "N/A"))
     tp2 = s.get("tp2", s.get("tp", "N/A"))
-    tp3 = s.get("tp3", s.get("tp", "N/A"))
     confidence = s.get("display_confidence", s.get("confidence"))
     risk = s.get("risk_level") or s.get("risk_score")
     setup = s.get("strategy_name") or s.get("setup_type") or s.get("market_regime") or s.get("adaptive_regime")
@@ -496,8 +495,7 @@ Stop Loss: {s.get('sl', 'N/A')}
 
 Targets
 TP1: {tp1}
-TP2: {tp2}
-TP3: {tp3}{intelligence}
+TP2: {tp2}{intelligence}
 
 ━━━━━━━━━━━━━━━━━━
 NEXORA ANALYSIS

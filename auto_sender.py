@@ -127,6 +127,15 @@ def signal_display_confidence(signal):
     except Exception:
         return 0.0
 
+
+def _safe_float(value, default=None):
+    try:
+        if value in (None, "", "N/A"):
+            return default
+        return float(value)
+    except Exception:
+        return default
+
 def qualified_opportunity_tier(signal):
     try:
         tier = str(signal.get("quality_tier") or signal.get("opportunity_tier") or "").upper()
@@ -800,14 +809,15 @@ def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, 
         c = conn.cursor()
         c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
         columns = {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+        tp1, tp2, _tp3 = _signal_target_ladder(signal)
         tp_values = [
-            signal.get("tp1"),
-            signal.get("tp2"),
-            signal.get("tp3"),
+            tp1,
+            tp2,
         ]
         tp_values = [v for v in tp_values if v not in (None, "", "N/A")]
         if not tp_values and signal.get("tp") not in (None, "", "N/A"):
             tp_values = [signal.get("tp")]
+        user_final_tp = _safe_float(tp_values[-1] if tp_values else signal.get("tp", signal.get("tp1")), 0)
         insert_columns = ["chat_id", "plan", "pair", "direction", "signal_type", "entry", "tp", "sl", "status"]
         values = [
             str(chat_id),
@@ -816,7 +826,7 @@ def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, 
             signal.get("direction"),
             signal.get("type", "FUTURES"),
             float(signal.get("entry", 0)),
-            float(signal.get("tp", signal.get("tp1", 0)) or 0),
+            float(user_final_tp or 0),
             float(signal.get("sl", 0)),
             "SENT",
         ]
@@ -865,12 +875,20 @@ def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, 
 # ================= FREE EARN UNLOCK =================
 def _free_signal_payload(signal):
     allowed = {
-        "pair", "type", "direction", "timeframe", "entry", "tp", "tp1", "tp2", "tp3", "sl",
+        "pair", "type", "direction", "timeframe", "entry", "tp", "tp1", "tp2", "sl",
         "display_confidence", "confidence", "risk_reward", "market_regime", "adaptive_regime",
         "strategy_name", "setup_type", "signal_quality_reason", "reason", "created_at",
         "expires_at", "risk_score", "score", "volume", "engine_confidence"
     }
-    return {key: signal.get(key) for key in allowed if key in signal}
+    payload = {key: signal.get(key) for key in allowed if key in signal}
+    try:
+        tp1, tp2, _tp3 = _signal_target_ladder(signal)
+        payload["tp1"] = tp1
+        payload["tp2"] = tp2
+        payload["tp"] = tp2
+    except Exception:
+        pass
+    return payload
 
 def ensure_free_earn_tables():
     conn = db()
@@ -1429,7 +1447,7 @@ def _coin_badge(pair):
 
 
 def format_signal(signal, plan=None):
-    tp1, tp2, tp3 = _signal_target_ladder(signal)
+    tp1, tp2, _tp3 = _signal_target_ladder(signal)
     confidence = signal.get("display_confidence", signal.get("confidence"))
     pair = signal.get("pair", "N/A")
     coin_badge = _coin_badge(pair)
@@ -1451,7 +1469,6 @@ TF: {signal.get('timeframe', 'N/A')}
 Entry: {signal.get('entry', 'N/A')}
 TP1: {tp1}
 TP2: {tp2}
-TP3: {tp3}
 SL: {signal.get('sl', 'N/A')}
 
 Confidence: {confidence_line}
@@ -2241,59 +2258,144 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         return None, f"Trade Error: {e}"
 
 # ================= SIGNAL TRACKING MONITOR =================
+def _user_take_profit_targets(take_profits, fallback_tp):
+    targets = []
+    try:
+        if take_profits:
+            raw = json.loads(take_profits) if isinstance(take_profits, str) else take_profits
+            if isinstance(raw, (list, tuple)):
+                targets = [_safe_float(item) for item in raw]
+    except Exception:
+        targets = []
+    targets = [item for item in targets if item is not None and item > 0]
+    fallback = _safe_float(fallback_tp)
+    if not targets and fallback and fallback > 0:
+        targets = [fallback]
+    return targets[:2]
+
+
+def _target_pnl_percent(direction, entry, target):
+    direction = str(direction or "").upper()
+    entry = float(entry)
+    target = float(target)
+    if direction == "LONG":
+        return ((target - entry) / entry) * 100
+    if direction == "SHORT":
+        return ((entry - target) / entry) * 100
+    return 0
+
+
 def update_signal_outcomes():
     if not ENABLE_SIGNAL_TRACKING:
         return
     try:
         conn = db()
         c = conn.cursor()
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
+        signal_log_columns = {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+        take_profits_select = "take_profits" if "take_profits" in signal_log_columns else "NULL AS take_profits"
+        outcome_select = "outcome" if "outcome" in signal_log_columns else "NULL AS outcome"
+        pnl_select = "COALESCE(pnl_percent, 0)" if "pnl_percent" in signal_log_columns else "0 AS pnl_percent"
         c.execute("""
-        SELECT id, chat_id, pair, direction, entry, tp, sl
+        SELECT id, chat_id, pair, direction, entry, tp, sl, {take_profits_select}, {outcome_select}, {pnl_select}
         FROM signal_log
         WHERE status IN ('SENT', 'OPEN')
           AND chat_id IS NOT NULL
           AND chat_id <> ''
         ORDER BY sent_at ASC
         LIMIT 200
-        """)
+        """.format(
+            take_profits_select=take_profits_select,
+            outcome_select=outcome_select,
+            pnl_select=pnl_select,
+        ))
         open_signals = c.fetchall()
 
         for row in open_signals:
-            signal_id, chat_id, pair, direction, entry, tp, sl = row
+            signal_id, chat_id, pair, direction, entry, tp, sl, take_profits, existing_outcome, existing_pnl_percent = row
             try:
                 current_price = get_live_price(pair)
                 if current_price is None:
                     continue
 
                 outcome = None
+                next_status = None
                 pnl_percent = 0
+                direction = str(direction or "").upper()
+                entry = float(entry)
+                sl = float(sl)
+                targets = _user_take_profit_targets(take_profits, tp)
+                tp1 = targets[0] if targets else _safe_float(tp)
+                tp2 = targets[1] if len(targets) > 1 else tp1
+                already_tp1 = str(existing_outcome or "").upper() in {"TP1_HIT", "PARTIAL_WIN_THEN_REVERSED"}
+
                 if direction == "LONG":
-                    if current_price >= tp:
+                    hit_tp2 = bool(tp2 and current_price >= tp2)
+                    hit_tp1 = bool(tp1 and current_price >= tp1)
+                    hit_sl = current_price <= sl
+                    if hit_tp2:
+                        outcome = "TP2_HIT"
+                        next_status = "CLOSED"
+                        pnl_percent = _target_pnl_percent(direction, entry, tp2)
+                    elif hit_tp1 and not already_tp1:
                         outcome = "TP1_HIT"
-                        pnl_percent = ((tp - entry) / entry) * 100
-                    elif current_price <= sl:
-                        outcome = "SL_HIT"
-                        pnl_percent = ((sl - entry) / entry) * 100
+                        next_status = "OPEN"
+                        pnl_percent = _target_pnl_percent(direction, entry, tp1)
+                    elif hit_sl:
+                        if already_tp1:
+                            outcome = "PARTIAL_WIN_THEN_REVERSED"
+                            next_status = "CLOSED"
+                            pnl_percent = max(float(existing_pnl_percent or 0), _target_pnl_percent(direction, entry, tp1 or tp))
+                        else:
+                            outcome = "SL_HIT"
+                            next_status = "CLOSED"
+                            pnl_percent = ((sl - entry) / entry) * 100
                 elif direction == "SHORT":
-                    if current_price <= tp:
+                    hit_tp2 = bool(tp2 and current_price <= tp2)
+                    hit_tp1 = bool(tp1 and current_price <= tp1)
+                    hit_sl = current_price >= sl
+                    if hit_tp2:
+                        outcome = "TP2_HIT"
+                        next_status = "CLOSED"
+                        pnl_percent = _target_pnl_percent(direction, entry, tp2)
+                    elif hit_tp1 and not already_tp1:
                         outcome = "TP1_HIT"
-                        pnl_percent = ((entry - tp) / entry) * 100
-                    elif current_price >= sl:
-                        outcome = "SL_HIT"
-                        pnl_percent = ((entry - sl) / entry) * 100
+                        next_status = "OPEN"
+                        pnl_percent = _target_pnl_percent(direction, entry, tp1)
+                    elif hit_sl:
+                        if already_tp1:
+                            outcome = "PARTIAL_WIN_THEN_REVERSED"
+                            next_status = "CLOSED"
+                            pnl_percent = max(float(existing_pnl_percent or 0), _target_pnl_percent(direction, entry, tp1 or tp))
+                        else:
+                            outcome = "SL_HIT"
+                            next_status = "CLOSED"
+                            pnl_percent = ((entry - sl) / entry) * 100
 
                 if outcome:
                     c.execute("""
                     UPDATE signal_log
-                    SET status = 'CLOSED', outcome = %s, current_price = %s, pnl_percent = %s, closed_at = NOW()
+                    SET status = %s,
+                        outcome = %s,
+                        current_price = %s,
+                        pnl_percent = %s,
+                        closed_at = CASE WHEN %s = 'CLOSED' THEN NOW() ELSE closed_at END
                     WHERE id = %s AND chat_id = %s
-                    """, (outcome, float(current_price), round(float(pnl_percent), 4), signal_id, str(chat_id)))
+                    """, (next_status or "OPEN", outcome, float(current_price), round(float(pnl_percent), 4), next_status or "OPEN", signal_id, str(chat_id)))
                     conn.commit()
 
                     if SIGNAL_TRACKING_NOTIFY:
-                        icon = "✅" if outcome in ("TP1_HIT", "TP2_HIT", "TP3_HIT", "TP_HIT") else "🛑"
+                        icon = "✅" if outcome in ("TP1_HIT", "TP2_HIT", "TP_HIT", "PARTIAL_WIN_THEN_REVERSED") else "🛑"
                         clean_pnl_percent = clean_number(pnl_percent, 2)
-                        what_happened = "TP Hit" if outcome in ("TP1_HIT", "TP2_HIT", "TP3_HIT", "TP_HIT") else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
+                        what_happened = "TP Hit" if outcome in ("TP1_HIT", "TP2_HIT", "TP_HIT", "PARTIAL_WIN_THEN_REVERSED") else "SL Hit" if outcome == "SL_HIT" else "Manual/Unknown Exit"
+                        if outcome == "TP1_HIT":
+                            what_happened = "TP1 Hit - partial profit"
+                        elif outcome == "TP2_HIT":
+                            what_happened = "TP2 Hit - trade completed"
+                        elif outcome == "PARTIAL_WIN_THEN_REVERSED":
+                            what_happened = "Partial profit secured before reversal"
+                        elif outcome == "SL_HIT":
+                            what_happened = "SL Hit"
                         outcome_sent = send(chat_id, f"""{icon} NEXORA TRADE RESULT
 
 Market: {pair}
