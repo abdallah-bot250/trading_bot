@@ -1,4 +1,6 @@
 import os
+import hmac
+from decimal import Decimal, InvalidOperation
 from flask import Blueprint, render_template_string
 from urllib.parse import quote_plus, urlparse
 from trader_app.extensions import limiter
@@ -599,7 +601,8 @@ def debug_users():
         return f"<pre>{users}</pre>"
 
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        log(f"debug_users error: {e}")
+        return "Service temporarily unavailable", 503
 
 
 @diagnostics_bp.route("/test-db")
@@ -615,7 +618,8 @@ def test_db():
         conn.close()
         return f"✅ DB OK: {now}"
     except Exception as e:
-        return f"❌ DB ERROR: {str(e)}"
+        log(f"test_db error: {e}")
+        return "Database service temporarily unavailable", 503
 
 
 @diagnostics_bp.route("/test-telegram")
@@ -634,7 +638,8 @@ def test_telegram():
         return "✅ تم الإرسال" if ok else "❌ فشل الإرسال"
 
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        log(f"test_telegram error: {e}")
+        return "Service temporarily unavailable", 503
 
 
 @diagnostics_bp.route("/telegram-status")
@@ -1286,7 +1291,7 @@ def save_api():
 
     except Exception as e:
         log(f"❌ save_api error: {e}")
-        return f"❌ حصل خطأ أثناء حفظ API: {str(e)}"
+        return "❌ تعذر حفظ بيانات API. راجع السجلات باستخدام رقم الطلب.", 500
 
 
 # ================= SAVE SETTINGS =================
@@ -1360,7 +1365,7 @@ def save_settings():
 
     except Exception as e:
         log(f"❌ save_settings error: {e}")
-        return f"❌ حصل خطأ أثناء حفظ الإعدادات: {str(e)}"
+        return "❌ تعذر حفظ الإعدادات حاليًا.", 500
 
 
 def _safe_date(value):
@@ -2005,7 +2010,7 @@ def dashboard():
 
     except Exception as e:
         log(f"❌ dashboard error: {e}")
-        return f"❌ حصل خطأ أثناء تحميل الداشبورد: {str(e)}"
+        return "❌ تعذر تحميل لوحة التحكم حاليًا.", 500
 
 
 @dashboard_bp.route("/manual")
@@ -3725,7 +3730,7 @@ def toggle_bot():
 
     except Exception as e:
         log(f"❌ toggle_bot error: {e}")
-        return f"❌ حصل خطأ أثناء تشغيل/إيقاف البوت: {str(e)}"
+        return "❌ تعذر تحديث حالة البوت حاليًا.", 500
 
 
 # ================= CREATE PAYMENT =================
@@ -3883,7 +3888,7 @@ def create_payment():
 
     except Exception as e:
         log(f"❌ create_payment error: {e}")
-        return f"Error: {str(e)}"
+        return "Request could not be completed", 500
 
 
 @payments_bp.route("/invoice-history")
@@ -3955,7 +3960,7 @@ def owner_free_upgrade():
         return "✅ تم تفعيل Elite سنة واحدة للحساب الإداري"
     except Exception as e:
         log(f"owner_free_upgrade error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 # ================= REQUEST WITHDRAWAL =================
@@ -4021,7 +4026,7 @@ def request_withdrawal():
 
     except Exception as e:
         log(f"request_withdrawal error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 
@@ -4715,7 +4720,7 @@ def create_coupon():
         return redirect("/admin")
     except Exception as e:
         log(f"create_coupon error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 @admin_bp.route("/admin/coupons/toggle", methods=["POST"])
@@ -4742,7 +4747,7 @@ def toggle_coupon():
         return redirect("/admin")
     except Exception as e:
         log(f"toggle_coupon error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 @admin_bp.route("/activate-user", methods=["POST"])
@@ -4779,7 +4784,7 @@ def activate_user():
 
     except Exception as e:
         log(f"activate_user error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 @admin_bp.route("/delete-user", methods=["POST"])
@@ -4814,7 +4819,7 @@ def delete_user():
 
     except Exception as e:
         log(f"delete_user error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 @admin_bp.route("/mark-withdrawal-paid", methods=["POST"])
@@ -4844,7 +4849,7 @@ def mark_withdrawal_paid():
 
     except Exception as e:
         log(f"mark_withdrawal_paid error: {e}")
-        return f"❌ Error: {str(e)}"
+        return "❌ Request could not be completed", 500
 
 
 # ================= TELEGRAM WEBHOOK =================
@@ -5026,6 +5031,12 @@ def run_telegram_broadcast(c, message, paid_only=False):
 
 @telegram_bp.route("/webhook", methods=["POST"])
 def webhook():
+    expected_secret = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    if expected_secret:
+        received_secret = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
+        if not received_secret or not hmac.compare_digest(received_secret, expected_secret):
+            log("TELEGRAM_WEBHOOK_REJECTED reason=invalid_secret")
+            return "forbidden", 403
     try:
         data = request.get_json(silent=True) or {}
 
@@ -5543,6 +5554,51 @@ def payment_webhook():
         invoice_url = invoice[5] if invoice else None
 
         bucket = payment_status_bucket(payment_status)
+        expected_amount = Decimal(str(invoice[1] if invoice else PLAN_PRICES.get(plan, PLAN_PRICES["basic"])))
+        try:
+            provider_amount = Decimal(str(data.get("price_amount")))
+        except (InvalidOperation, TypeError):
+            provider_amount = Decimal("-1")
+        tolerance = Decimal(str(os.environ.get("PAYMENT_AMOUNT_TOLERANCE", "0.01")))
+        mismatch_reason = None
+        if bucket == "success" and provider_amount < 0:
+            mismatch_reason = "missing_price_amount"
+        elif bucket == "success" and provider_amount < (expected_amount - tolerance):
+            mismatch_reason = "amount_underpaid"
+        elif bucket == "success" and provider_amount > (expected_amount + tolerance):
+            mismatch_reason = "amount_mismatch"
+
+        if mismatch_reason:
+            c.execute("""
+                INSERT INTO failed_payments (
+                    payment_id, invoice_id, order_id, plan, payment_status, reason, raw_payload
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (
+                payment_id,
+                invoice_id,
+                chat_id,
+                plan,
+                payment_status,
+                mismatch_reason,
+                raw_payload,
+            ))
+            if invoice_row_id:
+                c.execute("""
+                    UPDATE payment_invoices
+                    SET payment_id = %s,
+                        status = %s,
+                        raw_response = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (payment_id, mismatch_reason, raw_payload, invoice_row_id))
+            conn.commit()
+            conn.close()
+            log(f"NOWPAYMENTS_AMOUNT_REJECTED reason={mismatch_reason} expected={expected_amount} provider={provider_amount}")
+            return "amount mismatch", 400
+
+        paid_amount = float(provider_amount if provider_amount >= 0 else expected_amount)
+
         if bucket != "success":
             c.execute("""
                 INSERT INTO failed_payments (

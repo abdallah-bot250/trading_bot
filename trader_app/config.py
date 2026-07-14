@@ -36,6 +36,7 @@ class Config:
     CACHE_PUBLIC_SECONDS = int(os.environ.get("CACHE_PUBLIC_SECONDS", "300"))
 
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+    TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
     BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
     BOT_LINK = os.environ.get("BOT_LINK", "https://t.me/your_bot_username")
     ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
@@ -46,6 +47,7 @@ class Config:
 
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", "memory://")
     STRICT_HTTPS = os.environ.get("STRICT_HTTPS", "true").lower() in ["1", "true", "yes"]
+    PAYMENT_AMOUNT_TOLERANCE = float(os.environ.get("PAYMENT_AMOUNT_TOLERANCE", "0.01"))
 
     SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
     SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
