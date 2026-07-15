@@ -222,6 +222,67 @@ def _result_from_cache(key):
     return None
 
 
+
+@dataclass
+class ForexQuoteResult:
+    ok: bool
+    symbol: str
+    provider: str
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    price: Optional[float] = None
+    spread: Optional[float] = None
+    timestamp: Optional[str] = None
+    error: Optional[str] = None
+    status_code: Optional[int] = None
+
+
+def get_quote(symbol: str) -> ForexQuoteResult:
+    """Load a live provider quote. Never synthesizes bid/ask values."""
+    symbol = normalize_forex_symbol(symbol)
+    provider = FOREX_PROVIDER
+    if symbol not in FOREX_SYMBOLS:
+        return ForexQuoteResult(False, symbol, provider, error="SYMBOL_NOT_SUPPORTED")
+    if provider != "twelvedata":
+        return ForexQuoteResult(False, symbol, provider, error="PROVIDER_NOT_CONFIGURED")
+    if not FOREX_API_KEY:
+        return ForexQuoteResult(False, symbol, provider, error="API_KEY_MISSING")
+    try:
+        response = requests.get(
+            "https://api.twelvedata.com/quote",
+            params={"symbol": provider_symbol(symbol, provider), "apikey": FOREX_API_KEY},
+            timeout=FOREX_REQUEST_TIMEOUT,
+        )
+        status_code = response.status_code
+        data = response.json() if response.content else {}
+        if status_code in {401, 403}:
+            return ForexQuoteResult(False, symbol, provider, error="AUTH_FAILED", status_code=status_code)
+        if status_code == 429:
+            return ForexQuoteResult(False, symbol, provider, error="RATE_LIMITED", status_code=status_code)
+        if status_code != 200 or str(data.get("status", "")).lower() == "error":
+            return ForexQuoteResult(False, symbol, provider, error="HTTP_ERROR", status_code=status_code)
+        def number(*keys):
+            for key in keys:
+                value = data.get(key)
+                if value not in (None, ""):
+                    try:
+                        return float(value)
+                    except Exception:
+                        continue
+            return None
+        bid = number("bid", "bid_price")
+        ask = number("ask", "ask_price")
+        price = number("close", "price", "last")
+        timestamp = str(data.get("datetime") or data.get("timestamp") or "") or None
+        if bid is None or ask is None or ask <= bid:
+            return ForexQuoteResult(False, symbol, provider, price=price, timestamp=timestamp, error="REAL_SPREAD_UNAVAILABLE", status_code=status_code)
+        return ForexQuoteResult(True, symbol, provider, bid=bid, ask=ask, price=price or ((bid + ask) / 2), spread=ask-bid, timestamp=timestamp, status_code=status_code)
+    except requests.exceptions.Timeout:
+        return ForexQuoteResult(False, symbol, provider, error="TIMEOUT")
+    except Exception:
+        return ForexQuoteResult(False, symbol, provider, error="PARSE_ERROR")
+
+
 def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandlesResult:
     symbol = normalize_forex_symbol(symbol)
     timeframe = str(timeframe or "").strip()

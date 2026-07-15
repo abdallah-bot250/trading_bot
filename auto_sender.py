@@ -1564,8 +1564,9 @@ def _compact_trade_reason(signal):
     if not reason:
         reason = "Trend alignment + MTF confirmation + volume support."
     reason = " ".join(reason.split())
-    if len(reason) > 86:
-        reason = reason[:83].rstrip() + "..."
+    max_length = 320 if signal_market_bucket(signal) == "forex" else 140
+    if len(reason) > max_length:
+        reason = reason[: max_length - 3].rstrip() + "..."
     return reason
 
 
@@ -1615,12 +1616,23 @@ def format_signal(signal, plan=None):
     setup_line = f"\nStrategy: {setup}" if setup else ""
     confidence_line = f"{confidence}%" if confidence not in (None, "", "N/A") else "N/A"
 
+    market_bucket = signal_market_bucket(signal)
+    market_details = ""
+    risk_label = "Crypto and derivatives trading are risky. Not financial advice."
+    if market_bucket == "forex":
+        market_details = (
+            f"\nSession: {signal.get('session', 'N/A')}"
+            f"\nSpread: {signal.get('spread', 'N/A')} pips ({signal.get('spread_source', 'N/A')})"
+            f"\nData: {signal.get('provider', 'N/A')} | {signal.get('data_timestamp', 'N/A')}"
+        )
+        risk_label = "Forex, metals, oil, and indices involve substantial risk. Verify broker spread and size positions conservatively. Not financial advice."
+
     return f"""NEXORA AI SIGNAL
 
 {coin_badge} | {pair}
 Mode: {signal.get('type', 'FUTURES')}
 Direction: {direction_label} {direction}
-TF: {signal.get('timeframe', 'N/A')}
+TF: {signal.get('timeframe', 'N/A')}{market_details}
 
 Entry: {signal.get('entry', 'N/A')}
 TP1: {tp1}
@@ -1630,13 +1642,13 @@ SL: {signal.get('sl', 'N/A')}
 Confidence: {confidence_line}
 RR: {rr if rr not in (None, '', 'N/A') else 'N/A'}{setup_line}
 
-Why:
+Why this trade:
 {why}
 
 Manage:
-Move SL to breakeven after TP1 if your strategy allows it.
+Move SL to breakeven after TP1 only after price confirms and according to your own risk plan.
 
-Risk warning: Crypto trading is risky. Not financial advice."""
+Risk warning: {risk_label}"""
 
 
 # ================= ACCESS HELPERS =================
@@ -1759,6 +1771,11 @@ def log_forex_scan_summary(final_count=None):
             f"rejected_volatility={summary.get('rejected_volatility', 0)} "
             f"rejected_spread={summary.get('rejected_spread', 0)} "
             f"rejected_news={summary.get('rejected_news', 0)} "
+            f"rejected_news_provider={summary.get('rejected_news_provider', 0)} "
+            f"rejected_real_spread={summary.get('rejected_real_spread', 0)} "
+            f"news_provider={summary.get('news_provider', '')} "
+            f"news_provider_configured={summary.get('news_provider_configured', False)} "
+            f"real_spread_required={summary.get('real_spread_required', False)} "
             f"rejected_quality={summary.get('rejected_quality', 0)} "
             f"passed_candidates={summary.get('passed_candidates', 0)} "
             f"final_signals={summary.get('final_signals', final_count or 0)} "

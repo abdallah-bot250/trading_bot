@@ -11,10 +11,12 @@ from trader_app.services.forex_market_data import (
     asset_class_for_symbol,
     forex_failure_code,
     get_ohlcv,
+    get_quote,
     pip_size,
     provider_configuration_status,
     provider_health_status,
 )
+from trader_app.services.forex_news import news_decision, configuration_status as news_configuration_status
 
 
 FOREX_ENABLED = os.environ.get("FOREX_SIGNAL_ENGINE_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
@@ -25,6 +27,7 @@ FOREX_MAX_SPREAD_PIPS = float(os.environ.get("FOREX_MAX_SPREAD_PIPS", "2.5"))
 FOREX_MAX_SIGNALS_PER_CYCLE = int(os.environ.get("FOREX_MAX_SIGNALS_PER_CYCLE", "2"))
 FOREX_NEWS_BLACKOUT_ENABLED = os.environ.get("FOREX_NEWS_BLACKOUT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_NEWS_BLACKOUT_ACTIVE = os.environ.get("FOREX_NEWS_BLACKOUT_ACTIVE", "false").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_REQUIRE_REAL_SPREAD = os.environ.get("FOREX_REQUIRE_REAL_SPREAD", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 FOREX_SCAN_SUMMARY = {}
 
@@ -44,6 +47,8 @@ def _reset_summary():
         "rejected_volatility": 0,
         "rejected_spread": 0,
         "rejected_news": 0,
+        "rejected_news_provider": 0,
+        "rejected_real_spread": 0,
         "rejected_quality": 0,
         "passed_candidates": 0,
         "final_signals": 0,
@@ -136,12 +141,20 @@ def _session(now=None):
     return "After_Hours"
 
 
-def _spread_pips(symbol: str, frame: pd.DataFrame) -> float:
+def _spread_pips(symbol: str) -> Tuple[Optional[float], dict]:
+    quote = get_quote(symbol)
+    if not quote.ok:
+        return None, {"ok": False, "reason": quote.error or "REAL_SPREAD_UNAVAILABLE", "provider": quote.provider}
     pip = pip_size(symbol)
-    last = frame.iloc[-1]
-    proxy = max(float(last["high"]) - float(last["low"]), 0.0) * 0.08
-    return round(proxy / pip, 2) if pip else 999.0
-
+    spread_pips = round(float(quote.spread or 0) / pip, 2) if pip else None
+    return spread_pips, {
+        "ok": spread_pips is not None,
+        "reason": "REAL_BID_ASK",
+        "provider": quote.provider,
+        "bid": quote.bid,
+        "ask": quote.ask,
+        "quote_timestamp": quote.timestamp,
+    }
 
 def _support_resistance(frame: pd.DataFrame) -> Tuple[float, float]:
     recent = frame.tail(40)
@@ -181,11 +194,11 @@ def _volatility_ok(symbol: str, frame: pd.DataFrame) -> Tuple[bool, str, float]:
     return True, "atr_ok", atr
 
 
-def _news_ok() -> Tuple[bool, str]:
+def _news_ok(symbol: str) -> Tuple[bool, str, Optional[dict]]:
     if FOREX_NEWS_BLACKOUT_ENABLED and FOREX_NEWS_BLACKOUT_ACTIVE:
-        return False, "high_impact_news_blackout_active"
-    return True, "no_configured_news_blackout"
-
+        return False, "MANUAL_HIGH_IMPACT_NEWS_BLACKOUT", None
+    decision = news_decision(symbol)
+    return bool(decision.ok and not decision.blocked), decision.reason, decision.event
 
 def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Optional[dict]:
     h4_trend = _trend(frames["4h"])
@@ -198,11 +211,18 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
     if not ok_vol:
         _inc("rejected_volatility")
         return None
-    news_ok, news_reason = _news_ok()
+    news_ok, news_reason, news_event = _news_ok(symbol)
     if not news_ok:
         _inc("rejected_news")
+        if news_reason in {"API_KEY_MISSING", "AUTH_FAILED", "RATE_LIMITED", "TIMEOUT", "PARSE_ERROR", "PROVIDER_NOT_SUPPORTED"}:
+            _inc("rejected_news_provider")
         return None
-    spread = _spread_pips(symbol, entry_frame)
+    spread, quote_meta = _spread_pips(symbol)
+    if spread is None:
+        if FOREX_REQUIRE_REAL_SPREAD:
+            _inc("rejected_real_spread")
+            return None
+        spread = 0.0
     if spread > FOREX_MAX_SPREAD_PIPS and asset_class_for_symbol(symbol) == "forex":
         _inc("rejected_spread")
         return None
@@ -262,7 +282,7 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
         "type": "FOREX",
         "market_type": "forex",
         "asset_class": asset_class_for_symbol(symbol),
-        "provider": "twelvedata",
+        "provider": provider_health_status().get("provider") or "twelvedata",
         "direction": direction,
         "timeframe": tf,
         "entry": round(entry, 5 if pip < 0.01 else 2),
@@ -285,10 +305,33 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
         "market_regime": "FOREX_TREND",
         "session": session,
         "spread": spread,
+        "spread_source": quote_meta.get("reason"),
+        "bid": quote_meta.get("bid"),
+        "ask": quote_meta.get("ask"),
+        "quote_timestamp": quote_meta.get("quote_timestamp"),
         "pip_size": pip,
         "data_timestamp": str(entry_frame.iloc[-1].get("time") or ""),
-        "reason": f"{h4_trend} 4H/1H alignment + pullback + momentum confirmation + {news_reason}",
-        "target_basis": "ATR + support/resistance",
+        "reason": (
+            f"{direction} because 4H and 1H trends are {h4_trend}; price returned to the EMA20/EMA50 pullback zone; "
+            f"RSI={rsi:.1f} and MACD confirms momentum; session={session}; real spread={spread} pips; "
+            f"news_check={news_reason}; SL is beyond structure/ATR and TP starts at RR={rr}."
+        ),
+        "analysis_components": {
+            "trend_4h": h4_trend,
+            "trend_1h": h1_trend,
+            "ema20": round(ema20, 6),
+            "ema50": round(ema50, 6),
+            "rsi14": round(rsi, 2),
+            "macd": round(float(macd.iloc[-1]), 6),
+            "macd_signal": round(float(macd_signal.iloc[-1]), 6),
+            "atr14": round(float(atr), 6),
+            "support": round(support, 6),
+            "resistance": round(resistance, 6),
+            "session": session,
+            "news_reason": news_reason,
+            "news_event": news_event,
+        },
+        "target_basis": "real market candles + ATR + support/resistance + fixed minimum risk/reward",
         "auto_trade_allowed": False,
     }
     _inc("passed_candidates")
@@ -310,6 +353,16 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
         print(f"FOREX_PROVIDER_STATUS provider={config.get('provider')} configured=false reason={FOREX_SCAN_SUMMARY['disabled_reason']}")
         return []
     print(f"FOREX_PROVIDER_STATUS provider={config.get('provider')} configured=true")
+    news_config = news_configuration_status()
+    FOREX_SCAN_SUMMARY["news_provider"] = news_config.get("provider")
+    FOREX_SCAN_SUMMARY["news_provider_configured"] = bool(news_config.get("configured"))
+    FOREX_SCAN_SUMMARY["real_spread_required"] = bool(FOREX_REQUIRE_REAL_SPREAD)
+    if news_config.get("required") and not news_config.get("configured"):
+        FOREX_SCAN_SUMMARY["disabled"] = True
+        FOREX_SCAN_SUMMARY["disabled_reason"] = f"NEWS_{news_config.get('reason') or 'PROVIDER_NOT_CONFIGURED'}"
+        print(f"FOREX_NEWS_PROVIDER_STATUS provider={news_config.get('provider')} configured=false required=true reason={news_config.get('reason')}")
+        return []
+    print(f"FOREX_NEWS_PROVIDER_STATUS provider={news_config.get('provider')} configured={str(bool(news_config.get('configured'))).lower()} required={str(bool(news_config.get('required'))).lower()}")
     limit = limit or FOREX_MAX_SIGNALS_PER_CYCLE
     signals: List[dict] = []
     for symbol in FOREX_SYMBOLS:
