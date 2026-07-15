@@ -33,11 +33,18 @@ SIGNAL_SKIP_LOG_TTL_SECONDS = 600
 SIGNAL_BUILD_COOLDOWN_CACHE = {}
 SIGNAL_BUILD_COOLDOWN_SECONDS = int(os.environ.get("SIGNAL_BUILD_COOLDOWN_SECONDS", "3600"))
 LAST_DRY_RUN_SKIPS = []
-MIN_SPOT_FINAL_SCORE = 88
-MIN_FUTURES_FINAL_SCORE = 90
+SIGNAL_QUALITY_PROFILE = os.environ.get("SIGNAL_QUALITY_PROFILE", "conservative").strip().lower()
+QUALITY_PROFILE_THRESHOLDS = {
+    "conservative": {"spot": 88, "futures": 90, "expert": 90, "min_rr": 1.5},
+    "balanced": {"spot": 84, "futures": 86, "expert": 86, "min_rr": 1.5},
+    "strict": {"spot": 92, "futures": 94, "expert": 94, "min_rr": 1.7},
+}
+QUALITY_PROFILE = QUALITY_PROFILE_THRESHOLDS.get(SIGNAL_QUALITY_PROFILE, QUALITY_PROFILE_THRESHOLDS["conservative"])
+MIN_SPOT_FINAL_SCORE = float(os.environ.get("MIN_SPOT_FINAL_SCORE", QUALITY_PROFILE["spot"]))
+MIN_FUTURES_FINAL_SCORE = float(os.environ.get("MIN_FUTURES_FINAL_SCORE", QUALITY_PROFILE["futures"]))
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
 STRICT_VOLATILITY_FILTER = os.environ.get("STRICT_VOLATILITY_FILTER", "false").strip().lower() not in {"0", "false", "no", "off"}
-EXPERT_QUALITY_MIN_PERCENT = float(os.environ.get("EXPERT_QUALITY_MIN_PERCENT", "90"))
+EXPERT_QUALITY_MIN_PERCENT = float(os.environ.get("EXPERT_QUALITY_MIN_PERCENT", QUALITY_PROFILE["expert"]))
 NEWS_BLACKOUT_MINUTES = int(os.environ.get("NEWS_BLACKOUT_MINUTES", "30"))
 ENTRY_MANAGER_MAX_UPDATE_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_UPDATE_PERCENT", "0.12"))
 ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT", "35"))
@@ -78,6 +85,7 @@ def reset_signal_scan_diagnostics():
     SIGNAL_SCAN_DIAGNOSTICS.update({
         "scanned": 0,
         "candidates_built": 0,
+        "rejections_by_code": {},
         "rejected_low_volatility": 0,
         "rejected_mtf": 0,
         "rejected_liquidity": 0,
@@ -111,20 +119,50 @@ def get_signal_scan_diagnostics(final_signals=None):
     return data
 
 
-def _record_scan_rejection(reason):
+REJECTION_REASON_CODES = {
+    "HIGH_VOLATILITY": ("HIGH_VOLATILITY", "ATR TOO HIGH", "VOLATILITY HIGH"),
+    "LOW_VOLATILITY": ("LOW_VOLATILITY", "ATR TOO LOW", "LOW VOLATILITY"),
+    "MTF_CONFLICT": ("MTF", "4H", "1H", "MULTI-TIMEFRAME"),
+    "LOW_LIQUIDITY": ("LOW_LIQUIDITY", "LOW_VOLUME_CHOP", "LIQUIDITY"),
+    "FAKE_BREAKOUT": ("FAKE_BREAKOUT", "FAKE BREAKOUT"),
+    "INVALID_ENTRY": ("INVALID ENTRY", "ENTRY", "FRESHNESS", "NO RETEST", "MID_RANGE", "MID-RANGE"),
+    "LOW_RR": ("LOW_RR", "RR", "RISK/REWARD", "RISK REWARD"),
+    "LOW_FINAL_SCORE": ("LOW_FINAL_SCORE", "FINAL SCORE", "SCORE BELOW", "CONFIDENCE"),
+    "AI_REJECTED": ("AI_REJECTED", "AI MODEL REJECTED", "AI REJECTION"),
+    "DUPLICATE": ("DUPLICATE",),
+    "COOLDOWN": ("COOLDOWN",),
+    "STALE_DATA": ("STALE", "EXPIRED"),
+    "DATA_SOURCE_FAILURE": ("DATA_SOURCE", "DATA FAILURE", "NO LIVE PRICE", "UNAVAILABLE"),
+}
+
+
+def classify_scan_rejection_reason(reason):
     text = str(reason or "").upper()
-    if "LOW_VOLATILITY" in text or "ATR TOO LOW" in text:
+    for code, markers in REJECTION_REASON_CODES.items():
+        if any(marker in text for marker in markers):
+            return code
+    return "OTHER"
+
+
+def _record_scan_rejection(reason):
+    if not SIGNAL_SCAN_DIAGNOSTICS:
+        reset_signal_scan_diagnostics()
+    code = classify_scan_rejection_reason(reason)
+    by_code = SIGNAL_SCAN_DIAGNOSTICS.setdefault("rejections_by_code", {})
+    by_code[code] = int(by_code.get(code, 0) or 0) + 1
+    if code == "LOW_VOLATILITY":
         _scan_diag_inc("rejected_low_volatility")
-    if "MTF" in text or "4H" in text or "1H" in text:
+    elif code == "MTF_CONFLICT":
         _scan_diag_inc("rejected_mtf")
-    if "LOW_LIQUIDITY" in text or "LOW_VOLUME_CHOP" in text or "LIQUIDITY" in text:
+    elif code == "LOW_LIQUIDITY":
         _scan_diag_inc("rejected_liquidity")
-    if "FAKE_BREAKOUT" in text or "FAKE BREAKOUT" in text:
+    elif code == "FAKE_BREAKOUT":
         _scan_diag_inc("rejected_fake_breakout")
-    if "QUALITY" in text or "CONFIDENCE" in text or "AI MODEL REJECTED" in text:
+    elif code in {"LOW_FINAL_SCORE", "AI_REJECTED", "HIGH_VOLATILITY"}:
         _scan_diag_inc("rejected_quality")
-    if "ENTRY" in text or "FRESHNESS" in text or "SELF REVIEW" in text or "FINAL" in text:
+    elif code in {"INVALID_ENTRY", "LOW_RR", "STALE_DATA", "DATA_SOURCE_FAILURE", "DUPLICATE", "COOLDOWN"}:
         _scan_diag_inc("rejected_entry")
+    return code
 
 
 def _large_cap_symbol(symbol):

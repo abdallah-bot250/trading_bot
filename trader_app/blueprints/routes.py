@@ -3378,7 +3378,14 @@ def admin_signal_supply_page():
     if not session.get("user") or not is_current_admin():
         return "غير مصرح", 403
     from market_analyzer import get_signal_scan_diagnostics
+    try:
+        from forex_analyzer import get_forex_scan_summary, forex_auto_trade_status
+    except Exception:
+        get_forex_scan_summary = None
+        forex_auto_trade_status = None
     diagnostics = get_signal_scan_diagnostics()
+    forex_summary = get_forex_scan_summary() if get_forex_scan_summary else {}
+    rejection_codes = diagnostics.get("rejections_by_code") or {}
     rows = [
         ("Market scans", diagnostics.get("scanned", 0)),
         ("Qualified A+", diagnostics.get("qualified_a_plus", 0)),
@@ -3393,20 +3400,40 @@ def admin_signal_supply_page():
         ("Rejected entry", diagnostics.get("rejected_entry", 0)),
         ("Final signals", diagnostics.get("final_signals", 0)),
     ]
+    forex_rows = [
+        ("Forex symbols scanned", forex_summary.get("symbols_scanned", 0)),
+        ("Forex timeframes scanned", forex_summary.get("timeframes_scanned", 0)),
+        ("Forex data failures", forex_summary.get("data_failures", 0)),
+        ("Forex rejected volatility", forex_summary.get("rejected_volatility", 0)),
+        ("Forex rejected spread", forex_summary.get("rejected_spread", 0)),
+        ("Forex rejected news", forex_summary.get("rejected_news", 0)),
+        ("Forex rejected quality", forex_summary.get("rejected_quality", 0)),
+        ("Forex passed candidates", forex_summary.get("passed_candidates", 0)),
+        ("Forex final signals", forex_summary.get("final_signals", 0)),
+        ("Forex deliveries", forex_summary.get("deliveries", 0)),
+    ]
+    code_rows = sorted(rejection_codes.items(), key=lambda item: int(item[1] or 0), reverse=True)
     dominant = sorted(
         [(label, value) for label, value in rows if str(label).startswith("Rejected")],
         key=lambda item: int(item[1] or 0),
         reverse=True,
     )
-    reason = dominant[0][0] if dominant and int(dominant[0][1] or 0) > 0 else "No dominant rejection reason recorded yet."
+    reason = code_rows[0][0] if code_rows and int(code_rows[0][1] or 0) > 0 else (
+        dominant[0][0] if dominant and int(dominant[0][1] or 0) > 0 else "No dominant rejection reason recorded yet."
+    )
+    forex_status = forex_auto_trade_status() if forex_auto_trade_status else "FOREX_AUTO_TRADE_DISABLED"
     return render_template_string("""
     <!doctype html><html><head><meta charset='utf-8'><title>Nexora Signal Supply</title>
-    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1100px;margin:40px auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(15,27,42,.94),rgba(7,14,23,.96));border:1px solid rgba(56,189,248,.18);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}span{color:#94a3b8}strong{display:block;font-size:28px;margin-top:8px}.reason{border-color:rgba(250,204,21,.35)}</style>
-    </head><body><main class='wrap'><h1>Nexora Signal Supply Diagnostics</h1><p>Admin-only readout for qualified opportunities, Free Earn supply, and rejection pressure.</p>
+    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1180px;margin:40px auto;padding:24px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(15,27,42,.94),rgba(7,14,23,.96));border:1px solid rgba(56,189,248,.18);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}span{color:#94a3b8}strong{display:block;font-size:28px;margin-top:8px}.reason{border-color:rgba(250,204,21,.35)}.section{margin-top:28px}.pill{display:inline-flex;margin:5px 6px 0 0;padding:8px 10px;border:1px solid rgba(212,175,55,.3);border-radius:999px;background:rgba(212,175,55,.08);color:#fde68a}</style>
+    </head><body><main class='wrap'><h1>Nexora Signal Supply Diagnostics</h1><p>Admin-only readout for qualified opportunities, Free Earn supply, Forex supply, and rejection pressure.</p>
+    <h2>Crypto Engine</h2>
     <section class='grid'>{% for label,value in rows %}<div class='card'><span>{{ label }}</span><strong>{{ value }}</strong></div>{% endfor %}</section>
-    <div class='card reason' style='margin-top:18px'><span>Why no signals?</span><strong style='font-size:20px'>{{ reason }}</strong></div>
+    <div class='card reason' style='margin-top:18px'><span>Dominant rejection code</span><strong style='font-size:20px'>{{ reason }}</strong>{% for code,value in code_rows %}<span class='pill'>{{ code }}: {{ value }}</span>{% endfor %}</div>
+    <h2 class='section'>Forex Engine</h2>
+    <section class='grid'>{% for label,value in forex_rows %}<div class='card'><span>{{ label }}</span><strong>{{ value }}</strong></div>{% endfor %}</section>
+    <div class='card reason' style='margin-top:18px'><span>Forex auto trade</span><strong style='font-size:20px'>{{ forex_status }}</strong></div>
     <p><a style='color:#22d3ee' href='/admin'>Back to Admin</a></p></main></body></html>
-    """, rows=rows, reason=reason)
+    """, rows=rows, forex_rows=forex_rows, code_rows=code_rows, reason=reason, forex_status=forex_status)
 
 
 @admin_bp.route("/admin/subscriptions")

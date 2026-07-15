@@ -21,6 +21,13 @@ import psycopg2
 from dotenv import load_dotenv
 
 try:
+    from forex_analyzer import get_forex_signals, get_forex_scan_summary, forex_auto_trade_status
+except Exception:
+    get_forex_signals = None
+    get_forex_scan_summary = lambda final_signals=None: {"final_signals": int(final_signals or 0), "error": "forex_module_unavailable"}
+    forex_auto_trade_status = lambda: "FOREX_AUTO_TRADE_DISABLED"
+
+try:
     from trader_app.services.runtime import decrypt_text
     from trader_app.services.exchanges.registry import get_exchange_capability, normalize_exchange_key
 except Exception:
@@ -561,6 +568,24 @@ def validate_signal_entry_freshness(signal, current_price=None, context="SEND"):
         sl = _safe_signal_float(signal.get("sl"))
         if not pair or entry <= 0 or direction not in ["LONG", "SHORT"]:
             return False, "invalid_signal_geometry", current_price
+
+        if signal_market_bucket(signal) == "forex":
+            data_timestamp = signal.get("data_timestamp") or signal.get("generated_at")
+            if not data_timestamp:
+                return False, "forex_data_timestamp_missing", current_price
+            try:
+                text = str(data_timestamp).replace("Z", "+00:00")
+                ts = datetime.fromisoformat(text)
+                if ts.tzinfo is not None:
+                    ts = ts.replace(tzinfo=None)
+                max_age = int(os.environ.get("FOREX_MAX_CANDLE_STALE_SECONDS", "1800") or 1800)
+                age = (datetime.utcnow() - ts).total_seconds()
+                if age > max_age:
+                    return False, "forex_stale_data", current_price
+            except Exception:
+                return False, "forex_data_timestamp_invalid", current_price
+            signal["live_price_checked"] = entry
+            return True, "forex_data_fresh", entry
 
         if current_price is None:
             current_price = get_live_price(pair)
@@ -1673,6 +1698,39 @@ def log_signal_scan_summary(final_count):
         return {}
 
 
+def log_forex_scan_summary(final_count=None):
+    try:
+        summary = get_forex_scan_summary(final_count)
+        log(
+            "FOREX_SCAN_SUMMARY "
+            f"symbols_scanned={summary.get('symbols_scanned', 0)} "
+            f"timeframes_scanned={summary.get('timeframes_scanned', 0)} "
+            f"data_failures={summary.get('data_failures', 0)} "
+            f"rejected_volatility={summary.get('rejected_volatility', 0)} "
+            f"rejected_spread={summary.get('rejected_spread', 0)} "
+            f"rejected_news={summary.get('rejected_news', 0)} "
+            f"rejected_quality={summary.get('rejected_quality', 0)} "
+            f"passed_candidates={summary.get('passed_candidates', 0)} "
+            f"final_signals={summary.get('final_signals', final_count or 0)} "
+            f"deliveries={summary.get('deliveries', 0)}"
+        )
+        return summary
+    except Exception as e:
+        log(f"FOREX_SCAN_SUMMARY_ERROR error={e}")
+        return {}
+
+
+def log_delivery_summary(total_signals, total_users, sent, locked, blocked):
+    try:
+        log(
+            "DELIVERY_SUMMARY "
+            f"signals={int(total_signals or 0)} users={int(total_users or 0)} "
+            f"sent={int(sent or 0)} locked={int(locked or 0)} blocked={int(blocked or 0)}"
+        )
+    except Exception:
+        pass
+
+
 def log_plan_delivery_diag(email, plan, chat_id, eligible, reason_if_not_sent):
     try:
         log(
@@ -2741,104 +2799,108 @@ def is_recent_memory_duplicate(signal):
 
 # ================= SIGNAL FETCHER =================
 def get_monster_signals():
-    """
-    المجاني: أفضل صفقتين
-    المدفوع: نضيف paid 15m القوية
-    """
+    """Fetch crypto and Forex signals without mixing market engines."""
     try:
         reset_signal_scan_diagnostics()
-        signals = get_top_free_signals(limit=MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE) or []
+        crypto_signals = get_top_free_signals(limit=MAX_QUALIFIED_OPPORTUNITIES_PER_CYCLE) or []
 
-        # لو السوق ضعيف جدًا، نحاول نجيب صفقة paid واحدة قوية فقط
-        if not signals:
+        if not crypto_signals:
             fallback_candidates = []
-
             try:
                 from market_analyzer import TIMEFRAMES
-
                 for symbol in get_scan_symbols():
                     for tf in TIMEFRAMES:
                         try:
                             s = generate_signal(symbol, tf)
                             if s:
                                 fallback_candidates.append(s)
-                        except:
+                        except Exception:
                             continue
-
                 fallback_candidates = sorted(
                     fallback_candidates,
                     key=lambda x: (x.get("confidence", 0), abs(x.get("score", 0))),
-                    reverse=True
+                    reverse=True,
                 )
-
                 if fallback_candidates:
-                    signals = fallback_candidates[:1]
-
+                    crypto_signals = fallback_candidates[:1]
             except Exception as e:
                 log(f"Fallback paid signal error: {e}")
 
+        crypto_summary = log_signal_scan_summary(len(crypto_signals))
+        try:
+            dominant = max(
+                ((k, v) for k, v in crypto_summary.items() if str(k).startswith("rejected_")),
+                key=lambda item: int(item[1] or 0),
+                default=("none", 0),
+            )[0]
+        except Exception:
+            dominant = "none"
+        log(
+            "CRYPTO_SCAN_SUMMARY "
+            f"symbols_scanned={crypto_summary.get('scanned', 0)} "
+            f"passed_candidates={crypto_summary.get('candidates_built', 0)} "
+            f"final_signals={len(crypto_signals)} "
+            f"dominant_rejection={dominant}"
+        )
+
+        forex_signals = []
+        if get_forex_signals:
+            try:
+                forex_signals = get_forex_signals() or []
+            except Exception as e:
+                log(f"FOREX_SIGNAL_FETCH_ERROR error={e}")
+                forex_signals = []
+        log_forex_scan_summary(len(forex_signals))
+
+        signals = list(crypto_signals) + list(forex_signals)
         final_signals = []
 
         for s in signals:
             s = attach_signal_timestamp(s)
-
             if not valid_signal(s):
                 continue
-
             if not logical_signal(s):
                 log(f"Logical invalid signal skipped: {signal_log_summary(s)}")
                 continue
-
             if not is_qualified_opportunity(s):
                 tier = qualified_opportunity_tier(s)
                 log(f"SIGNAL_REJECTED stage=qualified_opportunity reason=tier_{tier} pair={s.get('pair')}")
                 continue
-
             if not signal_not_expired(s):
                 log(f"Expired signal skipped: {s.get('pair')}")
                 continue
-
             if not signal_is_fresh(s):
                 log(f"Freshness check failed: {s.get('pair')}")
                 continue
-
             if is_duplicate_signal(s):
                 log(f"Duplicate signal skipped: {s.get('pair')}")
                 continue
-
             if is_recent_memory_duplicate(s):
                 log(f"Recent memory duplicate skipped: {s.get('pair')}")
                 continue
-
-            # 🔥 Ultra mode
             if ULTRA_MODE:
                 try:
                     if signal_display_confidence(s) < 75 and qualified_opportunity_tier(s) != "B_PLUS":
                         log(f"Ultra mode rejected: {s.get('pair')} display_conf={signal_display_confidence(s)}")
                         continue
-                except:
+                except Exception:
                     continue
-
             final_signals.append(s)
-            record_trade_type(s.get("type"))
+            if signal_market_bucket(s) != "forex":
+                record_trade_type(s.get("type"))
 
-        # ترتيب الأقوى أولًا
         final_signals = sorted(
             final_signals,
-            key=lambda x: (
-                signal_display_confidence(x),
-                abs(float(x.get("score", 0)))
-            ),
-            reverse=True
+            key=lambda x: (signal_display_confidence(x), abs(float(x.get("score", 0) or 0))),
+            reverse=True,
         )
-
-        log_signal_scan_summary(len(final_signals))
         return final_signals[:MAX_DELIVERIES_PER_CYCLE]
     except Exception as e:
         log(f"get_monster_signals error: {e}")
         log_signal_scan_summary(0)
+        log_forex_scan_summary(0)
         return []
-    
+
 def should_notify_no_signal(chat_id):
     try:
         now = datetime.now()
@@ -2986,6 +3048,8 @@ def run():
             for signal in signals:
                 log(f"Processing signal: {signal_log_summary(signal)}")
                 signal_sent_users = 0
+                delivery_locked_users = 0
+                delivery_blocked_users = 0
                 display_confidence = signal_display_confidence(signal)
                 if display_confidence < 70 and qualified_opportunity_tier(signal) != "B_PLUS":
                     log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
@@ -3029,6 +3093,7 @@ def run():
                         log_unlinked_user_once(email)
                         log_plan_delivery_diag(email, plan, chat_id, False, "missing_chat_id")
                         log_pro_2y_block(plan, "missing_chat_id")
+                        delivery_blocked_users += 1
                         continue
 
                     delivery_product, market_allowed, market_reason = delivery_product_for_signal(user_info, signal)
@@ -3040,6 +3105,7 @@ def run():
                             f"reason={market_reason}"
                         )
                         log_plan_delivery_diag(email, plan, chat_id, False, market_reason)
+                        delivery_blocked_users += 1
                         continue
 
                     # ===== ACCESS CHECK =====
@@ -3047,6 +3113,7 @@ def run():
                         if not is_paid_plan_active(plan, expiry, is_paid):
                             log_plan_delivery_diag(email, plan, chat_id, False, "subscription_inactive")
                             log_pro_2y_block(plan, "subscription_inactive")
+                            delivery_blocked_users += 1
                             continue
 
                     # ===== PLAN FILTER =====
@@ -3061,6 +3128,7 @@ def run():
                         )
                         log_plan_delivery_diag(email, plan, chat_id, False, f"plan_filter:{block_reason}")
                         log_pro_2y_block(plan, block_reason)
+                        delivery_blocked_users += 1
                         continue
 
                     if not is_forex_signal and not type_allowed_for_user(signal.get("type"), spot_enabled, futures_enabled):
@@ -3072,6 +3140,7 @@ def run():
                         )
                         log_plan_delivery_diag(email, plan, chat_id, False, reason)
                         log_pro_2y_block(plan, reason)
+                        delivery_blocked_users += 1
                         continue
 
                     # ===== ELITE FILTER (VIP ONLY) =====
@@ -3079,6 +3148,7 @@ def run():
                         if not elite_trade_filter(signal):
                             log(f"Elite filter rejected: {signal['pair']}")
                             log_plan_delivery_diag(email, plan, chat_id, False, "elite_filter_rejected")
+                            delivery_blocked_users += 1
                             continue
 
                     # ===== RE-CHECK FRESHNESS BEFORE SEND =====
@@ -3086,6 +3156,7 @@ def run():
                         log(f"SIGNAL_SEND_BLOCKED_STALE pair={signal.get('pair')} direction={signal.get('direction')}")
                         log_plan_delivery_diag(email, plan, chat_id, False, "stale_before_send")
                         log_pro_2y_block(plan, "stale_before_send")
+                        delivery_blocked_users += 1
                         continue
 
                     # ===== FREE EARN / SEND SIGNAL =====
@@ -3097,9 +3168,11 @@ def run():
                         except Exception:
                             pass
                         log_plan_delivery_diag(email, plan, chat_id, False, "free_earn_locked")
+                        delivery_locked_users += 1
                         continue
                     if free_earn_state in {"lock_create_failed", "lock_no_base_url", "lock_prompt_failed"}:
                         log_plan_delivery_diag(email, plan, chat_id, False, free_earn_state)
+                        delivery_blocked_users += 1
                         continue
                     if free_earn_state == "credit_used":
                         log(f"FREE_UNLOCK_CREDIT_USED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
@@ -3125,6 +3198,7 @@ def run():
                         log(f"SIGNAL_SEND_FAILED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
                         log_plan_delivery_diag(email, plan, chat_id, False, "telegram_send_failed")
                         log_pro_2y_block(plan, "telegram_send_failed")
+                        delivery_blocked_users += 1
 
                     # ===== AUTO TRADE FOR VIP =====
                     if is_forex_signal:
@@ -3207,6 +3281,7 @@ def run():
                             log(f"Auto trade failed for {chat_id}: {e}")
 
                 log(f"SIGNAL_SENT pair={signal.get('pair')} direction={signal.get('direction')} users={signal_sent_users}")
+                log_delivery_summary(1, len(users), signal_sent_users, delivery_locked_users, delivery_blocked_users)
 
             time.sleep(GLOBAL_LOOP_SLEEP)
 
