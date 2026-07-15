@@ -65,7 +65,8 @@ def status():
 
 def set_webhook():
     url = f"{base_url()}/webhook"
-    telegram("setWebhook", url=url, drop_pending_updates=False)
+    secret = required_env("TELEGRAM_WEBHOOK_SECRET")
+    telegram("setWebhook", url=url, secret_token=secret, drop_pending_updates=False)
     print(f"Webhook set to {url}")
 
 

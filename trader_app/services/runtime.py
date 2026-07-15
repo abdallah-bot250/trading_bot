@@ -1,4 +1,4 @@
-from flask import request, render_template, redirect, session, url_for, jsonify, flash
+﻿from flask import request, render_template, redirect, session, url_for, jsonify, flash
 from markupsafe import Markup
 import psycopg2
 import psycopg2.extras
@@ -183,9 +183,15 @@ def current_bot_link():
 
 def audit_log(action, email=None, details=None, ip=None):
     safe_action = str(action or "unknown")[:120]
-    safe_email = str(email or session.get("user") or "")[:255]
+    raw_email = str(email or session.get("user") or "")[:255].strip().lower()
+    if "@" in raw_email:
+        name, domain = raw_email.split("@", 1)
+        safe_email = f"{name[:2]}***@{domain}"
+    else:
+        safe_email = raw_email[:2] + "***" if raw_email else ""
     safe_details = str(details or "")[:1000]
-    safe_ip = str(ip or request.headers.get("X-Forwarded-For", request.remote_addr) or "")[:120]
+    raw_ip = str(ip or request.headers.get("X-Forwarded-For", request.remote_addr) or "")[:120]
+    safe_ip = raw_ip.split(",", 1)[0].strip()
 
     logger.info("AUDIT action=%s email=%s ip=%s details=%s", safe_action, safe_email, safe_ip, safe_details)
 
@@ -425,7 +431,7 @@ def telegram_deep_referral_link(referral_code):
 
 def send(chat_id, text):
     if not TOKEN or not chat_id:
-        log(f"⚠️ TELEGRAM_TOKEN missing or chat_id empty | chat_id={chat_id}")
+        log(f"TELEGRAM_NOTIFY_SKIPPED token_present={bool(TOKEN)} chat_id_present={bool(chat_id)}")
         return False
     
 
@@ -441,7 +447,7 @@ def send(chat_id, text):
                     "inline_keyboard": [
                         [
                             {
-                                "text": "🌐 الدخول إلى حسابك",
+                                "text": "ðŸŒ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¥Ù„Ù‰ Ø­Ø³Ø§Ø¨Ùƒ",
                                 "url": user_link
                             }
                         ]
@@ -452,18 +458,18 @@ def send(chat_id, text):
         )
 
         if r.status_code != 200:
-            log(f"❌ Telegram send failed: {r.text}")
+            log(f"âŒ Telegram send failed: {r.text}")
             return False
 
         data = r.json()
         if not data.get("ok"):
-            log(f"❌ Telegram API error: {data}")
+            log(f"âŒ Telegram API error: {data}")
             return False
 
         return True
 
     except Exception as e:
-        log(f"❌ Telegram Error: {e}")
+        log(f"âŒ Telegram Error: {e}")
         return False
 
     
@@ -502,9 +508,9 @@ def format_signal(s):
     if intelligence:
         intelligence = "\n\nSignal Intelligence\n" + intelligence
 
-    return f"""━━━━━━━━━━━━━━━━━━
+    return f"""â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 NEXORA TRADE OPPORTUNITY
-━━━━━━━━━━━━━━━━━━
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 
 Market: {s.get('pair', 'N/A')}
 Mode: {s.get('type', 'FUTURES')}
@@ -518,9 +524,9 @@ Targets
 TP1: {tp1}
 TP2: {tp2}{intelligence}
 
-━━━━━━━━━━━━━━━━━━
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 NEXORA ANALYSIS
-━━━━━━━━━━━━━━━━━━
+â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 
 This opportunity was selected after multi-factor market analysis using the decision technology available inside Nexora.
 
@@ -569,11 +575,11 @@ def can_receive_signals(user):
         if user[22] == 1:
             return True
 
-        # trial: أول إشارتين فقط
+        # trial: Ø£ÙˆÙ„ Ø¥Ø´Ø§Ø±ØªÙŠÙ† ÙÙ‚Ø·
         if plan == "trial":
             return trades < 2
 
-        # باقات مدفوعة
+        # Ø¨Ø§Ù‚Ø§Øª Ù…Ø¯ÙÙˆØ¹Ø©
         if user[4] != 1:
             return False
 
@@ -811,7 +817,7 @@ def init_db():
         )
         """)
 
-        # إضافات أمان لو الجدول قديم
+        # Ø¥Ø¶Ø§ÙØ§Øª Ø£Ù…Ø§Ù† Ù„Ùˆ Ø§Ù„Ø¬Ø¯ÙˆÙ„ Ù‚Ø¯ÙŠÙ…
 
         try:
             c.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
@@ -882,14 +888,14 @@ def init_db():
         c.execute("ALTER TABLE processed_payments ADD COLUMN IF NOT EXISTS raw_payload TEXT")
         c.execute("ALTER TABLE affiliate_commissions ADD COLUMN IF NOT EXISTS payment_id TEXT")
 
-        # تنظيف chat_id
+        # ØªÙ†Ø¸ÙŠÙ chat_id
         c.execute("""
             UPDATE users
             SET chat_id = TRIM(chat_id)
             WHERE chat_id IS NOT NULL
         """)
 
-        # منع تكرار chat_id
+        # Ù…Ù†Ø¹ ØªÙƒØ±Ø§Ø± chat_id
         try:
             c.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS users_chat_id_unique
@@ -970,9 +976,9 @@ def init_db():
 
 
         except Exception as idx_err:
-            log(f"⚠️ chat_id unique index warning: {idx_err}")
+            log(f"âš ï¸ chat_id unique index warning: {idx_err}")
 
-        # فعّل الأدمن تلقائيًا لو الإيميل موجود
+        # ÙØ¹Ù‘Ù„ Ø§Ù„Ø£Ø¯Ù…Ù† ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ù„Ùˆ Ø§Ù„Ø¥ÙŠÙ…ÙŠÙ„ Ù…ÙˆØ¬ÙˆØ¯
         try:
             c.execute("""
                 INSERT INTO auto_trade_settings (user_id, user_email)
@@ -1021,7 +1027,7 @@ def init_db():
 
         conn.commit()
         conn.close()
-        log("✅ DB initialized successfully")
+        log("âœ… DB initialized successfully")
 
     except Exception as e:
-        log(f"❌ init_db error: {e}")
+        log(f"âŒ init_db error: {e}")

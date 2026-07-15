@@ -20,7 +20,7 @@ class NoopLimiter:
 
 
 limiter = (
-    Limiter(key_func=get_remote_address, storage_uri="memory://")
+    Limiter(key_func=get_remote_address)
     if Limiter is not None
     else NoopLimiter()
 )

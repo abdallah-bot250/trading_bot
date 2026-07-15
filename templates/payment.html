@@ -260,9 +260,13 @@ h2 {
     </ul>
 </div>
 
-<a href="/create-payment?plan={{plan}}" class="pay-btn">
-🚀 ادفع الآن (Crypto)
-</a>
+<form action="/create-payment" method="POST">
+    {{ csrf_field() }}
+    <input type="hidden" name="plan" value="{{plan}}">
+    <button type="submit" class="pay-btn">
+    🚀 ادفع الآن (Crypto)
+    </button>
+</form>
 
 <div class="secure-note">
 🔐 الدفع يتم بشكل آمن
@@ -284,7 +288,7 @@ h2 {
 <script>
 window.NEXORA_LANG = "{{ current_lang }}";
 </script>
-<script src="/static/i18n.js?v=20260714_lang5"></script>
+<script src="/static/i18n.js?v=20260714_lang6"></script>
 
 <script src="/static/nexora-ui.js?v=final-sale-4"></script>
 </body>

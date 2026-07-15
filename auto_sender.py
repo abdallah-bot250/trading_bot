@@ -37,6 +37,7 @@ MAX_AUTO_TRADE_NOTIONAL_PERCENT = float(os.environ.get("MAX_AUTO_TRADE_NOTIONAL_
 ENABLE_SIGNAL_TRACKING = os.environ.get("ENABLE_SIGNAL_TRACKING", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_TRACKING_NOTIFY = os.environ.get("SIGNAL_TRACKING_NOTIFY", "true").lower() in ["1", "true", "yes", "on"]
 SIGNAL_DEBUG_LOGS = os.environ.get("SIGNAL_DEBUG_LOGS", "").strip().lower() in {"1", "true", "yes", "debug"}
+DIAGNOSTIC_LOGGING = os.environ.get("DIAGNOSTIC_LOGGING", "false").strip().lower() in {"1", "true", "yes", "on"}
 NEXORA_PROOF_MODE = os.environ.get("NEXORA_PROOF_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 MIN_DAILY_SIGNAL_TARGET = int(os.environ.get("MIN_DAILY_SIGNAL_TARGET", "0") or 0)
 NO_SIGNAL_STATUS_ENABLED = os.environ.get("NO_SIGNAL_STATUS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
@@ -102,6 +103,22 @@ LOG_THROTTLE_SECONDS = int(os.environ.get("LOG_THROTTLE_SECONDS", "900"))
 
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+
+
+def mask_email(value):
+    email = str(value or "").strip().lower()
+    if "@" not in email:
+        return "unknown"
+    name, domain = email.split("@", 1)
+    visible = name[:2] if len(name) >= 2 else name[:1]
+    return f"{visible}***@{domain}"
+
+
+def mask_chat_id(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return "missing"
+    return "chat_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
 
 
 def log_once(key, msg, ttl=LOG_THROTTLE_SECONDS):
@@ -251,7 +268,7 @@ def extract_actual_fill_price(order):
 
 
 def log_unlinked_user_once(email):
-    safe_email = str(email or "").strip().lower()
+    safe_email = mask_email(email)
     if not safe_email:
         safe_email = "unknown"
     now = time.time()
@@ -288,7 +305,7 @@ def send(chat_id, text):
     """
     try:
         if not TOKEN:
-            log(f"TELEGRAM_SEND_FAILED token_missing chat_id={chat_id}")
+            log(f"TELEGRAM_SEND_FAILED token_missing chat_ref={mask_chat_id(chat_id)}")
             return False
         if not chat_id:
             log("TELEGRAM_SEND_FAILED chat_id_missing")
@@ -309,33 +326,33 @@ def send(chat_id, text):
                 or "user is deactivated" in lower_text
                 or "forbidden" in lower_text
             ):
-                log(f"BOT_DISCONNECTED_OR_BLOCKED chat_id={chat_id} status={r.status_code} response={response_text[:300]}")
+                log(f"BOT_DISCONNECTED_OR_BLOCKED chat_ref={mask_chat_id(chat_id)} status={r.status_code}")
                 try:
                     write_log(chat_id, "WARNING", f"Bot disconnected or blocked: {r.status_code}")
                 except Exception:
                     pass
             else:
-                log(f"TELEGRAM_SEND_FAILED chat_id={chat_id} status={r.status_code} response={response_text[:500]}")
+                log(f"TELEGRAM_SEND_FAILED chat_ref={mask_chat_id(chat_id)} status={r.status_code}")
             return False
 
         try:
             data = r.json()
         except Exception:
-            log(f"TELEGRAM_SEND_FAILED invalid_json chat_id={chat_id} response={response_text[:300]}")
+            log(f"TELEGRAM_SEND_FAILED invalid_json chat_ref={mask_chat_id(chat_id)}")
             return False
 
         if not data.get("ok"):
-            log(f"TELEGRAM_SEND_FAILED api_not_ok chat_id={chat_id} response={data}")
+            log(f"TELEGRAM_SEND_FAILED api_not_ok chat_ref={mask_chat_id(chat_id)}")
             return False
 
-        log(f"TELEGRAM_SEND_OK chat_id={chat_id}")
+        log(f"TELEGRAM_SEND_OK chat_ref={mask_chat_id(chat_id)}")
         return True
 
     except requests.exceptions.Timeout:
-        log(f"TELEGRAM_SEND_FAILED timeout chat_id={chat_id}")
+        log(f"TELEGRAM_SEND_FAILED timeout chat_ref={mask_chat_id(chat_id)}")
         return False
     except Exception as e:
-        log(f"TELEGRAM_SEND_FAILED exception chat_id={chat_id} error={e}")
+        log(f"TELEGRAM_SEND_FAILED exception chat_ref={mask_chat_id(chat_id)} error={e}")
         return False
     
 
@@ -343,7 +360,7 @@ def send(chat_id, text):
 def send_unlock_prompt(chat_id, unlock_url):
     try:
         if not TOKEN:
-            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED token_missing chat_id={chat_id}")
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED token_missing chat_ref={mask_chat_id(chat_id)}")
             return False
         payload = {
             "chat_id": chat_id,
@@ -375,15 +392,15 @@ Trading involves risk. Signals support decision-making and do not guarantee prof
             timeout=12
         )
         if r.status_code != 200:
-            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED chat_id={chat_id} status={r.status_code} response={(r.text or '')[:300]}")
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED chat_ref={mask_chat_id(chat_id)} status={r.status_code}")
             return False
         data = r.json()
         if not data.get("ok"):
-            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED api_not_ok chat_id={chat_id} response={data}")
+            log(f"TELEGRAM_UNLOCK_PROMPT_FAILED api_not_ok chat_ref={mask_chat_id(chat_id)}")
             return False
         return True
     except Exception as e:
-        log(f"TELEGRAM_UNLOCK_PROMPT_FAILED exception chat_id={chat_id} error={e}")
+        log(f"TELEGRAM_UNLOCK_PROMPT_FAILED exception chat_ref={mask_chat_id(chat_id)} error={e}")
         return False
 
 def free_earn_base_url():
@@ -420,7 +437,7 @@ def send_channel(text):
 
         data = r.json()
         if not data.get("ok"):
-            log(f"CHANNEL_SEND_FAILED api_not_ok response={data}")
+            log("CHANNEL_SEND_FAILED api_not_ok")
             return False
 
         log("CHANNEL_SEND_OK")
@@ -862,7 +879,7 @@ def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, 
         conn.commit()
         conn.close()
         signal_id = row[0] if row else None
-        log(f"Signal tracked id={signal_id} chat_id={chat_id} pair={signal.get('pair')}")
+        log(f"Signal tracked id={signal_id} chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
         if NEXORA_PROOF_MODE:
             log(
                 f"PROOF_SIGNAL_RECORDED id={signal_id} pair={signal.get('pair')} "
@@ -940,7 +957,7 @@ def free_unlock_credits(chat_id):
         conn.close()
         return int(row[0]) if row else 0
     except Exception as e:
-        log(f"FREE_UNLOCK_CREDIT_READ_FAILED chat_id={chat_id} error={e}")
+        log(f"FREE_UNLOCK_CREDIT_READ_FAILED chat_ref={mask_chat_id(chat_id)} error={e}")
         return 0
 
 def add_free_unlock_credit(chat_id):
@@ -959,7 +976,7 @@ def add_free_unlock_credit(chat_id):
         conn.close()
         return True
     except Exception as e:
-        log(f"FREE_UNLOCK_CREDIT_GRANT_FAILED chat_id={chat_id} error={e}")
+        log(f"FREE_UNLOCK_CREDIT_GRANT_FAILED chat_ref={mask_chat_id(chat_id)} error={e}")
         return False
 
 def consume_free_unlock_credit(chat_id):
@@ -984,7 +1001,7 @@ def consume_free_unlock_credit(chat_id):
         conn.close()
         return True
     except Exception as e:
-        log(f"FREE_UNLOCK_CREDIT_CONSUME_FAILED chat_id={chat_id} error={e}")
+        log(f"FREE_UNLOCK_CREDIT_CONSUME_FAILED chat_ref={mask_chat_id(chat_id)} error={e}")
         return False
 
 def create_pending_locked_signal(chat_id, plan, signal):
@@ -1003,7 +1020,7 @@ def create_pending_locked_signal(chat_id, plan, signal):
         conn.close()
         return token
     except Exception as e:
-        log(f"FREE_LOCKED_SIGNAL_CREATE_FAILED chat_id={chat_id} pair={signal.get('pair')} error={e}")
+        log(f"FREE_LOCKED_SIGNAL_CREATE_FAILED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')} error={e}")
         return None
 
 def free_unlock_attempt_allowed(chat_id):
@@ -1053,7 +1070,7 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
                 conn.commit()
                 conn.close()
                 add_free_unlock_credit(chat_id)
-                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
+                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_ref={mask_chat_id(chat_id)}")
                 return {"ok": False, "reason": "expired_credit_granted"}
             conn.rollback()
             conn.close()
@@ -1085,7 +1102,7 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
                 conn.commit()
                 conn.close()
                 add_free_unlock_credit(chat_id)
-                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_id={chat_id}")
+                log(f"FREE_UNLOCK_CREDIT_GRANTED_STALE_SIGNAL chat_ref={mask_chat_id(chat_id)}")
                 return {"ok": False, "reason": "stale_credit_granted"}
             conn.rollback()
             conn.close()
@@ -1107,7 +1124,7 @@ def process_free_unlock_token(token, demo_allowed=False, reward_provider=None, r
         record_sent_signal(chat_id, plan, signal, delivery_mode="free_earn", locked=True, unlocked=True)
         increment_trade(chat_id)
         write_log(chat_id, "INFO", f"Free earned signal unlocked {signal.get('pair')} {signal.get('direction')}")
-        log(f"FREE_SIGNAL_UNLOCKED_AND_SENT chat_id={chat_id} pair={signal.get('pair')}")
+        log(f"FREE_SIGNAL_UNLOCKED_AND_SENT chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
         return {"ok": True, "reason": "sent"}
     except Exception as e:
         try:
@@ -1318,11 +1335,11 @@ def maybe_handle_free_earn_delivery(chat_id, plan, trades, signal):
         return "lock_create_failed"
     base_url = free_earn_base_url()
     if not base_url:
-        log(f"FREE_LOCKED_SIGNAL_NO_BASE_URL chat_id={chat_id}")
+        log(f"FREE_LOCKED_SIGNAL_NO_BASE_URL chat_ref={mask_chat_id(chat_id)}")
         return "lock_no_base_url"
     unlock_url = f"{base_url}/unlock-signal/{token}"
     if send_unlock_prompt(chat_id, unlock_url):
-        log(f"FREE_LOCKED_SIGNAL_CREATED chat_id={chat_id} pair={signal.get('pair')} ttl_minutes={LOCKED_SIGNAL_TTL_MINUTES}")
+        log(f"FREE_LOCKED_SIGNAL_CREATED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')} ttl_minutes={LOCKED_SIGNAL_TTL_MINUTES}")
         write_log(chat_id, "INFO", f"Locked premium signal ready {signal.get('pair')}")
         return "locked_prompt_sent"
     return "lock_prompt_failed"
@@ -1660,7 +1677,7 @@ def log_plan_delivery_diag(email, plan, chat_id, eligible, reason_if_not_sent):
     try:
         log(
             "PLAN_DELIVERY_DIAG "
-            f"email={email or ''} "
+            f"email={mask_email(email)} "
             f"plan={plan or ''} "
             f"chat_id_exists={bool(chat_id)} "
             f"eligible={bool(eligible)} "
@@ -1830,7 +1847,7 @@ def load_primary_auto_trade_connection(user_info, signal_trade_type):
             return None, f"exchange_not_live_enabled:{connection['exchange']}"
         return connection, "multi_exchange"
     except Exception as e:
-        log(f"MULTI_EXCHANGE_CONNECTION_LOOKUP_FAILED email={email} reason={e}")
+        log(f"MULTI_EXCHANGE_CONNECTION_LOOKUP_FAILED email={mask_email(email)} reason={e}")
         return None, "lookup_failed"
 
 
@@ -3085,7 +3102,7 @@ def run():
                         log_plan_delivery_diag(email, plan, chat_id, False, free_earn_state)
                         continue
                     if free_earn_state == "credit_used":
-                        log(f"FREE_UNLOCK_CREDIT_USED chat_id={chat_id} pair={signal.get('pair')}")
+                        log(f"FREE_UNLOCK_CREDIT_USED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
 
                     msg = format_signal(signal, delivery_product)
                     sent_ok = send(chat_id, msg)
@@ -3105,7 +3122,7 @@ def run():
                         if plan == "trial" and not is_forex_signal:
                             increment_trade(chat_id)
                     else:
-                        log(f"SIGNAL_SEND_FAILED chat_id={chat_id} pair={signal.get('pair')}")
+                        log(f"SIGNAL_SEND_FAILED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
                         log_plan_delivery_diag(email, plan, chat_id, False, "telegram_send_failed")
                         log_pro_2y_block(plan, "telegram_send_failed")
 

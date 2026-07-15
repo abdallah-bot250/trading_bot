@@ -1,7 +1,8 @@
 import os
 import hmac
+import hashlib
 from decimal import Decimal, InvalidOperation
-from flask import Blueprint, render_template_string
+from flask import Blueprint, Response, render_template_string
 from urllib.parse import quote_plus, urlparse
 from trader_app.extensions import limiter
 from trader_app.services.payments import (
@@ -13,6 +14,7 @@ from trader_app.services.payments import (
     normalize_coupon_code,
     payment_status_bucket,
     validate_nowpayments_signature,
+    webhook_payload_fingerprint,
 )
 from trader_app.services.runtime import *
 from trader_app.services.telegram import (
@@ -58,9 +60,75 @@ payments_bp = Blueprint("payments", __name__)
 admin_bp = Blueprint("admin", __name__)
 telegram_bp = Blueprint("telegram", __name__)
 
+
+def mask_email_for_log(value):
+    email = str(value or "").strip().lower()
+    if "@" not in email:
+        return "unknown" if not email else email[:2] + "***"
+    name, domain = email.split("@", 1)
+    return f"{name[:2]}***@{domain}"
+
+
+def mask_chat_ref(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return "missing"
+    return "chat_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
+
+
 @public_bp.route("/")
 def landing():
     return render_template("landing.html")
+
+
+@public_bp.route("/robots.txt")
+def robots_txt():
+    base = current_base_url()
+    body = "\n".join([
+        "User-agent: *",
+        "Allow: /$",
+        "Allow: /proof",
+        "Allow: /bot-check",
+        "Allow: /company/privacy-policy",
+        "Allow: /company/terms",
+        "Allow: /company/risk-disclaimer",
+        "Disallow: /dashboard",
+        "Disallow: /admin",
+        "Disallow: /payments",
+        "Disallow: /payment",
+        "Disallow: /create-payment",
+        "Disallow: /manual-payment",
+        "Disallow: /invoice-history",
+        "Disallow: /api/",
+        "Disallow: /webhook",
+        "Disallow: /payment-webhook",
+        f"Sitemap: {base}/sitemap.xml",
+        "",
+    ])
+    return Response(body, mimetype="text/plain")
+
+
+@public_bp.route("/sitemap.xml")
+def sitemap_xml():
+    base = current_base_url()
+    urls = [
+        "/",
+        "/proof",
+        "/bot-check",
+        "/company/privacy-policy",
+        "/company/terms",
+        "/company/refund-policy",
+        "/company/risk-disclaimer",
+        "/company/cookie-policy",
+        "/company/contact",
+        "/company/faq",
+    ]
+    items = "".join(
+        f"<url><loc>{base}{path}</loc><changefreq>weekly</changefreq><priority>{'1.0' if path == '/' else '0.7'}</priority></url>"
+        for path in urls
+    )
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{items}</urlset>'
+    return Response(xml, mimetype="application/xml")
 
 
 
@@ -703,7 +771,7 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
                 bot_active = 0
             WHERE id = %s
         """, (old_user_id,))
-        log(f"TELEGRAM_CHAT_REASSIGNED old_user_id={old_user_id} new_user_id={current_user_id} chat_id={chat_id}")
+        log(f"TELEGRAM_CHAT_REASSIGNED old_user_id={old_user_id} new_user_id={current_user_id} chat_ref={mask_chat_ref(chat_id)}")
 
     c.execute("""
         UPDATE users
@@ -712,7 +780,7 @@ def reassign_telegram_chat(c, current_user_id, chat_id, email=None):
         WHERE id = %s
     """, (chat_id, current_user_id))
     if email:
-        log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
+        log(f"LOGIN_LINKED_TELEGRAM email={mask_email_for_log(email)} chat_ref={mask_chat_ref(chat_id)}")
     return bool(old_user_id and int(old_user_id) != int(current_user_id))
 
 
@@ -805,7 +873,7 @@ def _record_registration_referral(c, conn, referrer_chat_id, referred_chat_id, r
     if not referrer_chat_id or not referred_chat_id:
         return False
     if referrer_chat_id == referred_chat_id:
-        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_chat_id} referred_email={referred_email}")
+        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={mask_chat_ref(referrer_chat_id)} referred_email={mask_email_for_log(referred_email)}")
         return False
     try:
         c.execute("SAVEPOINT referral_register_sp")
@@ -818,14 +886,14 @@ def _record_registration_referral(c, conn, referrer_chat_id, referred_chat_id, r
         """, (referrer_chat_id, referred_chat_id))
         if c.fetchone():
             c.execute("RELEASE SAVEPOINT referral_register_sp")
-            log(f"REFERRAL_DUPLICATE_SKIPPED referrer={referrer_chat_id} referred_email={referred_email}")
+            log(f"REFERRAL_DUPLICATE_SKIPPED referrer={mask_chat_ref(referrer_chat_id)} referred_email={mask_email_for_log(referred_email)}")
             return False
         c.execute("""
             INSERT INTO affiliate_referrals (referrer_chat_id, referred_chat_id, referred_email)
             VALUES (%s, %s, %s)
         """, (referrer_chat_id, referred_chat_id, referred_email))
         c.execute("RELEASE SAVEPOINT referral_register_sp")
-        log(f"REFERRAL_REGISTERED referrer={referrer_chat_id} referred_email={referred_email}")
+        log(f"REFERRAL_REGISTERED referrer={mask_chat_ref(referrer_chat_id)} referred_email={mask_email_for_log(referred_email)}")
         return True
     except Exception as e:
         try:
@@ -833,7 +901,7 @@ def _record_registration_referral(c, conn, referrer_chat_id, referred_chat_id, r
             c.execute("RELEASE SAVEPOINT referral_register_sp")
         except Exception:
             pass
-        log(f"REFERRAL_REGISTER_ROW_SKIPPED referrer={referrer_chat_id} referred_email={referred_email} error={e}")
+        log(f"REFERRAL_REGISTER_ROW_SKIPPED referrer={mask_chat_ref(referrer_chat_id)} referred_email={mask_email_for_log(referred_email)} error={e}")
         return False
 
 # ================= REGISTER =================
@@ -864,8 +932,8 @@ def register():
                 flash("❌ لازم تدخل إيميل صحيح", "error")
                 return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
-            if len(password_raw) < 6:
-                flash("❌ الباسورد لازم يكون 6 أحرف أو أكثر", "error")
+            if len(password_raw) < 10:
+                flash("❌ الباسورد لازم يكون 10 أحرف أو أكثر", "error")
                 return redirect(url_for("auth.register", chat_id=chat_id, ref=ref))
 
             conn = db()
@@ -913,7 +981,7 @@ def register():
                 existing_chat_user = c.fetchone()
                 if existing_chat_user:
                     conn.close()
-                    log(f"REGISTER_CHAT_ID_EXISTS user_id={existing_chat_user[0]} chat_id={chat_id}")
+                    log(f"REGISTER_CHAT_ID_EXISTS user_id={existing_chat_user[0]} chat_ref={mask_chat_ref(chat_id)}")
                     flash("Telegram account already linked. Please login.", "error")
                     return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
@@ -923,14 +991,14 @@ def register():
                 c.execute("SELECT chat_id, email FROM users WHERE referral_code = %s LIMIT 1", (final_ref,))
                 ref_user = c.fetchone()
                 if not ref_user:
-                    log(f"REFERRAL_INVALID_CODE code={final_ref} referred_email={email}")
+                    log(f"REFERRAL_INVALID_CODE code={final_ref} referred_email={mask_email_for_log(email)}")
                 else:
                     referrer_chat_id = str(ref_user[0] or "").strip()
                     referrer_email = str(ref_user[1] or "").strip().lower() if len(ref_user) > 1 else ""
                     if referrer_chat_id and chat_id and referrer_chat_id == str(chat_id).strip():
-                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_chat_id} referred_email={email}")
+                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={mask_chat_ref(referrer_chat_id)} referred_email={mask_email_for_log(email)}")
                     elif referrer_email and referrer_email == email:
-                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={referrer_email} referred_email={email}")
+                        log(f"REFERRAL_SELF_REFERRAL_REJECTED referrer={mask_email_for_log(referrer_email)} referred_email={mask_email_for_log(email)}")
                     else:
                         referred_by = final_ref
 
@@ -969,7 +1037,7 @@ def register():
                 _record_registration_referral(c, conn, referrer_chat_id, chat_id, email)
 
             if chat_id:
-                log(f"LOGIN_LINKED_TELEGRAM email={email} chat_id={chat_id}")
+                log(f"LOGIN_LINKED_TELEGRAM email={mask_email_for_log(email)} chat_ref={mask_chat_ref(chat_id)}")
                 flash("Telegram account linked successfully.", "success")
 
             verification_token = create_email_verification_token(email, conn)
@@ -980,14 +1048,16 @@ def register():
 
             conn.close()
 
+            session.clear()
             session["user"] = email
             session["is_admin"] = True if is_admin_email(email) else False
+            session.permanent = True
             sent, verification_link = send_verification_email(email, verification_token)
             audit_log("register_success", email, f"chat_id_linked={bool(chat_id)} verification_email_sent={sent}")
             if not sent:
                 flash(f"Verification link: {verification_link}", "success")
 
-            log(f"New user registered: {email} | chat_id={chat_id} | ref={final_ref}")
+            log(f"NEW_USER_REGISTERED email={mask_email_for_log(email)} chat_ref={mask_chat_ref(chat_id)} ref_present={bool(final_ref)}")
 
             flash("✅ تم إنشاء الحساب بنجاح", "success")
             return redirect("/dashboard")
@@ -1030,13 +1100,13 @@ def login():
             password = (request.form.get("password") or "").strip()
 
             if not email or not password:
-                log(f"LOGIN_FAILED email={email} reason=missing_credentials")
+                log(f"LOGIN_FAILED email={mask_email_for_log(email)} reason=missing_credentials")
                 flash("❌ لازم تكتب الإيميل والباسورد", "error")
                 return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             email_pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
             if not re.match(email_pattern, email):
-                log(f"LOGIN_FAILED email={email} reason=invalid_email")
+                log(f"LOGIN_FAILED email={mask_email_for_log(email)} reason=invalid_email")
                 flash("❌ لازم تدخل إيميل صحيح", "error")
                 return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
@@ -1053,9 +1123,9 @@ def login():
 
             if not user:
                 conn.close()
-                log(f"LOGIN_FAILED email={email} reason=unknown_email")
+                log(f"LOGIN_FAILED email={mask_email_for_log(email)} reason=unknown_email")
                 audit_log("login_unknown_email", email)
-                flash("❌ الإيميل غير موجود", "error")
+                flash("❌ البريد الإلكتروني أو كلمة المرور غير صحيحة", "error")
                 return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             user_id = user[0]
@@ -1063,9 +1133,9 @@ def login():
 
             if not check_password_hash(stored_password, password):
                 conn.close()
-                log(f"LOGIN_FAILED email={email} reason=bad_password")
+                log(f"LOGIN_FAILED email={mask_email_for_log(email)} reason=bad_password")
                 audit_log("login_bad_password", email)
-                flash("❌ الباسورد غير صحيح", "error")
+                flash("❌ البريد الإلكتروني أو كلمة المرور غير صحيحة", "error")
                 return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
             moved_chat = False
@@ -1081,10 +1151,12 @@ def login():
 
             conn.close()
 
+            session.clear()
             session["user"] = email
             session["is_admin"] = True if is_admin_email(email) else False
+            session.permanent = True
             audit_log("login_success", email, f"chat_id_linked={bool(chat_id)}")
-            log(f"LOGIN_SUCCESS email={email} chat_id={chat_id}")
+            log(f"LOGIN_SUCCESS email={mask_email_for_log(email)} chat_ref={mask_chat_ref(chat_id)}")
             return redirect("/dashboard")
 
         except Exception as e:
@@ -1094,15 +1166,17 @@ def login():
                     conn.close()
             except Exception:
                 pass
-            log(f"LOGIN_FAILED email={(request.form.get('email') or '').strip().lower()} reason=exception error={e}")
+            log(f"LOGIN_FAILED email={mask_email_for_log((request.form.get('email') or '').strip().lower())} reason=exception error={e}")
             flash("❌ حصل خطأ أثناء تسجيل الدخول", "error")
             return redirect(url_for("auth.login", chat_id=chat_id, ref=ref))
 
     return render_template("login.html", chat_id=chat_id, ref=ref)
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/logout", methods=["GET", "POST"])
 def logout():
+    if request.method != "POST":
+        return redirect("/login")
     audit_log("logout", session.get("user"))
     session.clear()
     return redirect("/login")
@@ -1172,7 +1246,7 @@ def forgot_password():
                 if token:
                     reset_sent, reset_link = send_password_reset_email(email, token)
                     if not reset_sent:
-                        log(f"PASSWORD_RESET_EMAIL_FAILED email={email}")
+                        log(f"PASSWORD_RESET_EMAIL_FAILED email={mask_email_for_log(email)}")
                 audit_log("password_reset_requested", email, f"sent={reset_sent}")
             except Exception as e:
                 log(f"forgot_password error: {e}")
@@ -1197,8 +1271,8 @@ def reset_password(token):
 
     if request.method == "POST":
         password = (request.form.get("password") or "").strip()
-        if len(password) < 8:
-            flash("Password must be at least 8 characters.", "error")
+        if len(password) < 10:
+            flash("Password must be at least 10 characters.", "error")
             return render_template("reset_password.html", token=token)
 
         try:
@@ -1503,7 +1577,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     created_at = link_row[2]
     used_at = link_row[3]
     if used_at or telegram_link_is_expired(created_at):
-        log(f"TELEGRAM_LINK_FAILED reason=token_used_or_expired user_email={user_email} chat_id_present=True")
+        log(f"TELEGRAM_LINK_FAILED reason=token_used_or_expired user_email={mask_email_for_log(user_email)} chat_id_present=True")
         send(chat_id, "NEXORA ACCOUNT LINK\n\nThis Telegram link has expired. Open your Nexora dashboard and tap Connect Telegram Bot again to generate a fresh secure link.")
         return True
 
@@ -1515,7 +1589,7 @@ def handle_telegram_link_token(c, conn, chat_id, token):
     """, (user_email,))
     target_user = c.fetchone()
     if not target_user:
-        log(f"TELEGRAM_LINK_FAILED reason=user_not_found user_email={user_email} chat_id_present=True")
+        log(f"TELEGRAM_LINK_FAILED reason=user_not_found user_email={mask_email_for_log(user_email)} chat_id_present=True")
         send(chat_id, "NEXORA ACCOUNT LINK\n\nNo Nexora account was found for this secure link. Please register on the website first, then connect Telegram from your dashboard.")
         return True
 
@@ -1849,7 +1923,7 @@ def dashboard():
         telegram_link_token = create_telegram_link_token(c, user.get("email"))
         telegram_connect_link = f"{current_bot_link()}?start=link_{telegram_link_token}"
         if not is_linked:
-            log(f"TELEGRAM_USER_NOT_LINKED email={user.get('email')}")
+            log(f"TELEGRAM_USER_NOT_LINKED email={mask_email_for_log(user.get('email'))}")
         active_subscriptions = get_user_subscription_cards(user, conn)
         market_capabilities = get_user_market_capabilities(user.get("id"), user, conn)
         conn.commit()
@@ -2437,7 +2511,7 @@ def _dashboard_section(section_key):
                 ("Elite", f"${PLAN_PRICES.get('vip')}"),
                 ("Pro 2 Years", f"${PLAN_PRICES.get('pro_2y')}"),
             ],
-            "actions": [("Pay Basic", "/create-payment?plan=basic"), ("Manual Payment", "/manual-payment/basic"), ("Invoices", "/invoice-history")],
+            "actions": [("Pay Basic", "/payments#pricing"), ("Manual Payment", "/manual-payment/basic"), ("Invoices", "/invoice-history")],
         },
         "profile": {
             "title": "Profile",
@@ -3734,13 +3808,18 @@ def toggle_bot():
 
 
 # ================= CREATE PAYMENT =================
-@payments_bp.route("/create-payment")
+@payments_bp.route("/create-payment", methods=["GET", "POST"])
 def create_payment():
     if not session.get("user"):
         return redirect("/login")
 
-    plan = request.args.get("plan", "basic").strip().lower()
-    coupon_code = normalize_coupon_code(request.args.get("coupon", ""))
+    if request.method != "POST":
+        requested_plan = (request.args.get("plan") or "").strip().lower()
+        log(f"CREATE_PAYMENT_GET_BLOCKED plan={requested_plan or 'missing'}")
+        return redirect("/payments")
+
+    plan = request.form.get("plan", "basic").strip().lower()
+    coupon_code = normalize_coupon_code(request.form.get("coupon", ""))
 
     if is_vip_all_forex_payment_code(plan) and float(PLAN_PRICES.get(plan) or 0) <= 0:
         return "VIP ALL FOREX price is not configured yet. Please contact support or use manual payment."
@@ -3786,6 +3865,25 @@ def create_payment():
 
         original_amount, discount_amount, amount = apply_coupon_amount(plan, coupon_row)
 
+        c.execute("""
+            SELECT invoice_url
+            FROM payment_invoices
+            WHERE chat_id = %s
+              AND plan = %s
+              AND amount = %s
+              AND COALESCE(coupon_code, '') = COALESCE(%s, '')
+              AND status IN ('created', 'waiting', 'confirming', 'pending')
+              AND invoice_url IS NOT NULL
+              AND created_at >= NOW() - INTERVAL '30 minutes'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (chat_id, plan, amount, coupon_code or None))
+        recent_invoice = c.fetchone()
+        if recent_invoice and recent_invoice[0]:
+            conn.close()
+            log(f"NOWPAYMENTS_REUSE_PENDING_INVOICE plan={plan} chat_id_present=True")
+            return redirect(recent_invoice[0])
+
         payload = {
             "price_amount": amount,
             "price_currency": "usd",
@@ -3814,7 +3912,7 @@ def create_payment():
         except:
             data = {"raw_response": r.text}
 
-        log(f"NOWPayments response: {data}")
+        log(f"NOWPAYMENTS_CREATE_RESPONSE ok={bool(data.get('invoice_url'))} status={r.status_code} invoice_id_present={bool(data.get('id') or data.get('invoice_id'))}")
 
         invoice_id = str(data.get("id") or data.get("invoice_id") or "").strip()
         invoice_url = data.get("invoice_url")
@@ -4277,6 +4375,14 @@ def admin_dashboard():
         pro_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro'", default=0) or 0)
         vip_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'vip'", default=0) or 0)
         pro_2y_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE plan = 'pro_2y'", default=0) or 0)
+        vip_all_forex_users = int(safe_scalar("""
+            SELECT COUNT(*)
+            FROM user_subscriptions
+            WHERE product_code = 'vip_all_forex'
+              AND status = 'active'
+              AND COALESCE(is_paid, 0) = 1
+              AND (expires_at IS NULL OR expires_at >= NOW())
+        """, default=0) or 0)
         lifetime_users = 0
         free_users = int(safe_scalar("SELECT COUNT(*) FROM users WHERE COALESCE(is_paid, 0) != 1", default=0) or 0)
         subscription_rows = safe_rows("SELECT is_paid, plan, expiry, bot_active FROM users")
@@ -4385,7 +4491,7 @@ def admin_dashboard():
         affiliate_referrals = int(safe_scalar("SELECT COUNT(*) FROM affiliate_referrals", default=0) or 0)
         affiliate_balance_total = round(float(safe_scalar("SELECT COALESCE(SUM(affiliate_balance), 0) FROM users", default=0) or 0), 2)
         affiliate_withdrawn = round(float(safe_scalar("SELECT COALESCE(SUM(amount), 0) FROM affiliate_withdrawals WHERE status = 'paid'", default=0) or 0), 2)
-        active_plans_count = basic_users + pro_users + vip_users + pro_2y_users
+        active_plans_count = basic_users + pro_users + vip_users + pro_2y_users + vip_all_forex_users
         ai_score = min(99, max(50, round(62 + (signal_win_rate * 0.25) + min(signals_total, 100) * 0.08 + (8 if signals_profit > 0 else 0), 2)))
         avg_signal_pnl = round(signals_profit / signals_closed, 2) if signals_closed else 0
         telegram_delivery_rate = round((linked_users / total_users) * 100, 2) if total_users else 0
@@ -4455,6 +4561,7 @@ def admin_dashboard():
             "free_earn_users": free_earn_users,
             "adsgram_rewards": adsgram_rewards,
             "adsgram_rewarded": adsgram_rewarded,
+            "vip_all_forex_users": vip_all_forex_users,
         }
 
         user_rows = safe_rows("""
@@ -4506,6 +4613,7 @@ def admin_dashboard():
             pro_users=pro_users,
             vip_users=vip_users,
             pro_2y_users=pro_2y_users,
+            vip_all_forex_users=vip_all_forex_users,
             lifetime_users=lifetime_users,
             free_users=free_users,
             pending_withdrawals=pending_withdrawals,
@@ -4539,6 +4647,7 @@ def admin_dashboard():
             pro_users=0,
             vip_users=0,
             pro_2y_users=0,
+            vip_all_forex_users=0,
             lifetime_users=0,
             free_users=0,
             pending_withdrawals=0,
@@ -5032,6 +5141,10 @@ def run_telegram_broadcast(c, message, paid_only=False):
 @telegram_bp.route("/webhook", methods=["POST"])
 def webhook():
     expected_secret = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    allow_insecure_dev = (os.environ.get("TELEGRAM_WEBHOOK_ALLOW_INSECURE_DEV") or "").strip().lower() in {"1", "true", "yes"}
+    if not expected_secret and not allow_insecure_dev:
+        log("TELEGRAM_WEBHOOK_REJECTED reason=missing_secret")
+        return "webhook unavailable", 503
     if expected_secret:
         received_secret = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
         if not received_secret or not hmac.compare_digest(received_secret, expected_secret):
@@ -5049,9 +5162,10 @@ def webhook():
             log("⚠️ Telegram webhook received without chat_id")
             return "ok", 200
 
-        log(f"📩 Telegram message | chat_id={chat_id} | text={text}")
-
         command = text.split(maxsplit=1)[0].lower() if text else ""
+        chat_fingerprint = hashlib.sha256(chat_id.encode("utf-8")).hexdigest()[:12]
+        log(f"TELEGRAM_UPDATE chat={chat_fingerprint} command={command or 'message'}")
+
 
         if command in ["/help", "/commands"]:
             try:
@@ -5182,7 +5296,7 @@ def webhook():
                         conn.rollback()
                     except Exception:
                         pass
-                    log(f"TELEGRAM_LINK_TOKEN_ERROR chat_id={chat_id} error={link_err}")
+                    log(f"TELEGRAM_LINK_TOKEN_ERROR chat_ref={mask_chat_ref(chat_id)} error={link_err}")
                     send(chat_id, "Telegram link failed. Open your Nexora dashboard and tap Connect Telegram Bot again.")
                 finally:
                     conn.close()
@@ -5426,7 +5540,7 @@ def webhook():
                 aff_link = telegram_referral_link(referral_code)
 
                 log(
-                    f"AFFILIATE_STATS_VIEW chat_id={chat_id} "
+                    f"AFFILIATE_STATS_VIEW chat_ref={mask_chat_ref(chat_id)} "
                     f"registered={registered} active={active} paid={paid} balance={round(balance, 2)}"
                 )
 
@@ -5472,31 +5586,58 @@ Maximum withdrawal: $300
 
 # ================= PAYMENT WEBHOOK =================
 def get_nowpayments_ipn_secret():
-    for env_name in ("NOWPAYMENTS_IPN_SECRET", "NOWPAYMENTS_IPN_CALLBACK_SECRET", "IPN_SECRET"):
-        value = os.environ.get(env_name, "").strip()
-        if value:
-            return value, env_name
-    return "", None
+    value = os.environ.get("NOWPAYMENTS_IPN_SECRET", "").strip()
+    return value, "NOWPAYMENTS_IPN_SECRET" if value else None
+
+
+def safe_payment_payload_for_audit(data):
+    data = data or {}
+    safe_keys = (
+        "payment_id",
+        "invoice_id",
+        "id",
+        "order_id",
+        "order_description",
+        "payment_status",
+        "price_amount",
+        "price_currency",
+        "pay_currency",
+        "actually_paid",
+    )
+    return json.dumps({key: data.get(key) for key in safe_keys if key in data}, ensure_ascii=False, sort_keys=True)
 
 
 @payments_bp.route("/payment-webhook", methods=["POST"])
 def payment_webhook():
+    raw_body = request.get_data(cache=True) or b""
     data = request.get_json(silent=True) or {}
-    raw_payload = json.dumps(data, ensure_ascii=False)
+    raw_payload = safe_payment_payload_for_audit(data)
 
     try:
         signature = request.headers.get("x-nowpayments-sig", "").strip()
         ipn_secret, ipn_env_name = get_nowpayments_ipn_secret()
-        log(f"NOWPAYMENTS_IPN_CHECK signature_present={bool(signature)} ipn_secret_configured={bool(ipn_secret)} env={ipn_env_name or 'missing'}")
+        canonical_hash, canonical_len = webhook_payload_fingerprint(data)
+        log(
+            "NOWPAYMENTS_IPN_CHECK "
+            f"signature_present={bool(signature)} "
+            f"signature_len={len(signature)} "
+            f"ipn_secret_configured={bool(ipn_secret)} "
+            f"ipn_secret_len={len(ipn_secret)} "
+            f"env={ipn_env_name or 'missing'} "
+            f"json_valid={bool(data)} "
+            f"raw_len={len(raw_body)} "
+            f"canonical_sha256={canonical_hash} "
+            f"canonical_len={canonical_len}"
+        )
         valid_signature, generated_sig = validate_nowpayments_signature(data, signature, ipn_secret)
 
         if not valid_signature:
             if not signature:
                 log("NOWPAYMENTS_IPN_REJECTED reason=missing_signature ipn_secret_configured=%s" % bool(ipn_secret))
             elif not ipn_secret:
-                log("NOWPAYMENTS_IPN_REJECTED reason=missing_ipn_secret supported_env=NOWPAYMENTS_IPN_SECRET,NOWPAYMENTS_IPN_CALLBACK_SECRET,IPN_SECRET")
+                log("NOWPAYMENTS_IPN_REJECTED reason=missing_ipn_secret supported_env=NOWPAYMENTS_IPN_SECRET")
             else:
-                log("NOWPAYMENTS_IPN_REJECTED reason=invalid_signature ipn_secret_configured=True")
+                log(f"NOWPAYMENTS_IPN_REJECTED reason=invalid_signature ipn_secret_configured=True signature_len={len(signature)} canonical_sha256={canonical_hash}")
             try:
                 conn = db()
                 c = conn.cursor()
@@ -5506,11 +5647,11 @@ def payment_webhook():
                 """, (
                     str(data.get("payment_id") or ""),
                     str(data.get("invoice_id") or ""),
-                    str(data.get("order_id") or ""),
+                    "",
                     str(data.get("order_description") or ""),
                     str(data.get("payment_status") or "signature_error"),
                     "invalid_signature",
-                    raw_payload,
+                    safe_payment_payload_for_audit(data),
                 ))
                 conn.commit()
                 conn.close()
@@ -5524,6 +5665,7 @@ def payment_webhook():
         invoice_id = str(data.get("invoice_id") or data.get("id") or "").strip()
         chat_id = str(data.get("order_id") or "").strip()
         plan = (data.get("order_description") or "basic").strip().lower()
+        log(f"NOWPAYMENTS_IPN_ACCEPTED status={payment_status} payment_id_present={bool(payment_id)} invoice_id_present={bool(invoice_id)} plan={plan}")
 
         if plan not in PLAN_PRICES:
             log(f"❌ Invalid payment plan ignored: {plan}")
@@ -5537,31 +5679,58 @@ def payment_webhook():
 
         conn = db()
         c = conn.cursor()
+        # Serialize callbacks for the same provider payment to prevent double activation.
+        c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (payment_id,))
 
         c.execute("""
-            SELECT id, amount, original_amount, discount_amount, coupon_code, invoice_url, status
+            SELECT id, amount, original_amount, discount_amount, coupon_code, invoice_url, status,
+                   chat_id, plan, currency
             FROM payment_invoices
-            WHERE (invoice_id = %s AND %s <> '')
-               OR (payment_id = %s AND %s <> '')
-               OR (chat_id = %s AND plan = %s)
+            WHERE invoice_id = %s AND %s <> ''
             ORDER BY created_at DESC
             LIMIT 1
-        """, (invoice_id, invoice_id, payment_id, payment_id, chat_id, plan))
+            FOR UPDATE
+        """, (invoice_id, invoice_id))
         invoice = c.fetchone()
-        invoice_row_id = invoice[0] if invoice else None
-        paid_amount = float(invoice[1] if invoice else PLAN_PRICES.get(plan, PLAN_PRICES["basic"]))
-        coupon_code = invoice[4] if invoice else None
-        invoice_url = invoice[5] if invoice else None
+        if not invoice:
+            c.execute("""
+                INSERT INTO failed_payments (payment_id, invoice_id, order_id, plan, payment_status, reason, raw_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (payment_id, invoice_id, chat_id, plan, payment_status, "invoice_not_found", raw_payload))
+            conn.commit()
+            conn.close()
+            log(f"NOWPAYMENTS_REJECTED reason=invoice_not_found invoice_id={invoice_id}")
+            return "invoice not found", 409
+
+        invoice_row_id = invoice[0]
+        coupon_code = invoice[4]
+        invoice_url = invoice[5]
+        invoice_chat_id = str(invoice[7] or "").strip()
+        invoice_plan = str(invoice[8] or "").strip().lower()
+        expected_currency = str(invoice[9] or "usd").strip().lower()
+
+        if invoice_chat_id != chat_id or invoice_plan != plan:
+            c.execute("""
+                INSERT INTO failed_payments (payment_id, invoice_id, order_id, plan, payment_status, reason, raw_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (payment_id, invoice_id, chat_id, plan, payment_status, "invoice_identity_mismatch", raw_payload))
+            conn.commit()
+            conn.close()
+            log("NOWPAYMENTS_REJECTED reason=invoice_identity_mismatch")
+            return "invoice mismatch", 409
 
         bucket = payment_status_bucket(payment_status)
-        expected_amount = Decimal(str(invoice[1] if invoice else PLAN_PRICES.get(plan, PLAN_PRICES["basic"])))
+        expected_amount = Decimal(str(invoice[1]))
         try:
             provider_amount = Decimal(str(data.get("price_amount")))
         except (InvalidOperation, TypeError):
             provider_amount = Decimal("-1")
         tolerance = Decimal(str(os.environ.get("PAYMENT_AMOUNT_TOLERANCE", "0.01")))
+        provider_currency = str(data.get("price_currency") or "").strip().lower()
         mismatch_reason = None
-        if bucket == "success" and provider_amount < 0:
+        if bucket == "success" and provider_currency != expected_currency:
+            mismatch_reason = "currency_mismatch"
+        elif bucket == "success" and provider_amount < 0:
             mismatch_reason = "missing_price_amount"
         elif bucket == "success" and provider_amount < (expected_amount - tolerance):
             mismatch_reason = "amount_underpaid"
@@ -5651,21 +5820,35 @@ def payment_webhook():
             log(f"⚠️ Duplicate payment ignored: {payment_id}")
             return "already processed", 200
 
-        # خزّن العملية أولاً
-        c.execute("""
-            INSERT INTO processed_payments (
-                payment_id, order_id, payment_status, plan, amount, currency, invoice_id, invoice_url, raw_payload
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (payment_id, chat_id, payment_status, plan, paid_amount, "usd", invoice_id, invoice_url, raw_payload))
-
         c.execute("""
             SELECT id, email, referred_by, expiry, lifetime_owner
             FROM users
             WHERE chat_id = %s
             LIMIT 1
+            FOR UPDATE
         """, (chat_id,))
         buyer = c.fetchone()
+        if not buyer:
+            c.execute("""
+                INSERT INTO failed_payments (payment_id, invoice_id, order_id, plan, payment_status, reason, raw_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (payment_id, invoice_id, chat_id, plan, payment_status, "buyer_not_found", raw_payload))
+            c.execute("""
+                UPDATE payment_invoices
+                SET payment_id = %s, status = 'manual_review', raw_response = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (payment_id, raw_payload, invoice_row_id))
+            conn.commit()
+            conn.close()
+            log("NOWPAYMENTS_REVIEW reason=buyer_not_found")
+            return "buyer not found", 409
+
+        c.execute("""
+            INSERT INTO processed_payments (
+                payment_id, order_id, payment_status, plan, amount, currency, invoice_id, invoice_url, raw_payload
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (payment_id, chat_id, payment_status, plan, paid_amount, expected_currency, invoice_id, invoice_url, raw_payload))
         previous_expiry = buyer[3] if buyer else None
         if is_vip_all_forex_payment_code(plan) and buyer:
             ensure_user_subscriptions_table(conn)
@@ -5877,7 +6060,7 @@ def payment_webhook():
 🚀 هتوصلك الإشارات تلقائي الآن
 """)
 
-        log(f"✅ Payment activated for chat_id={chat_id}, plan={plan}, payment_id={payment_id}, expiry={new_expiry}")
+        log(f"PAYMENT_ACTIVATED chat_ref={mask_chat_ref(chat_id)} plan={plan} payment_id_present={bool(payment_id)} expiry={new_expiry}")
 
     except Exception as e:
         log(f"❌ Webhook Error: {e}")

@@ -12,9 +12,11 @@ from spot_futures_engine import choose_trade_type, evaluate_trade_types, record_
 
 # ================= SETTINGS =================
 SYMBOLS = [
-    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
-    "LTCUSDT"
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT", "ADAUSDT",
+    "DOGEUSDT", "TRXUSDT", "TONUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT",
+    "LTCUSDT", "BCHUSDT", "ATOMUSDT", "NEARUSDT", "APTUSDT", "ARBUSDT",
+    "OPUSDT", "INJUSDT", "RUNEUSDT", "FETUSDT", "HBARUSDT", "XLMUSDT",
+    "ICPUSDT", "ETCUSDT", "FILUSDT", "AAVEUSDT", "UNIUSDT", "SUIUSDT"
 ]
 
 TIMEFRAMES = ["5m", "15m", "1h"]
@@ -41,10 +43,24 @@ ENTRY_MANAGER_MAX_UPDATE_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_UPDAT
 ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT", "35"))
 ENTRY_MANAGER_MIN_SL_ROOM_PERCENT = float(os.environ.get("ENTRY_MANAGER_MIN_SL_ROOM_PERCENT", "0.12"))
 ENTRY_MANAGER_MIN_RR = float(os.environ.get("ENTRY_MANAGER_MIN_RR", "1.5"))
-MAX_DYNAMIC_SYMBOLS = int(os.environ.get("MAX_DYNAMIC_SYMBOLS", "120"))
+def _env_int(name, default, minimum=None, maximum=None):
+    try:
+        value = int(str(os.environ.get(name, default)).strip())
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
+
+
+MAX_DYNAMIC_SYMBOLS = _env_int("MAX_DYNAMIC_SYMBOLS", 120, minimum=0, maximum=500)
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
+SINGLE_SYMBOL_MODE = os.environ.get("SINGLE_SYMBOL_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+SINGLE_SYMBOL = str(os.environ.get("SYMBOL") or os.environ.get("SCAN_SYMBOL") or "").strip().upper()
 SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
 SIGNAL_SCAN_DIAGNOSTICS = {}
@@ -452,6 +468,14 @@ def get_scan_symbols(force_refresh=False):
     worker by scanning hundreds of weak pairs every cycle.
     """
     now = time.time()
+    if SINGLE_SYMBOL_MODE and SINGLE_SYMBOL:
+        reason = _symbol_filter_reason(SINGLE_SYMBOL)
+        selected = [SINGLE_SYMBOL] if not reason else list(SYMBOLS)
+        DYNAMIC_SYMBOL_CACHE["time"] = now
+        DYNAMIC_SYMBOL_CACHE["symbols"] = selected
+        print(f"DYNAMIC_SYMBOLS_SELECTED count={len(selected)} max=single single_symbol_mode=True fallback_reason={reason or 'none'}")
+        return list(selected)
+
     cached = DYNAMIC_SYMBOL_CACHE.get("symbols")
     if cached and not force_refresh and now - DYNAMIC_SYMBOL_CACHE.get("time", 0) < DYNAMIC_SYMBOLS_TTL_SECONDS:
         return list(cached)
@@ -459,6 +483,7 @@ def get_scan_symbols(force_refresh=False):
     all_symbols = set()
     volume_maps = []
     failures = []
+    source_counts = {}
 
     for url, market_type, label in [
         ("https://api.binance.com/api/v3/exchangeInfo", "spot", "BINANCE_SPOT"),
@@ -466,6 +491,7 @@ def get_scan_symbols(force_refresh=False):
         ("https://fapi.binance.com/fapi/v1/exchangeInfo", "futures", "BINANCE_FUTURES"),
     ]:
         symbols, status = _exchange_symbols(url, market_type)
+        source_counts[label] = len(symbols or [])
         if symbols:
             all_symbols.update(symbols)
         else:
@@ -477,6 +503,7 @@ def get_scan_symbols(force_refresh=False):
         ("https://fapi.binance.com/fapi/v1/ticker/24hr", "BINANCE_FUTURES_TICKER"),
     ]:
         volume_map, status = _ticker_volume_map(url)
+        source_counts[label] = len(volume_map or {})
         if volume_map:
             volume_maps.append(volume_map)
             all_symbols.update(volume_map.keys())
@@ -487,14 +514,21 @@ def get_scan_symbols(force_refresh=False):
         selected = _rank_symbol_universe(all_symbols, volume_maps)
     else:
         selected = list(SYMBOLS)
+        failures.append("fallback=all_sources_empty")
 
     if not selected:
         selected = list(SYMBOLS)
+        failures.append("fallback=ranked_empty")
 
     DYNAMIC_SYMBOL_CACHE["time"] = now
     DYNAMIC_SYMBOL_CACHE["symbols"] = selected
     symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
-    print(f"DYNAMIC_SYMBOLS_SELECTED count={len(selected)} max={symbol_limit} failures={'; '.join(failures[:4])}")
+    print(
+        "DYNAMIC_SYMBOLS_SELECTED "
+        f"count={len(selected)} max={symbol_limit} "
+        f"sources={json.dumps(source_counts, sort_keys=True)} "
+        f"fallback_reason={'; '.join(failures[:4]) or 'none'}"
+    )
     return list(selected)
 
 

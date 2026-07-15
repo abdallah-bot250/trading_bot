@@ -758,7 +758,10 @@ input, select {
     <a href="/invoice-history">Invoices</a>
     <a href="/profile">Profile</a>
     <a href="/settings">Settings</a>
-    <a href="/logout">Logout</a>
+    <form action="/logout" method="POST" style="margin:0;">
+      {{ csrf_field() }}
+      <button type="submit" style="all:unset;cursor:pointer;">Logout</button>
+    </form>
   </nav>
 </aside>
 <header class="nx-dashboard-head" aria-label="Dashboard header">
@@ -921,7 +924,7 @@ input, select {
             {% endif %}
             {% if not market_capabilities.can_receive_forex %}
                 <div style="margin-top:14px;">
-                    <a href="/manual-payment/vip_all_forex" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;background:linear-gradient(135deg,#d4af37,#f7d774);color:#08111f;font-weight:800;padding:12px 18px;border-radius:14px;">Upgrade to VIP ALL FOREX</a>
+                    <a href="/payments#pricing" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;background:linear-gradient(135deg,#d4af37,#f7d774);color:#08111f;font-weight:800;padding:12px 18px;border-radius:14px;">Upgrade to VIP ALL FOREX</a>
                 </div>
             {% endif %}
         </div>
@@ -980,11 +983,12 @@ input, select {
             </button>
         </a>
 
-        <a href="/logout">
-            <button type="button" style="background:#ef4444; color:white;">
+        <form action="/logout" method="POST" style="display:inline-block;margin:0;">
+            {{ csrf_field() }}
+            <button type="submit" style="background:#ef4444; color:white;">
                 🚪 Logout
             </button>
-        </a>
+        </form>
     </div>
 
 
@@ -1082,7 +1086,7 @@ input, select {
                     <a class="primary-tier" href="/payments">Upgrade to Pro</a>
                     <a href="/bot-check">Verify Bot</a>
                 {% elif dashboard_tier == "pro" %}
-                    <a class="primary-tier" href="/create-payment?plan=vip">Upgrade to Elite</a>
+                    <a class="primary-tier" href="/payments#pricing">Upgrade to Elite</a>
                     <a href="/proof">View Proof</a>
                 {% else %}
                     <a class="primary-tier" href="#vip-settings">Manage Automation</a>
@@ -1230,7 +1234,7 @@ input, select {
             </div>
 
             <div class="card mini-stat">
-                <h3>💰 Balance</h3>
+                <h3>💰 Affiliate Balance</h3>
                 <p>${{affiliate_balance}}</p>
             </div>
 
@@ -1449,7 +1453,8 @@ input, select {
             <li>Best for testing signal quality</li>
         </ul>
 
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="basic">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe</button>
@@ -1475,7 +1480,8 @@ input, select {
             <li>History</li>
         </ul>
 
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="pro">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe</button>
@@ -1503,7 +1509,8 @@ input, select {
             <li>Advanced AI</li>
         </ul>
 
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="vip">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe</button>
@@ -1527,7 +1534,8 @@ input, select {
             <li>Telegram signal delivery</li>
             <li>Best long-term value</li>
         </ul>
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="pro_2y">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe</button>
@@ -1547,18 +1555,18 @@ input, select {
             <li>Monthly or one-year subscription</li>
             <li>Forex auto trade capability prepared, execution disabled until verified</li>
         </ul>
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="vip_all_forex">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:0 0 10px; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe Monthly</button>
         </form>
-        <form action="/create-payment" method="GET">
+        <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
             <input type="hidden" name="plan" value="vip_all_forex_yearly">
             <input type="text" name="coupon" placeholder="Coupon code" style="width:100%; margin:10px 0; padding:11px 12px; border:1px solid rgba(148,163,184,.28); border-radius:8px; background:rgba(15,23,42,.8); color:white;">
             <button class="pay">💳 Subscribe Yearly</button>
         </form>
-        <a href="/manual-payment/vip_all_forex"><button class="manual">💸 Manual Monthly - No Fees</button></a>
-        <a href="/manual-payment/vip_all_forex_yearly"><button class="manual">💸 Manual Yearly - No Fees</button></a>
     </div>
 </div>
 
@@ -1659,7 +1667,7 @@ if (tierChartNode) {
     new Chart(tierChartNode, {
         type: "radar",
         data: {
-            labels: ["Portfolio", "ROI", "Win Rate", "AI Score", "Balance", "Closed Trades"],
+            labels: ["Portfolio", "ROI", "Win Rate", "AI Score", "Affiliate", "Closed Trades"],
             datasets: [{
                 label: "{{dashboard_title}}",
                 data: {{ dashboard_chart_scores|tojson }},
@@ -1726,7 +1734,7 @@ setInterval(async ()=>{
 <script>
 window.NEXORA_LANG = "{{ current_lang }}";
 </script>
-<script src="/static/i18n.js?v=20260714_lang5"></script>
+<script src="/static/i18n.js?v=20260714_lang6"></script>
 
 <script src="/static/nexora-ui.js?v=20260704_ui3"></script>
 </body>

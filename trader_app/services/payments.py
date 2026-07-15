@@ -34,6 +34,11 @@ def webhook_signature_payload(data):
     return json.dumps(data or {}, sort_keys=True, separators=(",", ":"))
 
 
+def webhook_payload_fingerprint(data):
+    payload = webhook_signature_payload(data)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16], len(payload)
+
+
 def generate_nowpayments_signature(data, ipn_secret):
     return hmac.new(
         key=str(ipn_secret or "").encode("utf-8"),
@@ -46,8 +51,9 @@ def validate_nowpayments_signature(data, signature, ipn_secret):
     if not signature or not ipn_secret:
         return False, ""
 
+    signature = str(signature or "").strip().lower()
     generated = generate_nowpayments_signature(data, ipn_secret)
-    return hmac.compare_digest(str(signature).lower(), generated.lower()), generated
+    return hmac.compare_digest(signature, generated.lower()), generated
 
 
 def coupon_is_active(row, now=None):
