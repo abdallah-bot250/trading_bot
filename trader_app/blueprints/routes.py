@@ -5186,12 +5186,12 @@ def webhook():
         chat_id = str(chat.get("id") or "").strip()
 
         if not chat_id:
-            log("⚠️ Telegram webhook received without chat_id")
+            log("TELEGRAM_WEBHOOK_NO_CHAT update_type=message")
             return "ok", 200
 
         command = text.split(maxsplit=1)[0].lower() if text else ""
-        chat_fingerprint = hashlib.sha256(chat_id.encode("utf-8")).hexdigest()[:12]
-        log(f"TELEGRAM_UPDATE chat={chat_fingerprint} command={command or 'message'}")
+        update_type = "message" if message else "unknown"
+        log(f"TELEGRAM_UPDATE_ACCEPTED chat_ref={mask_chat_ref(chat_id)} update_type={update_type}")
 
 
         if command in ["/help", "/commands"]:

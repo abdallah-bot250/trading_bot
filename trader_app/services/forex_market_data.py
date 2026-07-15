@@ -54,6 +54,16 @@ ASSET_CLASS = {
 _CACHE: Dict[Tuple[str, str, str], Tuple[float, "ForexCandlesResult"]] = {}
 _HEALTH = {"provider": None, "ok": False, "last_error": "not_checked", "checked_at": None}
 
+FOREX_FAILURE_CODES = {
+    "unsupported_provider": "PROVIDER_NOT_CONFIGURED",
+    "unsupported_symbol": "SYMBOL_NOT_SUPPORTED",
+    "unsupported_timeframe": "TIMEFRAME_NOT_SUPPORTED",
+    "missing_forex_api_key": "API_KEY_MISSING",
+    "not_enough_candles": "EMPTY_CANDLES",
+    "stale_data": "STALE_DATA",
+    "timeout": "TIMEOUT",
+}
+
 
 def _env_int(name: str, default: int, minimum: Optional[int] = None, maximum: Optional[int] = None) -> int:
     try:
@@ -172,6 +182,35 @@ def provider_health_status() -> dict:
     return dict(_HEALTH)
 
 
+def forex_failure_code(error: Optional[str], status_code: Optional[int] = None) -> str:
+    text = str(error or "").strip()
+    lower = text.lower()
+    if status_code == 401 or status_code == 403 or "api key" in lower or "apikey" in lower:
+        return "AUTH_FAILED" if "missing" not in lower else "API_KEY_MISSING"
+    if status_code == 429 or "rate limit" in lower:
+        return "RATE_LIMITED"
+    if status_code and int(status_code) >= 400:
+        return "HTTP_ERROR"
+    if lower.startswith("provider_exception"):
+        return "PARSE_ERROR"
+    if lower.startswith("http_"):
+        return "HTTP_ERROR"
+    return FOREX_FAILURE_CODES.get(lower, "PARSE_ERROR" if text else "DATA_SOURCE_FAILURE")
+
+
+def provider_configuration_status() -> dict:
+    provider = FOREX_PROVIDER
+    supported = provider == "twelvedata"
+    configured = bool(supported and FOREX_API_KEY)
+    reason = "OK" if configured else ("PROVIDER_NOT_CONFIGURED" if not supported else "API_KEY_MISSING")
+    return {
+        "provider": provider,
+        "configured": configured,
+        "reason": reason,
+        "supported": supported,
+    }
+
+
 def _result_from_cache(key):
     cached = _CACHE.get(key)
     if not cached:
@@ -193,19 +232,19 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandle
         return cached
 
     if symbol not in FOREX_SYMBOLS:
-        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "unsupported_symbol")
+        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "SYMBOL_NOT_SUPPORTED")
         _set_health(False, result.error)
         return result
     if timeframe not in FOREX_TIMEFRAMES:
-        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "unsupported_timeframe")
+        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "TIMEFRAME_NOT_SUPPORTED")
         _set_health(False, result.error)
         return result
     if provider != "twelvedata":
-        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "unsupported_provider")
+        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "PROVIDER_NOT_CONFIGURED")
         _set_health(False, result.error)
         return result
     if not FOREX_API_KEY:
-        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "missing_forex_api_key")
+        result = ForexCandlesResult(False, symbol, timeframe, provider, [], "API_KEY_MISSING")
         _set_health(False, result.error)
         return result
 
@@ -228,10 +267,10 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandle
                 continue
             data = response.json()
             if status_code != 200:
-                last_error = f"http_{status_code}"
+                last_error = forex_failure_code(f"http_{status_code}", status_code)
                 break
             if str(data.get("status", "")).lower() == "error":
-                last_error = str(data.get("message") or data.get("code") or "provider_error")[:120]
+                last_error = forex_failure_code(str(data.get("message") or data.get("code") or "provider_error")[:120], status_code)
                 break
             rows = data.get("values") or []
             candles = []
@@ -248,7 +287,7 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandle
                 except Exception:
                     continue
             if len(candles) < 60:
-                last_error = "not_enough_candles"
+                last_error = "EMPTY_CANDLES"
                 break
             data_timestamp = candles[-1].get("time")
             stale = _is_stale(data_timestamp)
@@ -258,7 +297,7 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandle
                 timeframe=timeframe,
                 provider=provider,
                 candles=candles,
-                error="stale_data" if stale else None,
+                error="STALE_DATA" if stale else None,
                 data_timestamp=data_timestamp,
                 stale=stale,
                 status_code=status_code,
@@ -267,13 +306,12 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ForexCandle
             _set_health(result.ok, result.error)
             return result
         except requests.exceptions.Timeout:
-            last_error = "timeout"
+            last_error = "TIMEOUT"
         except Exception as exc:
-            last_error = f"provider_exception:{str(exc)[:80]}"
+            last_error = "PARSE_ERROR"
         if attempt < FOREX_REQUEST_RETRIES:
             time.sleep(0.5 * (attempt + 1))
 
     result = ForexCandlesResult(False, symbol, timeframe, provider, [], last_error or "provider_failed", status_code=status_code)
     _set_health(False, result.error)
     return result
-

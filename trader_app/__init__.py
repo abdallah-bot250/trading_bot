@@ -88,6 +88,14 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp)
     app.register_blueprint(telegram_bp)
 
+    webhook_route_configured = "telegram.webhook" in app.view_functions
+    webhook_secret_configured = bool(str(app.config.get("TELEGRAM_WEBHOOK_SECRET") or "").strip())
+    app.logger.info(
+        "TELEGRAM_WEBHOOK_CONFIGURED route=%s secret_configured=%s",
+        str(webhook_route_configured).lower(),
+        str(webhook_secret_configured).lower(),
+    )
+
     register_error_handlers(app)
     init_db()
 

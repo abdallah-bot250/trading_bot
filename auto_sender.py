@@ -22,10 +22,12 @@ from dotenv import load_dotenv
 
 try:
     from forex_analyzer import get_forex_signals, get_forex_scan_summary, forex_auto_trade_status
+    from trader_app.services.forex_market_data import provider_configuration_status
 except Exception:
     get_forex_signals = None
     get_forex_scan_summary = lambda final_signals=None: {"final_signals": int(final_signals or 0), "error": "forex_module_unavailable"}
     forex_auto_trade_status = lambda: "FOREX_AUTO_TRADE_DISABLED"
+    provider_configuration_status = lambda: {"provider": "unavailable", "configured": False, "reason": "FOREX_MODULE_UNAVAILABLE"}
 
 try:
     from trader_app.services.runtime import decrypt_text
@@ -71,6 +73,7 @@ VIP_ALL_FOREX_CODE = "vip_all_forex"
 FOREX_MARKET_TYPES = {"forex", "metal", "metals", "indices", "index", "oil", "commodities", "commodity"}
 FOREX_PRODUCT_LABEL = "VIP ALL FOREX"
 DUPLICATE_WINDOW_SECONDS = 300
+NO_SIGNAL_NOTIFY_COOLDOWN_HOURS = int(os.environ.get("NO_SIGNAL_NOTIFY_COOLDOWN_HOURS", "6") or 6)
 NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES = 360  # 6 ساعات
 
 # ===== MONSTER FILTERS =====
@@ -300,6 +303,25 @@ def db():
 
     return psycopg2.connect(database_url, sslmode="require")
 
+
+def mark_telegram_connection_inactive(chat_id, reason="telegram_blocked"):
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute(
+            """
+            UPDATE users
+               SET bot_active = 0
+             WHERE chat_id = %s
+            """,
+            (str(chat_id),),
+        )
+        conn.commit()
+        conn.close()
+        log(f"TELEGRAM_CONNECTION_INACTIVE chat_ref={mask_chat_id(chat_id)} reason={reason}")
+    except Exception as e:
+        log(f"TELEGRAM_CONNECTION_INACTIVE_FAILED chat_ref={mask_chat_id(chat_id)} error={e}")
+
 # ================= TELEGRAM =================
 CHANNEL_ID = -1003722350505
 def send(chat_id, text):
@@ -334,6 +356,7 @@ def send(chat_id, text):
                 or "forbidden" in lower_text
             ):
                 log(f"BOT_DISCONNECTED_OR_BLOCKED chat_ref={mask_chat_id(chat_id)} status={r.status_code}")
+                mark_telegram_connection_inactive(chat_id, f"status_{r.status_code}")
                 try:
                     write_log(chat_id, "WARNING", f"Bot disconnected or blocked: {r.status_code}")
                 except Exception:
@@ -754,6 +777,19 @@ def init_trade_tables():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS notification_state (
+        id SERIAL PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        notification_type TEXT NOT NULL,
+        plan TEXT DEFAULT '',
+        idempotency_key TEXT NOT NULL,
+        last_sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (chat_id, notification_type, plan)
+    )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_notification_state_key ON notification_state (idempotency_key)")
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS signal_log (
@@ -1672,8 +1708,16 @@ def signal_plan_block_reason(plan, signal):
 def log_signal_scan_summary(final_count):
     try:
         summary = get_signal_scan_diagnostics(final_count)
+        scan_attempts = int(summary.get("scan_attempts", summary.get("scanned", 0)) or 0)
+        rejection_keys = [
+            "rejected_low_volatility", "rejected_mtf", "rejected_liquidity",
+            "rejected_fake_breakout", "rejected_quality", "rejected_entry",
+        ]
+        rejection_total = sum(int(summary.get(key, 0) or 0) for key in rejection_keys)
         log(
             "SIGNAL_SCAN_SUMMARY "
+            f"unique_symbols_scanned={summary.get('unique_symbols_scanned', summary.get('scanned', 0))} "
+            f"scan_attempts={scan_attempts} "
             f"scanned={summary.get('scanned', 0)} "
             f"candidates_built={summary.get('candidates_built', 0)} "
             f"rejected_low_volatility={summary.get('rejected_low_volatility', 0)} "
@@ -1688,6 +1732,7 @@ def log_signal_scan_summary(final_count):
             f"qualified_a_plus={summary.get('qualified_a_plus', 0)} "
             f"free_earn_locks_created={summary.get('free_earn_locks_created', 0)} "
             f"paid_deliveries={summary.get('paid_deliveries', 0)} "
+            f"rejection_total={rejection_total} "
             f"final_signals={summary.get('final_signals', final_count)}"
         )
         if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
@@ -1703,16 +1748,22 @@ def log_forex_scan_summary(final_count=None):
         summary = get_forex_scan_summary(final_count)
         log(
             "FOREX_SCAN_SUMMARY "
+            f"symbols_requested={summary.get('symbols_requested', summary.get('symbols_scanned', 0))} "
+            f"symbols_with_data={summary.get('symbols_with_data', 0)} "
             f"symbols_scanned={summary.get('symbols_scanned', 0)} "
             f"timeframes_scanned={summary.get('timeframes_scanned', 0)} "
             f"data_failures={summary.get('data_failures', 0)} "
+            f"requests_failed={summary.get('requests_failed', summary.get('data_failures', 0))} "
+            f"disabled={summary.get('disabled', False)} "
+            f"disabled_reason={summary.get('disabled_reason', '')} "
             f"rejected_volatility={summary.get('rejected_volatility', 0)} "
             f"rejected_spread={summary.get('rejected_spread', 0)} "
             f"rejected_news={summary.get('rejected_news', 0)} "
             f"rejected_quality={summary.get('rejected_quality', 0)} "
             f"passed_candidates={summary.get('passed_candidates', 0)} "
             f"final_signals={summary.get('final_signals', final_count or 0)} "
-            f"deliveries={summary.get('deliveries', 0)}"
+            f"deliveries={summary.get('deliveries', 0)} "
+            f"failure_reasons={json.dumps(summary.get('failure_reasons', {}), sort_keys=True)}"
         )
         return summary
     except Exception as e:
@@ -2837,7 +2888,8 @@ def get_monster_signals():
             dominant = "none"
         log(
             "CRYPTO_SCAN_SUMMARY "
-            f"symbols_scanned={crypto_summary.get('scanned', 0)} "
+            f"unique_symbols_scanned={crypto_summary.get('unique_symbols_scanned', crypto_summary.get('scanned', 0))} "
+            f"scan_attempts={crypto_summary.get('scan_attempts', crypto_summary.get('scanned', 0))} "
             f"passed_candidates={crypto_summary.get('candidates_built', 0)} "
             f"final_signals={len(crypto_signals)} "
             f"dominant_rejection={dominant}"
@@ -2901,28 +2953,79 @@ def get_monster_signals():
         log_forex_scan_summary(0)
         return []
 
-def should_notify_no_signal(chat_id):
+def should_notify_no_signal(chat_id, plan="trial", state_key="market_wait"):
     try:
         now = datetime.now()
+        plan = str(plan or "trial").strip().lower()
+        cooldown_minutes = max(NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES, NO_SIGNAL_NOTIFY_COOLDOWN_HOURS * 60)
+        idempotency_key = hashlib.sha256(f"no_signal:{chat_id}:{plan}:{state_key}".encode("utf-8")).hexdigest()
+        cache_key = f"{chat_id}:{plan}:{state_key}"
 
-        if chat_id not in LAST_NO_SIGNAL_NOTIFY:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+        try:
+            conn = db()
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT last_sent_at, idempotency_key
+                  FROM notification_state
+                 WHERE chat_id = %s AND notification_type = %s AND plan = %s
+                """,
+                (str(chat_id), "NO_SIGNAL_STATUS", plan),
+            )
+            row = c.fetchone()
+            if row and row[0]:
+                diff_minutes = (now - row[0]).total_seconds() / 60
+                if diff_minutes < cooldown_minutes and row[1] == idempotency_key:
+                    conn.close()
+                    return False
+            c.execute(
+                """
+                INSERT INTO notification_state (chat_id, notification_type, plan, idempotency_key, last_sent_at)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (chat_id, notification_type, plan)
+                DO UPDATE SET idempotency_key = EXCLUDED.idempotency_key, last_sent_at = CURRENT_TIMESTAMP
+                """,
+                (str(chat_id), "NO_SIGNAL_STATUS", plan, idempotency_key),
+            )
+            conn.commit()
+            conn.close()
+            LAST_NO_SIGNAL_NOTIFY[cache_key] = now
+            return True
+        except Exception as db_error:
+            if SIGNAL_DEBUG_LOGS:
+                log(f"NO_SIGNAL_NOTIFY_STATE_DB_FAILED chat_ref={mask_chat_id(chat_id)} error={db_error}")
+
+        if cache_key not in LAST_NO_SIGNAL_NOTIFY:
+            LAST_NO_SIGNAL_NOTIFY[cache_key] = now
             return True
 
-        last_time = LAST_NO_SIGNAL_NOTIFY.get(chat_id)
+        last_time = LAST_NO_SIGNAL_NOTIFY.get(cache_key)
         if not last_time:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+            LAST_NO_SIGNAL_NOTIFY[cache_key] = now
             return True
 
         diff_minutes = (now - last_time).total_seconds() / 60
 
-        if diff_minutes >= NO_SIGNAL_NOTIFY_COOLDOWN_MINUTES:
-            LAST_NO_SIGNAL_NOTIFY[chat_id] = now
+        if diff_minutes >= cooldown_minutes:
+            LAST_NO_SIGNAL_NOTIFY[cache_key] = now
             return True
 
         return False
     except:
         return False
+
+
+def classify_no_signal_state(market_reason):
+    text = str(market_reason or "").lower()
+    if "multi-timeframe" in text:
+        return "mtf_unconfirmed"
+    if "entry" in text:
+        return "entry_not_ready"
+    if "liquidity" in text:
+        return "liquidity_not_clean"
+    if "quality" in text:
+        return "quality_below_gate"
+    return "market_wait"
 
 
 def notify_users_no_signal(users):
@@ -2957,9 +3060,12 @@ def notify_users_no_signal(users):
                 plan = str(user_info["plan"] or "trial").strip().lower()
                 trades = user_info["trades"]
                 email = user_info["email"]
+                bot_active = user_info.get("bot_active")
 
                 if not chat_id:
                     log_unlinked_user_once(email)
+                    continue
+                if int(bot_active or 0) != 1:
                     continue
 
                 if plan == "trial":
@@ -2968,7 +3074,8 @@ def notify_users_no_signal(users):
                 elif not is_paid_plan_active(plan, user_info["expiry"], user_info["is_paid"]):
                     continue
 
-                if not should_notify_no_signal(chat_id):
+                state_key = classify_no_signal_state(market_reason)
+                if not should_notify_no_signal(chat_id, plan, state_key):
                     continue
 
                 plan_note = "Premium direct delivery is active." if plan != "trial" else "Free Earn waits for a qualified premium signal."
@@ -3004,6 +3111,16 @@ Risk warning: Crypto trading is risky. Not financial advice."""
 def run():
     log("AUTO_SENDER FILE STARTED")
     init_trade_tables()
+    try:
+        forex_provider_status = provider_configuration_status()
+        log(
+            "FOREX_PROVIDER_STATUS "
+            f"provider={forex_provider_status.get('provider')} "
+            f"configured={bool(forex_provider_status.get('configured'))} "
+            f"reason={forex_provider_status.get('reason', '')}"
+        )
+    except Exception as forex_status_error:
+        log(f"FOREX_PROVIDER_STATUS_ERROR error={forex_status_error}")
     log(f"🚀 BOT STARTED - MONSTER MODE | auto_exchange={AUTO_TRADE_EXCHANGE}")
     log("Entering main bot loop...")
 

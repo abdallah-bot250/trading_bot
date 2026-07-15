@@ -9,8 +9,10 @@ from trader_app.services.forex_market_data import (
     FOREX_SYMBOLS,
     FOREX_TIMEFRAMES,
     asset_class_for_symbol,
+    forex_failure_code,
     get_ohlcv,
     pip_size,
+    provider_configuration_status,
     provider_health_status,
 )
 
@@ -30,9 +32,15 @@ FOREX_SCAN_SUMMARY = {}
 def _reset_summary():
     FOREX_SCAN_SUMMARY.clear()
     FOREX_SCAN_SUMMARY.update({
+        "symbols_requested": len(FOREX_SYMBOLS),
         "symbols_scanned": 0,
+        "symbols_with_data": 0,
         "timeframes_scanned": 0,
         "data_failures": 0,
+        "requests_failed": 0,
+        "failure_reasons": {},
+        "disabled": False,
+        "disabled_reason": "",
         "rejected_volatility": 0,
         "rejected_spread": 0,
         "rejected_news": 0,
@@ -48,6 +56,25 @@ def _inc(key, amount=1):
     if not FOREX_SCAN_SUMMARY:
         _reset_summary()
     FOREX_SCAN_SUMMARY[key] = int(FOREX_SCAN_SUMMARY.get(key, 0) or 0) + amount
+
+
+def _record_data_failure(result):
+    if not FOREX_SCAN_SUMMARY:
+        _reset_summary()
+    code = forex_failure_code(getattr(result, "error", None), getattr(result, "status_code", None))
+    reasons = FOREX_SCAN_SUMMARY.setdefault("failure_reasons", {})
+    reasons[code] = int(reasons.get(code, 0) or 0) + 1
+    _inc("data_failures")
+    _inc("requests_failed")
+    try:
+        print(
+            "FOREX_DATA_FAILURE "
+            f"provider={getattr(result, 'provider', '') or provider_health_status().get('provider')} "
+            f"symbol={getattr(result, 'symbol', '')} timeframe={getattr(result, 'timeframe', '')} "
+            f"reason={code} status_code={getattr(result, 'status_code', None) or ''}"
+        )
+    except Exception:
+        pass
 
 
 def get_forex_scan_summary(final_signals: Optional[int] = None) -> dict:
@@ -271,7 +298,18 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
 def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
     _reset_summary()
     if not FOREX_ENABLED:
+        FOREX_SCAN_SUMMARY["disabled"] = True
+        FOREX_SCAN_SUMMARY["disabled_reason"] = "FOREX_SIGNAL_ENGINE_DISABLED"
         return []
+    config = provider_configuration_status()
+    FOREX_SCAN_SUMMARY["provider"] = config.get("provider")
+    FOREX_SCAN_SUMMARY["provider_configured"] = bool(config.get("configured"))
+    if not config.get("configured"):
+        FOREX_SCAN_SUMMARY["disabled"] = True
+        FOREX_SCAN_SUMMARY["disabled_reason"] = config.get("reason") or "PROVIDER_NOT_CONFIGURED"
+        print(f"FOREX_PROVIDER_STATUS provider={config.get('provider')} configured=false reason={FOREX_SCAN_SUMMARY['disabled_reason']}")
+        return []
+    print(f"FOREX_PROVIDER_STATUS provider={config.get('provider')} configured=true")
     limit = limit or FOREX_MAX_SIGNALS_PER_CYCLE
     signals: List[dict] = []
     for symbol in FOREX_SYMBOLS:
@@ -282,12 +320,13 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
             _inc("timeframes_scanned")
             result = get_ohlcv(symbol, tf)
             if not result.ok:
-                _inc("data_failures")
+                _record_data_failure(result)
                 failed = True
                 break
             frames[tf] = _df(result.candles)
         if failed:
             continue
+        _inc("symbols_with_data")
         for tf in ("15m", "5m"):
             candidate = _build_signal(symbol, tf, frames)
             if candidate:

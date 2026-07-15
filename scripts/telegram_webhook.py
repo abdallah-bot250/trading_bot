@@ -36,7 +36,10 @@ def telegram(method, **params):
         raise SystemExit(f"Telegram returned non-JSON response: {response.text}")
 
     if response.status_code != 200 or not payload.get("ok"):
-        raise SystemExit(f"Telegram {method} failed: {payload}")
+        safe_payload = dict(payload)
+        if "description" in safe_payload:
+            safe_payload["description"] = str(safe_payload["description"])[:300]
+        raise SystemExit(f"Telegram {method} failed: {safe_payload}")
 
     return payload
 
@@ -55,19 +58,25 @@ def status():
     payload = telegram("getWebhookInfo")
     result = payload.get("result") or {}
     expected = f"{base_url()}/webhook"
-    print(f"Current webhook: {result.get('url') or '(not set)'}")
-    print(f"Expected webhook: {expected}")
-    print(f"Matches expected: {(result.get('url') or '').rstrip('/') == expected.rstrip('/')}")
-    print(f"Pending updates: {result.get('pending_update_count', 0)}")
-    if result.get("last_error_message"):
-        print(f"Last error: {result.get('last_error_message')}")
+    print("TELEGRAM_WEBHOOK_INFO")
+    print(f"url={result.get('url') or '(not set)'}")
+    print(f"expected_url={expected}")
+    print(f"matches_expected={(result.get('url') or '').rstrip('/') == expected.rstrip('/')}")
+    print(f"pending_update_count={result.get('pending_update_count', 0)}")
+    print(f"last_error_date={result.get('last_error_date') or ''}")
+    print(f"last_error_message={result.get('last_error_message') or ''}")
+    print(f"max_connections={result.get('max_connections') or ''}")
+    print(f"allowed_updates={','.join(result.get('allowed_updates') or [])}")
+    print(f"secret_configured={bool(os.environ.get('TELEGRAM_WEBHOOK_SECRET', '').strip())}")
 
 
 def set_webhook():
     url = f"{base_url()}/webhook"
     secret = required_env("TELEGRAM_WEBHOOK_SECRET")
+    if len(secret) > 256 or any(ch.isspace() for ch in secret):
+        raise SystemExit("TELEGRAM_WEBHOOK_SECRET must be 1-256 chars and must not contain whitespace")
     telegram("setWebhook", url=url, secret_token=secret, drop_pending_updates=False)
-    print(f"Webhook set to {url}")
+    print(f"Webhook set to {url} with secret_token configured=true")
 
 
 def delete_webhook():

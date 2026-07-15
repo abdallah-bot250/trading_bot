@@ -63,6 +63,7 @@ def _env_int(name, default, minimum=None, maximum=None):
 
 
 MAX_DYNAMIC_SYMBOLS = _env_int("MAX_DYNAMIC_SYMBOLS", 120, minimum=0, maximum=500)
+MIN_DYNAMIC_SYMBOLS = _env_int("MIN_DYNAMIC_SYMBOLS", 20, minimum=1, maximum=500)
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
@@ -71,6 +72,7 @@ SINGLE_SYMBOL = str(os.environ.get("SYMBOL") or os.environ.get("SCAN_SYMBOL") or
 SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
 SIGNAL_SCAN_DIAGNOSTICS = {}
+SIGNAL_SCAN_UNIQUE_SYMBOLS = set()
 ENTRY_MANAGER_LOG_CACHE = {}
 ENTRY_MANAGER_LOG_TTL_SECONDS = 300
 ALLOWED_DYNAMIC_BASE_ASSETS = {
@@ -82,8 +84,11 @@ ALLOWED_DYNAMIC_BASE_ASSETS = {
 
 def reset_signal_scan_diagnostics():
     SIGNAL_SCAN_DIAGNOSTICS.clear()
+    SIGNAL_SCAN_UNIQUE_SYMBOLS.clear()
     SIGNAL_SCAN_DIAGNOSTICS.update({
         "scanned": 0,
+        "scan_attempts": 0,
+        "unique_symbols_scanned": 0,
         "candidates_built": 0,
         "rejections_by_code": {},
         "rejected_low_volatility": 0,
@@ -110,10 +115,22 @@ def _scan_diag_inc(key, amount=1):
         pass
 
 
+def _scan_diag_attempt(symbol=None):
+    try:
+        _scan_diag_inc("scan_attempts")
+        _scan_diag_inc("scanned")
+        if symbol:
+            SIGNAL_SCAN_UNIQUE_SYMBOLS.add(str(symbol or "").upper())
+            SIGNAL_SCAN_DIAGNOSTICS["unique_symbols_scanned"] = len(SIGNAL_SCAN_UNIQUE_SYMBOLS)
+    except Exception:
+        pass
+
+
 def get_signal_scan_diagnostics(final_signals=None):
     if not SIGNAL_SCAN_DIAGNOSTICS:
         reset_signal_scan_diagnostics()
     data = dict(SIGNAL_SCAN_DIAGNOSTICS)
+    data["unique_symbols_scanned"] = len(SIGNAL_SCAN_UNIQUE_SYMBOLS)
     if final_signals is not None:
         data["final_signals"] = int(final_signals or 0)
     return data
@@ -122,10 +139,10 @@ def get_signal_scan_diagnostics(final_signals=None):
 REJECTION_REASON_CODES = {
     "HIGH_VOLATILITY": ("HIGH_VOLATILITY", "ATR TOO HIGH", "VOLATILITY HIGH"),
     "LOW_VOLATILITY": ("LOW_VOLATILITY", "ATR TOO LOW", "LOW VOLATILITY"),
-    "MTF_CONFLICT": ("MTF", "4H", "1H", "MULTI-TIMEFRAME"),
-    "LOW_LIQUIDITY": ("LOW_LIQUIDITY", "LOW_VOLUME_CHOP", "LIQUIDITY"),
     "FAKE_BREAKOUT": ("FAKE_BREAKOUT", "FAKE BREAKOUT"),
-    "INVALID_ENTRY": ("INVALID ENTRY", "ENTRY", "FRESHNESS", "NO RETEST", "MID_RANGE", "MID-RANGE"),
+    "INVALID_ENTRY": ("INVALID_ENTRY", "INVALID ENTRY", "FRESHNESS", "NO RETEST", "MID_RANGE", "MID-RANGE", "ENTRY LOCATION"),
+    "LOW_LIQUIDITY": ("LOW_LIQUIDITY", "LOW_VOLUME_CHOP", "LOW LIQUIDITY"),
+    "MTF_CONFLICT": ("MTF_CONFLICT", "MULTI-TIMEFRAME", "4H/1H", "4H AND 1H", "MTF"),
     "LOW_RR": ("LOW_RR", "RR", "RISK/REWARD", "RISK REWARD"),
     "LOW_FINAL_SCORE": ("LOW_FINAL_SCORE", "FINAL SCORE", "SCORE BELOW", "CONFIDENCE"),
     "AI_REJECTED": ("AI_REJECTED", "AI MODEL REJECTED", "AI REJECTION"),
@@ -478,13 +495,16 @@ def _exchange_symbols(url, market_type):
 
 def _rank_symbol_universe(symbols, volume_maps):
     ranked = []
+    zero_volume = []
     for symbol in symbols:
         volume = max([volume_map.get(symbol, 0) for volume_map in volume_maps] or [0])
         if volume >= MIN_DYNAMIC_QUOTE_VOLUME:
             ranked.append((symbol, volume))
-    if not ranked:
-        ranked = [(symbol, 0) for symbol in symbols]
+        else:
+            zero_volume.append((symbol, 0))
     ranked.sort(key=lambda item: item[1], reverse=True)
+    zero_volume.sort(key=lambda item: (SYMBOLS.index(item[0]) if item[0] in SYMBOLS else 999, item[0]))
+    ranked = ranked + zero_volume
 
     pinned = [symbol for symbol in SYMBOLS if symbol in {item[0] for item in ranked}]
     ordered = []
@@ -497,6 +517,27 @@ def _rank_symbol_universe(symbols, volume_maps):
         if MAX_DYNAMIC_SYMBOLS > 0 and len(ordered) >= MAX_DYNAMIC_SYMBOLS:
             break
     return ordered
+
+
+def _merge_min_dynamic_symbols(selected, supported_symbols):
+    """Keep a conservative minimum universe when ticker data is incomplete."""
+    selected = [s for s in selected if _is_tradeable_usdt_symbol(s)]
+    supported = {str(s or "").upper() for s in (supported_symbols or []) if _is_tradeable_usdt_symbol(s)}
+    if SINGLE_SYMBOL_MODE or len(selected) >= MIN_DYNAMIC_SYMBOLS:
+        return selected, 0
+    seen = set(selected)
+    added = 0
+    fallback_order = [s for s in SYMBOLS if s in supported] + sorted(supported)
+    limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else max(MIN_DYNAMIC_SYMBOLS, len(fallback_order))
+    for symbol in fallback_order:
+        if symbol in seen:
+            continue
+        selected.append(symbol)
+        seen.add(symbol)
+        added += 1
+        if len(selected) >= MIN_DYNAMIC_SYMBOLS or len(selected) >= limit:
+            break
+    return selected, added
 
 
 def get_scan_symbols(force_refresh=False):
@@ -519,9 +560,12 @@ def get_scan_symbols(force_refresh=False):
         return list(cached)
 
     all_symbols = set()
+    exchange_info_symbols = set()
     volume_maps = []
     failures = []
     source_counts = {}
+    exchange_info_count = 0
+    ticker_count = 0
 
     for url, market_type, label in [
         ("https://api.binance.com/api/v3/exchangeInfo", "spot", "BINANCE_SPOT"),
@@ -530,8 +574,10 @@ def get_scan_symbols(force_refresh=False):
     ]:
         symbols, status = _exchange_symbols(url, market_type)
         source_counts[label] = len(symbols or [])
+        exchange_info_count += len(symbols or [])
         if symbols:
             all_symbols.update(symbols)
+            exchange_info_symbols.update(symbols)
         else:
             failures.append(f"{label}={status}")
 
@@ -542,6 +588,7 @@ def get_scan_symbols(force_refresh=False):
     ]:
         volume_map, status = _ticker_volume_map(url)
         source_counts[label] = len(volume_map or {})
+        ticker_count += len(volume_map or {})
         if volume_map:
             volume_maps.append(volume_map)
             all_symbols.update(volume_map.keys())
@@ -558,6 +605,9 @@ def get_scan_symbols(force_refresh=False):
         selected = list(SYMBOLS)
         failures.append("fallback=ranked_empty")
 
+    matched_count = len([symbol for symbol in selected if any(symbol in volume_map for volume_map in volume_maps)])
+    selected, fallback_added_count = _merge_min_dynamic_symbols(selected, exchange_info_symbols or all_symbols)
+
     DYNAMIC_SYMBOL_CACHE["time"] = now
     DYNAMIC_SYMBOL_CACHE["symbols"] = selected
     symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
@@ -565,6 +615,8 @@ def get_scan_symbols(force_refresh=False):
         "DYNAMIC_SYMBOLS_SELECTED "
         f"count={len(selected)} max={symbol_limit} "
         f"sources={json.dumps(source_counts, sort_keys=True)} "
+        f"exchange_info_count={exchange_info_count} ticker_count={ticker_count} "
+        f"matched_count={matched_count} fallback_added_count={fallback_added_count} final_count={len(selected)} "
         f"fallback_reason={'; '.join(failures[:4]) or 'none'}"
     )
     return list(selected)
@@ -4169,7 +4221,7 @@ def strong_signal_filter(df, trend, trend_power, direction):
 
 # ================= GENERATE PAID SIGNAL =================
 def generate_signal(symbol, interval="5m"):
-    _scan_diag_inc("scanned")
+    _scan_diag_attempt(symbol)
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 100:
         return None
@@ -4435,7 +4487,7 @@ def generate_signal(symbol, interval="5m"):
 
 # ================= GENERATE FREE SIGNAL =================
 def generate_free_signal(symbol, interval="5m"):
-    _scan_diag_inc("scanned")
+    _scan_diag_attempt(symbol)
     df = get_market_data(symbol, interval)
     if df is None or len(df) < 60:
         return None
