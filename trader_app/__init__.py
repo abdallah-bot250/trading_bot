@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask
 
 from .config import Config
@@ -89,7 +91,8 @@ def create_app(config_class=Config):
     app.register_blueprint(telegram_bp)
 
     webhook_route_configured = "telegram.webhook" in app.view_functions
-    webhook_secret_configured = bool(str(app.config.get("TELEGRAM_WEBHOOK_SECRET") or "").strip())
+    webhook_secret = str(os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "")
+    webhook_secret_configured = bool(webhook_secret) and not any(ch.isspace() for ch in webhook_secret)
     app.logger.info(
         "TELEGRAM_WEBHOOK_CONFIGURED route=%s secret_configured=%s",
         str(webhook_route_configured).lower(),

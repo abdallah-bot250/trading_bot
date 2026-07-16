@@ -14,6 +14,8 @@ def test_telegram_webhook_requires_secret_header():
     assert "TELEGRAM_WEBHOOK_SECRET" in routes
     assert "X-Telegram-Bot-Api-Secret-Token" in routes
     assert "hmac.compare_digest" in routes
+    assert 'os.environ.get("TELEGRAM_WEBHOOK_SECRET") or ""' in routes
+    assert 'request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""' in routes
     assert "TELEGRAM_WEBHOOK_REJECTED reason=invalid_secret" in routes
 
 
@@ -29,5 +31,16 @@ def test_telegram_webhook_has_safe_startup_and_accept_logs():
     routes = read("trader_app/blueprints/routes.py")
     assert "TELEGRAM_WEBHOOK_CONFIGURED" in init
     assert "TELEGRAM_UPDATE_ACCEPTED" in routes
+    assert "last_accepted_update_at" in routes
     assert "chat_ref=" in routes
     assert "X-Telegram-Bot-Api-Secret-Token" in routes
+
+
+def test_telegram_webhook_script_can_reset_with_current_env():
+    script = read("scripts/telegram_webhook.py")
+    assert "def reset_webhook" in script
+    assert "deleteWebhook" in script
+    assert "setWebhook" in script
+    assert "getWebhookInfo" in script
+    assert "TELEGRAM_WEBHOOK_TEST_CHAT_ID" in script
+    assert "secret_sha256_prefix" in script

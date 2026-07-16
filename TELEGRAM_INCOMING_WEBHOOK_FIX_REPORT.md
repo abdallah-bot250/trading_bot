@@ -54,6 +54,20 @@ No fallback without secret was added.
 
 ## Fixes Applied
 
+### 0. Exact Secret Comparison
+
+`/webhook` now compares the incoming Telegram header exactly against the raw `TELEGRAM_WEBHOOK_SECRET` environment value:
+
+```text
+X-Telegram-Bot-Api-Secret-Token
+```
+
+No header trimming or secret trimming is used during the actual comparison. If the Railway secret contains whitespace or is longer than Telegram allows, the server reports:
+
+```text
+TELEGRAM_WEBHOOK_REJECTED reason=invalid_secret_config
+```
+
 ### 1. Startup Diagnostic
 
 Added safe startup log:
@@ -97,6 +111,12 @@ Updated `scripts/telegram_webhook.py`:
 - `set` uses `TELEGRAM_WEBHOOK_SECRET`.
 - It rejects webhook secrets containing whitespace or over Telegram's length limit.
 - It never prints the bot token or webhook secret.
+- `reset` now performs the full repair flow:
+  - delete old webhook
+  - set webhook to `BASE_URL/webhook`
+  - register `secret_token` from the current environment
+  - verify `getWebhookInfo`
+  - optionally POST a synthetic `/start` update to the webhook when `TELEGRAM_WEBHOOK_TEST_CHAT_ID` is configured
 
 ### 5. Diagnostics Added
 
@@ -150,6 +170,7 @@ Required Railway variables:
 TELEGRAM_TOKEN
 TELEGRAM_WEBHOOK_SECRET
 BASE_URL=https://nexoratrader.net
+TELEGRAM_WEBHOOK_TEST_CHAT_ID=optional_private_chat_id_for_start_test
 ```
 
 or:
@@ -157,6 +178,14 @@ or:
 ```text
 CANONICAL_DOMAIN=https://nexoratrader.net
 ```
+
+One-command repair after changing `TELEGRAM_WEBHOOK_SECRET`:
+
+```bash
+python scripts/telegram_webhook.py reset
+```
+
+This is the command to use whenever Railway `TELEGRAM_WEBHOOK_SECRET` changes.
 
 ## Tests Run
 
@@ -193,4 +222,3 @@ No module named pytest
 ## Final Notes
 
 I could not directly read Railway production logs or call Telegram `getWebhookInfo` with the real token from this local environment because the real Railway secrets are not available here. The updated script is ready to run safely inside Railway or from a correctly configured shell.
-

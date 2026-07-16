@@ -3,9 +3,11 @@
 Usage:
   python scripts/telegram_webhook.py status
   python scripts/telegram_webhook.py set
+  python scripts/telegram_webhook.py reset
   python scripts/telegram_webhook.py delete
 """
 
+import hashlib
 import os
 import sys
 
@@ -16,8 +18,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def required_env(name):
-    value = os.environ.get(name, "").strip()
+def required_env(name, strip=True):
+    value = os.environ.get(name, "")
+    if strip:
+        value = value.strip()
     if not value:
         raise SystemExit(f"{name} is missing")
     return value
@@ -58,6 +62,8 @@ def status():
     payload = telegram("getWebhookInfo")
     result = payload.get("result") or {}
     expected = f"{base_url()}/webhook"
+    current_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
+    secret_valid = bool(current_secret) and len(current_secret) <= 256 and not any(ch.isspace() for ch in current_secret)
     print("TELEGRAM_WEBHOOK_INFO")
     print(f"url={result.get('url') or '(not set)'}")
     print(f"expected_url={expected}")
@@ -67,12 +73,15 @@ def status():
     print(f"last_error_message={result.get('last_error_message') or ''}")
     print(f"max_connections={result.get('max_connections') or ''}")
     print(f"allowed_updates={','.join(result.get('allowed_updates') or [])}")
-    print(f"secret_configured={bool(os.environ.get('TELEGRAM_WEBHOOK_SECRET', '').strip())}")
+    print(f"secret_configured={bool(current_secret)}")
+    print(f"secret_valid_format={secret_valid}")
+    print(f"secret_sha256_prefix={hashlib.sha256(current_secret.encode('utf-8')).hexdigest()[:12] if current_secret else ''}")
+    return result
 
 
 def set_webhook():
     url = f"{base_url()}/webhook"
-    secret = required_env("TELEGRAM_WEBHOOK_SECRET")
+    secret = required_env("TELEGRAM_WEBHOOK_SECRET", strip=False)
     if len(secret) > 256 or any(ch.isspace() for ch in secret):
         raise SystemExit("TELEGRAM_WEBHOOK_SECRET must be 1-256 chars and must not contain whitespace")
     telegram("setWebhook", url=url, secret_token=secret, drop_pending_updates=False)
@@ -84,16 +93,65 @@ def delete_webhook():
     print("Webhook deleted")
 
 
+def test_start_webhook():
+    chat_id = os.environ.get("TELEGRAM_WEBHOOK_TEST_CHAT_ID", "").strip()
+    if not chat_id:
+        print("START_TEST_SKIPPED reason=TELEGRAM_WEBHOOK_TEST_CHAT_ID_missing")
+        return
+
+    url = f"{base_url()}/webhook"
+    secret = required_env("TELEGRAM_WEBHOOK_SECRET", strip=False)
+    payload = {
+        "update_id": 100000001,
+        "message": {
+            "message_id": 1,
+            "date": 1,
+            "chat": {"id": chat_id, "type": "private"},
+            "text": "/start",
+        },
+    }
+    response = requests.post(
+        url,
+        json=payload,
+        headers={"X-Telegram-Bot-Api-Secret-Token": secret},
+        timeout=20,
+    )
+    print(f"START_TEST_STATUS code={response.status_code} ok={response.status_code == 200}")
+    if response.status_code != 200:
+        print(f"START_TEST_BODY {response.text[:300]}")
+
+
+def reset_webhook():
+    url = f"{base_url()}/webhook"
+    secret = required_env("TELEGRAM_WEBHOOK_SECRET", strip=False)
+    if len(secret) > 256 or any(ch.isspace() for ch in secret):
+        raise SystemExit("TELEGRAM_WEBHOOK_SECRET must be 1-256 chars and must not contain whitespace")
+    print("TELEGRAM_WEBHOOK_RESET_BEGIN")
+    telegram("deleteWebhook", drop_pending_updates=False)
+    print("old_webhook_deleted=true")
+    telegram("setWebhook", url=url, secret_token=secret, drop_pending_updates=False)
+    print(f"new_webhook_registered=true url={url}")
+    info = status()
+    if (info.get("url") or "").rstrip("/") != url.rstrip("/"):
+        raise SystemExit("Webhook URL does not match expected URL after reset")
+    test_start_webhook()
+    print("TELEGRAM_WEBHOOK_RESET_OK")
+
+
 def main():
     command = (sys.argv[1] if len(sys.argv) > 1 else "status").strip().lower()
     if command == "status":
         status()
     elif command == "set":
         set_webhook()
+    elif command == "reset":
+        reset_webhook()
+    elif command == "test-start":
+        test_start_webhook()
     elif command == "delete":
         delete_webhook()
     else:
-        raise SystemExit("Usage: python scripts/telegram_webhook.py [status|set|delete]")
+        raise SystemExit("Usage: python scripts/telegram_webhook.py [status|set|reset|test-start|delete]")
 
 
 if __name__ == "__main__":

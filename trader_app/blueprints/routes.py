@@ -60,6 +60,12 @@ payments_bp = Blueprint("payments", __name__)
 admin_bp = Blueprint("admin", __name__)
 telegram_bp = Blueprint("telegram", __name__)
 
+TELEGRAM_WEBHOOK_RUNTIME_STATE = {
+    "last_accepted_update_at": None,
+    "last_rejected_at": None,
+    "last_rejected_reason": None,
+}
+
 
 def mask_email_for_log(value):
     email = str(value or "").strip().lower()
@@ -716,8 +722,24 @@ def telegram_status():
         return "Forbidden", 403
 
     expected_webhook = f"{current_base_url()}/webhook"
+    current_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
+    secret_has_whitespace = any(ch.isspace() for ch in current_secret)
     status = {
         "token_configured": bool(TOKEN),
+        "incoming": {
+            "secret_configured": bool(current_secret),
+            "secret_valid_format": bool(current_secret) and not secret_has_whitespace and len(current_secret) <= 256,
+            "route_registered": True,
+            "last_accepted_update": TELEGRAM_WEBHOOK_RUNTIME_STATE.get("last_accepted_update_at"),
+            "last_rejected_at": TELEGRAM_WEBHOOK_RUNTIME_STATE.get("last_rejected_at"),
+            "last_rejected_reason": TELEGRAM_WEBHOOK_RUNTIME_STATE.get("last_rejected_reason"),
+            "secret_matches_current_environment": (
+                True
+                if TELEGRAM_WEBHOOK_RUNTIME_STATE.get("last_accepted_update_at")
+                and TELEGRAM_WEBHOOK_RUNTIME_STATE.get("last_rejected_reason") != "invalid_secret"
+                else "unknown_until_next_valid_update"
+            ),
+        },
         "base_url": current_base_url(),
         "bot_link": current_bot_link(),
         "expected_webhook": expected_webhook,
@@ -740,6 +762,8 @@ def telegram_status():
             "telegram_ok": bool(payload.get("ok")),
             "telegram_webhook_url": webhook_url,
             "telegram_last_error": result.get("last_error_message"),
+            "telegram_last_error_date": result.get("last_error_date"),
+            "max_connections": result.get("max_connections"),
             "pending_update_count": result.get("pending_update_count", 0),
             "webhook_matches_expected": webhook_url.rstrip("/") == expected_webhook.rstrip("/"),
         })
@@ -5167,14 +5191,23 @@ def run_telegram_broadcast(c, message, paid_only=False):
 
 @telegram_bp.route("/webhook", methods=["POST"])
 def webhook():
-    expected_secret = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    expected_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET") or ""
     allow_insecure_dev = (os.environ.get("TELEGRAM_WEBHOOK_ALLOW_INSECURE_DEV") or "").strip().lower() in {"1", "true", "yes"}
     if not expected_secret and not allow_insecure_dev:
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_at"] = datetime.utcnow().isoformat()
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_reason"] = "missing_secret"
         log("TELEGRAM_WEBHOOK_REJECTED reason=missing_secret")
         return "webhook unavailable", 503
+    if expected_secret and (len(expected_secret) > 256 or any(ch.isspace() for ch in expected_secret)):
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_at"] = datetime.utcnow().isoformat()
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_reason"] = "invalid_secret_config"
+        log("TELEGRAM_WEBHOOK_REJECTED reason=invalid_secret_config")
+        return "webhook unavailable", 503
     if expected_secret:
-        received_secret = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
+        received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
         if not received_secret or not hmac.compare_digest(received_secret, expected_secret):
+            TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_at"] = datetime.utcnow().isoformat()
+            TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_reason"] = "invalid_secret"
             log("TELEGRAM_WEBHOOK_REJECTED reason=invalid_secret")
             return "forbidden", 403
     try:
@@ -5191,6 +5224,8 @@ def webhook():
 
         command = text.split(maxsplit=1)[0].lower() if text else ""
         update_type = "message" if message else "unknown"
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_accepted_update_at"] = datetime.utcnow().isoformat()
+        TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_reason"] = None
         log(f"TELEGRAM_UPDATE_ACCEPTED chat_ref={mask_chat_ref(chat_id)} update_type={update_type}")
 
 

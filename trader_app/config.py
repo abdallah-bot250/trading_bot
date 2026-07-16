@@ -36,7 +36,7 @@ class Config:
     CACHE_PUBLIC_SECONDS = int(os.environ.get("CACHE_PUBLIC_SECONDS", "300"))
 
     TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-    TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "").strip()
+    TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     BASE_URL = os.environ.get("BASE_URL", "https://yourdomain.com")
     BOT_LINK = os.environ.get("BOT_LINK", "https://t.me/your_bot_username")
     ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
