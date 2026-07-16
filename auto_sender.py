@@ -32,10 +32,18 @@ except Exception:
 try:
     from trader_app.services.runtime import decrypt_text
     from trader_app.services.exchanges.registry import get_exchange_capability, normalize_exchange_key
+    from trader_app.services.user_entitlements import (
+        delivery_eligibility_for_signal,
+        get_user_entitlements,
+        log_delivery_eligibility,
+    )
 except Exception:
     decrypt_text = None
     get_exchange_capability = None
     normalize_exchange_key = lambda value: str(value or "bybit").strip().lower()
+    delivery_eligibility_for_signal = None
+    get_user_entitlements = None
+    log_delivery_eligibility = None
 
 load_dotenv()
 
@@ -1491,7 +1499,18 @@ def signal_market_bucket(signal):
 
 
 def delivery_product_for_signal(user_info, signal):
-    if signal_market_bucket(signal) == "forex":
+    market = signal_market_bucket(signal)
+    if delivery_eligibility_for_signal:
+        try:
+            entitlements, allowed, reason = delivery_eligibility_for_signal(user=user_info, signal_market=market)
+            if log_delivery_eligibility:
+                log_delivery_eligibility(user_info, market, allowed, reason)
+            if market == "forex":
+                return VIP_ALL_FOREX_CODE, allowed, reason
+            return str(entitlements.get("crypto", {}).get("plan_code") or user_info.get("plan") or "trial").strip().lower(), allowed, reason
+        except Exception as e:
+            log(f"DELIVERY_ELIGIBILITY_SERVICE_FAILED market={market} reason={e}")
+    if market == "forex":
         if has_active_product_subscription(user_info.get("user_id"), VIP_ALL_FOREX_CODE):
             return VIP_ALL_FOREX_CODE, True, "eligible"
         return VIP_ALL_FOREX_CODE, False, "vip_all_forex_required"
@@ -1637,6 +1656,18 @@ def format_signal(signal, plan=None):
             f"\nSignal ID: {signal.get('signal_id', 'N/A')}"
         )
         risk_label = "Forex, metals, oil, and indices involve substantial risk. Verify broker spread and size positions conservatively. Not financial advice."
+    elif str(signal.get("type", "")).upper() == "FUTURES" and signal.get("futures_macro_trend"):
+        market_details = (
+            f"\n4H Trend: {signal.get('futures_macro_trend', 'N/A')}"
+            f"\n1H Bias: {signal.get('futures_1h_bias', 'N/A')}"
+            f"\n30m Setup: {signal.get('futures_30m_setup', 'N/A')}"
+            f"\n15m Trigger: {signal.get('futures_15m_trigger', 'N/A')}"
+            f"\nEntry Range: {signal.get('entry_range', signal.get('entry', 'N/A'))}"
+            f"\nStop Reason: {signal.get('stop_loss_reason', 'Structure + ATR buffer')}"
+            f"\nCancel If: {signal.get('cancel_condition', 'Setup expires or 15m structure breaks')}"
+            f"\nExpiry: {signal.get('signal_expiry_minutes', 'N/A')} minutes"
+            f"\nLeverage: {signal.get('recommended_leverage', 'Conservative leverage only')}"
+        )
 
     return f"""NEXORA AI SIGNAL
 
@@ -1859,6 +1890,23 @@ def unpack_delivery_user(user):
 
 
 def delivery_access_status(user_info, qualified_opportunity_available=False):
+    if get_user_entitlements:
+        try:
+            ent = get_user_entitlements(user=user_info)
+            if not ent.get("telegram_linked"):
+                return False, "missing_chat_id"
+            crypto = ent.get("crypto", {})
+            if str(crypto.get("plan_code") or "").lower() == "trial":
+                if not is_trial_allowed(user_info.get("trades")):
+                    if FREE_EARN_MODE and qualified_opportunity_available:
+                        return True, "free_earn_lane"
+                    return False, "trial_limit_reached"
+                return True, "eligible"
+            if crypto.get("active"):
+                return True, "eligible"
+            return False, crypto.get("status") or "subscription_inactive"
+        except Exception as e:
+            log(f"DELIVERY_ACCESS_SERVICE_FAILED reason={e}")
     plan = str(user_info.get("plan") or "trial").strip().lower()
     if not user_info.get("chat_id"):
         return False, "missing_chat_id"

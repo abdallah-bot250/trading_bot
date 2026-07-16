@@ -121,7 +121,7 @@ PLAN_CATALOG = {
         "supported_assets": SUPPORTED_FOREX_ASSETS,
         "analysis": [
             "4H and 1H trend context",
-            "15m/5m entry refinement",
+            "15m/30m futures timing",
             "Market structure",
             "Pullback/retest logic",
             "Support and resistance",

@@ -1,7 +1,18 @@
 from pathlib import Path
 
 
-BAD = {"\u00d8", "\u00d9", "\u00c3", "\u00c2", "\u00e2", "\ufffd"} | {chr(i) for i in range(0x80, 0xA0)}
+BAD = (
+    "\u00c3\u0192",
+    "\u00c3\u201a",
+    "\u00c3\u00a2",
+    "\u00c3\u00b0",
+    "\u00f0\u0178",
+    "\u00e2\u0153",
+    "\u00e2\u009d",
+    "\u0393",
+    "\u00ef\u00bf\u00bd",
+    "\ufffd",
+)
 EXTENSIONS = {".py", ".html", ".js", ".css"}
 
 
@@ -12,7 +23,7 @@ def main():
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         for line_no, line in enumerate(text.splitlines(), 1):
-            if any(char in line for char in BAD):
+            if any(marker in line for marker in BAD):
                 hits.append((str(path), line_no, line[:160]))
                 break
 

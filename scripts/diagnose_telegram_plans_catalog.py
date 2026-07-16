@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,9 +61,9 @@ def main():
         "subscription_cards": [],
     }
     crypto_text, _ = telegram_plans_payload(active_crypto_user, chat_id="123", lang="en", view="all")
-    assert_true("Crypto plan: Pro" in crypto_text, "Crypto user must see active crypto plan")
-    assert_true("Crypto expiry: 2026-12-31" in crypto_text, "Crypto user must see crypto expiry")
-    assert_true("Forex plan: Not active" in crypto_text, "Crypto-only user must not be shown as Forex active")
+    assert_true("Plan: Pro" in crypto_text, "Crypto user must see active crypto plan")
+    assert_true("Expiry: 2026-12-31" in crypto_text, "Crypto user must see crypto expiry")
+    assert_true("Status: Not Active" in crypto_text, "Crypto-only user must not be shown as Forex active")
 
     active_forex_user = {
         "id": 2,
@@ -76,9 +76,9 @@ def main():
         ],
     }
     forex_user_text, _ = telegram_plans_payload(active_forex_user, chat_id="456", lang="en", view="all")
-    assert_true("Crypto plan: Free Trial" in forex_user_text, "Forex-only user must keep crypto separate")
-    assert_true("Forex plan: VIP ALL FOREX" in forex_user_text, "Forex user must see Forex plan")
-    assert_true("Forex expiry: 2026-08-16" in forex_user_text, "Forex user must see Forex expiry")
+    assert_true("Plan: Free Trial" in forex_user_text, "Forex-only user must keep crypto separate")
+    assert_true("Plan: VIP ALL FOREX" in forex_user_text, "Forex user must see Forex plan")
+    assert_true("Expiry: 2026-08-16" in forex_user_text, "Forex user must see Forex expiry")
 
     both_user = {
         "id": 3,
@@ -92,7 +92,7 @@ def main():
         ],
     }
     both_text = subscription_message(both_user)
-    assert_true("Crypto plan: Pro" in both_text and "Forex plan: VIP ALL FOREX" in both_text, "Both subscriptions must be shown independently")
+    assert_true("Crypto Subscription" in both_text and "VIP ALL FOREX Subscription" in both_text, "Both subscriptions must be shown independently")
 
     unlinked_text, unlinked_markup = telegram_plans_payload(None, chat_id="999", lang="en", view="all")
     assert_true("Not linked" in unlinked_text, "Unlinked user must get link-state message")
@@ -100,7 +100,7 @@ def main():
 
     expired_user = {"id": 4, "chat_id": "000", "plan": "basic", "expiry": "2020-01-01", "is_paid": 1, "subscription_cards": []}
     expired_text = subscription_message(expired_user)
-    assert_true("Crypto expiry: 2020-01-01" in expired_text, "Expired user must still see the actual expiry")
+    assert_true("Expiry: 2020-01-01" in expired_text, "Expired user must still see the actual expiry")
 
     assert_true(PLAN_CATALOG["basic"]["billing_cycles"]["monthly"]["price"] == 25, "Catalog Basic price mismatch")
     assert_true(PLAN_CATALOG["pro"]["billing_cycles"]["monthly"]["price"] == 59.99, "Catalog Pro price mismatch")

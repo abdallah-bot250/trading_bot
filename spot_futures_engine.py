@@ -63,7 +63,7 @@ def evaluate_trade_types(direction, trend, trend_power, confidence, htf_ok, stru
 
     if timeframe == "1h":
         spot_score += 5
-    elif timeframe == "5m":
+    elif timeframe in ["15m", "30m"]:
         futures_score += 5
 
     spot_score += (confidence - 70) * 0.25

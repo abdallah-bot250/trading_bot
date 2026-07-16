@@ -1,4 +1,4 @@
-import os
+﻿import os
 import hmac
 import hashlib
 from decimal import Decimal, InvalidOperation
@@ -42,6 +42,7 @@ from trader_app.services.subscriptions import (
     get_user_subscription_cards,
     is_vip_all_forex_payment_code,
 )
+from trader_app.services.user_entitlements import get_user_entitlements
 from trader_app.services.exchanges.connection_test import test_exchange_connection
 from trader_app.services.exchanges.encryption import encrypt_credential, decrypt_credential, mask_credential
 from trader_app.services.exchanges.registry import (
@@ -3523,6 +3524,112 @@ def admin_subscriptions_page():
     """, rows=rows)
 
 
+@admin_bp.route("/admin/delivery-diagnostics")
+def admin_delivery_diagnostics_page():
+    if not admin_required():
+        return "Forbidden", 403
+    status_filter = (request.args.get("status") or "all").strip().lower()
+    rows = []
+    reason = ""
+    try:
+        conn = db()
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        c.execute("""
+            SELECT id, email, chat_id, plan, expiry, is_paid, bot_active,
+                   COALESCE(spot_enabled, 1) AS spot_enabled,
+                   COALESCE(futures_enabled, 1) AS futures_enabled,
+                   lifetime_owner
+            FROM users
+            ORDER BY id DESC
+            LIMIT 250
+        """)
+        users = c.fetchall() or []
+        for user in users:
+            ent = get_user_entitlements(user=dict(user), conn=conn)
+            crypto = ent["crypto"]
+            forex = ent["forex"]
+            last_crypto = "N/A"
+            last_forex = "N/A"
+            try:
+                c.execute("""
+                    SELECT created_at
+                    FROM signal_log
+                    WHERE chat_id = %s AND COALESCE(product_code, '') != 'vip_all_forex'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (user.get("chat_id"),))
+                row = c.fetchone()
+                if row:
+                    last_crypto = row.get("created_at") if hasattr(row, "get") else row[0]
+            except Exception:
+                conn.rollback()
+            try:
+                c.execute("""
+                    SELECT created_at
+                    FROM signal_log
+                    WHERE chat_id = %s AND product_code = 'vip_all_forex'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (user.get("chat_id"),))
+                row = c.fetchone()
+                if row:
+                    last_forex = row.get("created_at") if hasattr(row, "get") else row[0]
+            except Exception:
+                conn.rollback()
+
+            failure = []
+            if not ent["telegram_linked"]:
+                failure.append("Missing Chat")
+            if not ent["telegram_active"]:
+                failure.append("Blocked Bot / Paused")
+            if crypto.get("expired"):
+                failure.append("Crypto Expired")
+            if forex.get("expired"):
+                failure.append("Forex Expired")
+            row = {
+                "email": mask_email(user.get("email")),
+                "telegram_linked": ent["telegram_linked"],
+                "telegram_active": ent["telegram_active"],
+                "crypto_plan": crypto.get("display_name"),
+                "crypto_expiry": crypto.get("expires_at"),
+                "crypto_eligible": crypto.get("can_receive_spot") or crypto.get("can_receive_futures"),
+                "forex_plan": forex.get("display_name"),
+                "forex_expiry": forex.get("expires_at"),
+                "forex_eligible": forex.get("can_receive_signals"),
+                "last_crypto": last_crypto,
+                "last_forex": last_forex,
+                "failure": ", ".join(failure) or "OK",
+            }
+            if status_filter == "missing_chat" and row["telegram_linked"]:
+                continue
+            if status_filter == "forex" and not row["forex_eligible"]:
+                continue
+            if status_filter == "crypto" and not row["crypto_eligible"]:
+                continue
+            rows.append(row)
+        conn.close()
+    except Exception as e:
+        reason = str(e)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        log(f"admin delivery diagnostics unavailable: {e}")
+    return render_template_string("""
+    <!doctype html><html><head><meta charset='utf-8'><title>Nexora Delivery Diagnostics</title>
+    <style>body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1280px;margin:30px auto;padding:20px}.card{background:linear-gradient(145deg,rgba(15,27,42,.95),rgba(7,14,23,.98));border:1px solid rgba(212,175,55,.22);border-radius:18px;padding:18px;box-shadow:0 22px 70px rgba(0,0,0,.35)}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px;border-bottom:1px solid rgba(148,163,184,.14);text-align:left;vertical-align:top}th{color:#f7d774}.ok{color:#17c964}.bad{color:#f87171}.muted{color:#94a3b8}a{color:#38bdf8}.filters a{display:inline-block;margin:0 8px 12px 0;padding:8px 12px;border:1px solid rgba(148,163,184,.25);border-radius:999px;text-decoration:none}</style>
+    </head><body><main class='wrap'><h1>Delivery Diagnostics</h1>
+    <p class='muted'>Read-only view. Crypto and VIP ALL FOREX are evaluated independently from the unified entitlement service.</p>
+    <div class='filters'><a href='/admin/delivery-diagnostics'>All</a><a href='/admin/delivery-diagnostics?status=crypto'>Crypto eligible</a><a href='/admin/delivery-diagnostics?status=forex'>Forex eligible</a><a href='/admin/delivery-diagnostics?status=missing_chat'>Missing chat</a><a href='/admin'>Back to Admin</a></div>
+    {% if reason %}<p class='bad'>{{reason}}</p>{% endif %}
+    <section class='card'><table><thead><tr><th>User</th><th>Telegram</th><th>Crypto Plan</th><th>Crypto Expiry</th><th>Crypto Eligible</th><th>Forex Plan</th><th>Forex Expiry</th><th>Forex Eligible</th><th>Last Crypto</th><th>Last Forex</th><th>Last Failure Reason</th></tr></thead><tbody>
+    {% for row in rows %}
+    <tr><td>{{row.email}}</td><td>{{'Linked' if row.telegram_linked else 'Missing Chat'}} / {{'Active' if row.telegram_active else 'Paused'}}</td><td>{{row.crypto_plan}}</td><td>{{row.crypto_expiry}}</td><td class='{{"ok" if row.crypto_eligible else "bad"}}'>{{row.crypto_eligible}}</td><td>{{row.forex_plan}}</td><td>{{row.forex_expiry}}</td><td class='{{"ok" if row.forex_eligible else "bad"}}'>{{row.forex_eligible}}</td><td>{{row.last_crypto}}</td><td>{{row.last_forex}}</td><td>{{row.failure}}</td></tr>
+    {% endfor %}
+    </tbody></table></section></main></body></html>
+    """, rows=rows, reason=reason)
+
+
 @admin_bp.route("/admin/subscriptions/vip-all-forex/activate", methods=["POST"])
 def admin_activate_vip_all_forex():
     if not admin_required():
@@ -5511,21 +5618,24 @@ def webhook():
                     if not referral_code:
                         referral_code = ensure_user_has_referral_code(chat_id, conn)
 
-                    send(chat_id, linked_message(current_plan, expiry, is_admin_flag == 1 ))
+                    user_payload = {
+                        "id": user_id,
+                        "email": email,
+                        "chat_id": chat_id,
+                        "plan": current_plan,
+                        "expiry": expiry,
+                        "is_paid": 1 if is_paid else 0,
+                        "trades": trades,
+                        "bot_active": 1,
+                        "spot_enabled": 1,
+                        "futures_enabled": 1,
+                        "lifetime_owner": lifetime_owner,
+                        "is_admin": is_admin_flag,
+                    }
+                    send(chat_id, "Account connected successfully.")
+                    send(chat_id, subscription_message(user_payload, lang=telegram_lang))
                     try:
-                        plan_text, plan_markup = telegram_plans_payload({
-                            "id": user_id,
-                            "email": email,
-                            "chat_id": chat_id,
-                            "plan": current_plan,
-                            "expiry": expiry,
-                            "is_paid": 1 if is_paid else 0,
-                            "trades": trades,
-                            "bot_active": 1,
-                            "spot_enabled": 1,
-                            "futures_enabled": 1,
-                            "lifetime_owner": lifetime_owner,
-                        }, chat_id=chat_id, lang=telegram_lang, view="all")
+                        plan_text, plan_markup = telegram_plans_payload(user_payload, chat_id=chat_id, lang=telegram_lang, view="all")
                         send(chat_id, plan_text, reply_markup=plan_markup)
                     except Exception as plan_start_error:
                         log(f"telegram start plans skipped: {plan_start_error}")
@@ -5535,29 +5645,19 @@ def webhook():
                         return "ok", 200
 
                     if is_paid:
-                        send(chat_id, subscription_message({
-                            "plan": current_plan,
-                            "expiry": expiry,
-                            "is_paid": 1,
-                            "trades": trades,
-                            "bot_active": 1,
-                            "spot_enabled": 1,
-                            "futures_enabled": 1,
-                        }))
-
                         aff_link = telegram_referral_link(referral_code)
-                        send(chat_id, f"""💸 رابط الأفلييت الخاص بك:
+                        send(chat_id, f"""Affiliate link:
 
 {aff_link}
 
-📌 كل شخص يدخل من خلالك ويبدأ البوت هيتسجل تحتك.
+Every new user who joins through your link is tracked under your account.
 """)
 
                         return "ok", 200
 
                     if trades < 2:
                         free_signals = get_top_free_signals(limit=2)
-                        log(f"🎯 Free signals returned: {free_signals}")
+                        log(f"Free signals returned: {len(free_signals or [])}")
 
                         if not free_signals:
                             send(chat_id, "NEXORA MARKET UPDATE\n\nNo qualified trade opportunity is available right now. Nexora is waiting for cleaner market structure instead of forcing a weak trade.")
@@ -5565,7 +5665,7 @@ def webhook():
                             sent_count = 0
 
                             for i, signal in enumerate(free_signals, 1):
-                                success = send(chat_id, f"🔥 إشارة مجانية #{i}\n" + format_signal(signal))
+                                success = send(chat_id, f"Free signal #{i}\n" + format_signal(signal))
 
                                 if success:
                                     sent_count += 1
@@ -5578,24 +5678,33 @@ def webhook():
                                 """, (sent_count, user_id))
                                 conn.commit()
 
-                                send(chat_id, f"""🎁 تم إرسال {sent_count} صفقة مجانية من البوت.
+                                if telegram_lang == "ar":
+                                    send(chat_id, f"""تم إرسال {sent_count} صفقة مجانية من البوت.
 
-📌 مهم:
 النسخة المجانية هدفها إنك تشوف طريقة شغل البوت وجودة الفلترة،
 لكنها ليست كل إمكانيات النظام.
 
-🚀 في النسخة المدفوعة هتستفيد بـ:
+في النسخة المدفوعة هتستفيد بـ:
 • فرص أقوى
 • فلترة أعلى
 • إشارات مستمرة حسب حالة السوق
 • تقليل الدخول العشوائي
 • وفي Elite تقدر تربط حسابك للتنفيذ التلقائي
 
-⚠️ البوت مش بيبعت صفقات لمجرد الإرسال،
+البوت مش بيبعت صفقات لمجرد الإرسال،
 هو بيستنى الفرصة الواضحة فقط.
 
-💰 لو حابب تكمل:
+لو حابب تكمل:
 ادخل على الموقع وفعّل الباقة المناسبة ليك.
+""")
+                                else:
+                                    send(chat_id, f"""{sent_count} free signal(s) were sent.
+
+The free plan shows how Nexora filters market opportunities, but it does not include every paid feature.
+
+Paid plans provide stronger filtering, direct delivery according to market quality, and eligible automation controls.
+
+Nexora does not send random trades. It waits for clear opportunities only.
 """)
                             else:
                                 send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
@@ -5603,16 +5712,28 @@ def webhook():
                     else:
                         aff_link = telegram_referral_link(referral_code)
 
-                        send(chat_id, f"""📌 أنت استلمت الصفقتين المجانيين بالفعل.
+                        if telegram_lang == "ar":
+                            send(chat_id, f"""أنت استلمت الصفقتين المجانيين بالفعل.
 
-🔥 لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
+لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
 تقدر تفعّل الباقة المناسبة من الموقع.
 
-💡 البوت بيختار الفرص على حسب حالة السوق،
+البوت بيختار الفرص على حسب حالة السوق،
 ومش هدفه كثرة الصفقات... هدفه الجودة أولًا.
 
-💸 ولو حابب تكسب من البوت كمان،
+ولو حابب تكسب من البوت كمان،
 ده رابط الأفلييت الخاص بك:
+
+{aff_link}
+""")
+                        else:
+                            send(chat_id, f"""You already received your free eligible signals.
+
+To continue receiving direct premium opportunities, activate the plan that fits your market: Crypto or VIP ALL FOREX.
+
+Nexora prioritizes quality over quantity.
+
+Your affiliate link:
 
 {aff_link}
 """)
@@ -5648,17 +5769,17 @@ def webhook():
 
                 if not user:
                     register_link = f"{current_base_url()}/register?chat_id={chat_id}"
-                    send(chat_id, f"""لم يتم العثور على هذا الإيميل في الموقع.
+                    send(chat_id, f"""This email was not found on the website.
 
-سجل حسابك من الرابط الآمن:
+Create your account from the secure link:
 {register_link}
 """)
                     return "ok", 200
 
                 login_link = f"{current_base_url()}/login?chat_id={chat_id}"
-                send(chat_id, f"""لحماية حسابك، لا يتم ربط تيليجرام بمجرد كتابة الإيميل.
+                send(chat_id, f"""For account safety, Telegram is not linked by typing an email only.
 
-ادخل من الرابط الآمن وسجل دخولك بكلمة السر لربط الحساب:
+Open the secure link and login with your password to link Telegram:
 {login_link}
 """)
                 return "ok", 200

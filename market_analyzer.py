@@ -19,7 +19,7 @@ SYMBOLS = [
     "ICPUSDT", "ETCUSDT", "FILUSDT", "AAVEUSDT", "UNIUSDT", "SUIUSDT"
 ]
 
-TIMEFRAMES = ["5m", "15m", "1h"]
+TIMEFRAMES = ["15m", "30m", "1h"]
 
 REQUEST_TIMEOUT = 12
 MIN_SCORE_TO_TRADE = 5
@@ -50,6 +50,19 @@ ENTRY_MANAGER_MAX_UPDATE_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_UPDAT
 ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT = float(os.environ.get("ENTRY_MANAGER_MAX_TP1_PROGRESS_PERCENT", "35"))
 ENTRY_MANAGER_MIN_SL_ROOM_PERCENT = float(os.environ.get("ENTRY_MANAGER_MIN_SL_ROOM_PERCENT", "0.12"))
 ENTRY_MANAGER_MIN_RR = float(os.environ.get("ENTRY_MANAGER_MIN_RR", "1.5"))
+FUTURES_BIAS_TIMEFRAMES = [tf.strip().lower() for tf in os.environ.get("FUTURES_BIAS_TIMEFRAMES", "1h,4h").split(",") if tf.strip()]
+FUTURES_SETUP_TIMEFRAME = os.environ.get("FUTURES_SETUP_TIMEFRAME", "30m").strip().lower() or "30m"
+FUTURES_TRIGGER_TIMEFRAME = os.environ.get("FUTURES_TRIGGER_TIMEFRAME", "15m").strip().lower() or "15m"
+FUTURES_MIN_RR = float(os.environ.get("FUTURES_MIN_RR", "1.5"))
+FUTURES_ALLOW_COUNTER_TREND = os.environ.get("FUTURES_ALLOW_COUNTER_TREND", "false").strip().lower() in {"1", "true", "yes", "on"}
+FUTURES_REQUIRE_RETEST = os.environ.get("FUTURES_REQUIRE_RETEST", "true").strip().lower() not in {"0", "false", "no", "off"}
+FUTURES_REQUIRE_TRIGGER_CLOSE = os.environ.get("FUTURES_REQUIRE_TRIGGER_CLOSE", "true").strip().lower() not in {"0", "false", "no", "off"}
+FUTURES_MAX_RECOMMENDED_LEVERAGE = int(os.environ.get("FUTURES_MAX_RECOMMENDED_LEVERAGE", "5"))
+FUTURES_REJECT_CHASE_ENTRY = os.environ.get("FUTURES_REJECT_CHASE_ENTRY", "true").strip().lower() not in {"0", "false", "no", "off"}
+FUTURES_MAX_ENTRY_ATR_DISTANCE = float(os.environ.get("FUTURES_MAX_ENTRY_ATR_DISTANCE", "0.75"))
+FUTURES_MAX_IMPULSE_ATR = float(os.environ.get("FUTURES_MAX_IMPULSE_ATR", "1.85"))
+FUTURES_MIN_TP1_ATR_ROOM = float(os.environ.get("FUTURES_MIN_TP1_ATR_ROOM", "0.65"))
+FUTURES_SIGNAL_EXPIRY_MINUTES = int(os.environ.get("FUTURES_SIGNAL_EXPIRY_MINUTES", "45"))
 def _env_int(name, default, minimum=None, maximum=None):
     try:
         value = int(str(os.environ.get(name, default)).strip())
@@ -2696,8 +2709,8 @@ def _expert_tf_direction(df):
 def expert_multi_timeframe_context(symbol, direction, current_df=None):
     frames = {}
     try:
-        for tf in ["4h", "1h", "15m", "5m"]:
-            df = current_df if tf == "5m" and current_df is not None else cached_market_data(symbol, tf, 220)
+        for tf in ["4h", "1h", FUTURES_SETUP_TIMEFRAME, FUTURES_TRIGGER_TIMEFRAME]:
+            df = current_df if tf == FUTURES_TRIGGER_TIMEFRAME and current_df is not None else cached_market_data(symbol, tf, 220)
             frames[tf] = {
                 "direction": _expert_tf_direction(df),
                 "available": df is not None and len(df) >= 80,
@@ -2713,9 +2726,9 @@ def expert_multi_timeframe_context(symbol, direction, current_df=None):
             return {"state": "CONFLICT", "score": 0, "reason": f"4H/1H {major} does not support {direction}", "frames": frames}
 
         score = 60
-        if frames["15m"]["direction"] in [desired, "RANGE"]:
+        if frames.get(FUTURES_TRIGGER_TIMEFRAME, {}).get("direction") in [desired, "RANGE"]:
             score += 20
-        if frames["5m"]["direction"] in [desired, "RANGE"]:
+        if frames.get(FUTURES_SETUP_TIMEFRAME, {}).get("direction") in [desired, "RANGE"]:
             score += 10
         state = "CONFIRMED" if score >= 80 else "PARTIAL"
         return {"state": state, "score": min(score, 100), "reason": f"4H main trend and 1H confirmation support {direction}", "frames": frames}
@@ -3427,7 +3440,7 @@ def adaptive_market_memory_update(symbol, regime, setup_stage, rejection_reason=
 def adaptive_mtf_playbook_context(symbol, interval, df):
     frames = {}
     try:
-        for tf in ["4h", "1h", "15m", "5m"]:
+        for tf in ["4h", "1h", FUTURES_SETUP_TIMEFRAME, FUTURES_TRIGGER_TIMEFRAME]:
             frame = df if tf == interval else cached_market_data(symbol, tf, 220)
             frames[tf] = {
                 "direction": _expert_tf_direction(frame),
@@ -3459,6 +3472,314 @@ def adaptive_mtf_playbook_context(symbol, interval, df):
         return {"state": state, "reason": reason, "frames": frames, "major": major, "confirm": confirm}
     except Exception as e:
         return {"state": "UNCONFIRMED", "reason": f"adaptive MTF error: {e}", "frames": frames}
+
+
+def futures_bias_context(symbol):
+    """Production futures bias: 4H macro, 1H directional bias."""
+    try:
+        df_4h = cached_market_data(symbol, "4h", 260)
+        df_1h = cached_market_data(symbol, "1h", 260)
+        if df_4h is None or len(df_4h) < 100 or df_1h is None or len(df_1h) < 100:
+            return {"ok": False, "reason": "futures 4H/1H data unavailable", "macro": "UNKNOWN", "bias": "UNKNOWN"}
+        macro = _expert_tf_direction(df_4h)
+        bias = _expert_tf_direction(df_1h)
+        if macro == "UNKNOWN" or bias == "UNKNOWN":
+            return {"ok": False, "reason": f"unclear futures bias 4H={macro} 1H={bias}", "macro": macro, "bias": bias}
+        if not FUTURES_ALLOW_COUNTER_TREND and ((macro == "BULL" and bias == "BEAR") or (macro == "BEAR" and bias == "BULL")):
+            return {"ok": False, "reason": f"MTF conflict 4H={macro} 1H={bias}", "macro": macro, "bias": bias}
+        if macro not in ["BULL", "BEAR"]:
+            return {"ok": False, "reason": f"unclear 4H macro trend: {macro}", "macro": macro, "bias": bias}
+        return {"ok": True, "reason": f"4H={macro} 1H={bias}", "macro": macro, "bias": bias, "df_4h": df_4h, "df_1h": df_1h}
+    except Exception as e:
+        return {"ok": False, "reason": f"futures bias error: {e}", "macro": "UNKNOWN", "bias": "UNKNOWN"}
+
+
+def _futures_atr(df):
+    try:
+        series = atr(df).dropna()
+        return _safe_float(series.iloc[-1], 0) if len(series) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _futures_level_context(df):
+    try:
+        close = _safe_float(df["close"].iloc[-1])
+        levels = calculate_support_resistance(df)
+        support = nearest_support(close, levels.get("support", []))
+        resistance = nearest_resistance(close, levels.get("resistance", []))
+        recent_high = _safe_float(df["high"].tail(36).max())
+        recent_low = _safe_float(df["low"].tail(36).min())
+        return {
+            "close": close,
+            "support": support,
+            "resistance": resistance,
+            "recent_high": recent_high,
+            "recent_low": recent_low,
+            "levels": levels,
+        }
+    except Exception:
+        return {"close": 0, "support": None, "resistance": None, "recent_high": None, "recent_low": None, "levels": {}}
+
+
+def futures_setup_context(symbol, direction, bias, setup_df):
+    """30m setup validation. RSI/MACD alone never qualifies a setup."""
+    try:
+        if setup_df is None or len(setup_df) < 100:
+            return {"ok": False, "stage": "WATCHING", "reason": "30m setup data unavailable"}
+        close = _safe_float(setup_df["close"].iloc[-1])
+        if close <= 0:
+            return {"ok": False, "stage": "WATCHING", "reason": "invalid 30m close"}
+        atr_val = _futures_atr(setup_df)
+        if atr_val <= 0:
+            return {"ok": False, "stage": "WATCHING", "reason": "30m ATR unavailable"}
+        levels = _futures_level_context(setup_df)
+        support = levels.get("support")
+        resistance = levels.get("resistance")
+        recent_high = levels.get("recent_high")
+        recent_low = levels.get("recent_low")
+        ema20v = _safe_float(ema(setup_df, 20).iloc[-1])
+        ema50v = _safe_float(ema(setup_df, 50).iloc[-1])
+        last = setup_df.iloc[-1]
+        prev = setup_df.iloc[-2]
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        upper_wick_ratio = (_safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))) / candle_range
+        lower_wick_ratio = (min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])) / candle_range
+        volume_profile = robust_volume_profile(setup_df)
+        volume_score = _safe_float(volume_profile.get("volume_score"), 45)
+
+        if recent_high and recent_low and recent_high > recent_low:
+            range_pos = (close - recent_low) / (recent_high - recent_low)
+            if 0.42 < range_pos < 0.58:
+                return {"ok": False, "stage": "WATCHING", "reason": f"price in middle of 30m range position={round(range_pos, 2)}"}
+        else:
+            range_pos = 0.5
+
+        setup = None
+        reason = None
+        if direction == "LONG":
+            pullback = close >= min(ema20v, ema50v) * 0.995 and close <= max(ema20v, ema50v) * 1.015 and bias in ["BULL", "RANGE"]
+            breakout_retest = recent_high and _safe_float(prev["close"]) > recent_high * 0.995 and _safe_float(last["low"]) <= recent_high + atr_val * 0.35 and close > recent_high
+            sweep_reclaim = recent_low and _safe_float(last["low"]) < recent_low and close > recent_low and lower_wick_ratio >= 0.35
+            sr_rejection = support and abs(close - support) <= max(atr_val * 0.9, close * 0.006) and lower_wick_ratio >= 0.28
+            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["low"]) > _safe_float(setup_df["high"].iloc[-3]) and close <= (recent_low + (recent_high - recent_low) * 0.55 if recent_high and recent_low else close)
+            if pullback:
+                setup, reason = "Trend pullback to EMA20/EMA50 or structure", "30m pullback held dynamic support"
+            if breakout_retest:
+                setup, reason = "Breakout and retest", "30m breakout retested prior high"
+            if sweep_reclaim:
+                setup, reason = "Liquidity sweep and reclaim", "30m sell-side sweep reclaimed"
+            if sr_rejection:
+                setup, reason = "Support/Resistance rejection", "30m support rejection"
+            if fvg_or_ob:
+                setup, reason = "FVG / Order Block", "30m bullish imbalance confirmed by structure"
+        else:
+            pullback = close <= max(ema20v, ema50v) * 1.005 and close >= min(ema20v, ema50v) * 0.985 and bias in ["BEAR", "RANGE"]
+            breakdown_retest = recent_low and _safe_float(prev["close"]) < recent_low * 1.005 and _safe_float(last["high"]) >= recent_low - atr_val * 0.35 and close < recent_low
+            sweep_reject = recent_high and _safe_float(last["high"]) > recent_high and close < recent_high and upper_wick_ratio >= 0.35
+            sr_rejection = resistance and abs(resistance - close) <= max(atr_val * 0.9, close * 0.006) and upper_wick_ratio >= 0.28
+            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["high"]) < _safe_float(setup_df["low"].iloc[-3]) and close >= (recent_low + (recent_high - recent_low) * 0.45 if recent_high and recent_low else close)
+            if pullback:
+                setup, reason = "Trend pullback to EMA20/EMA50 or structure", "30m pullback held dynamic resistance"
+            if breakdown_retest:
+                setup, reason = "Breakdown and retest", "30m breakdown retested prior low"
+            if sweep_reject:
+                setup, reason = "Liquidity sweep and rejection", "30m buy-side sweep rejected"
+            if sr_rejection:
+                setup, reason = "Support/Resistance rejection", "30m resistance rejection"
+            if fvg_or_ob:
+                setup, reason = "FVG / Order Block", "30m bearish imbalance confirmed by structure"
+
+        if not setup:
+            adaptive_setup_lifecycle(symbol, "ARMED", "30m setup exists only as watchlist; no confirmed retest/pullback/rejection")
+            return {"ok": False, "stage": "ARMED", "reason": "30m setup without confirmed retest/pullback/rejection"}
+        if volume_score < 40:
+            return {"ok": False, "stage": "WATCHING", "reason": f"30m volume/liquidity too weak score={round(volume_score, 1)}"}
+        return {
+            "ok": True,
+            "setup": setup,
+            "reason": reason,
+            "stage": "CONFIRMED",
+            "support": support,
+            "resistance": resistance,
+            "recent_high": recent_high,
+            "recent_low": recent_low,
+            "range_position": range_pos,
+            "atr": atr_val,
+            "volume_score": volume_score,
+        }
+    except Exception as e:
+        return {"ok": False, "stage": "WATCHING", "reason": f"futures setup error: {e}"}
+
+
+def futures_trigger_context(symbol, direction, trigger_df, setup_info):
+    """15m final trigger. A setup without this returns SETUP_ARMED, not a signal."""
+    try:
+        if trigger_df is None or len(trigger_df) < 80:
+            return {"ok": False, "stage": "ARMED", "reason": "15m trigger data unavailable"}
+        close = _safe_float(trigger_df["close"].iloc[-1])
+        if close <= 0:
+            return {"ok": False, "stage": "ARMED", "reason": "invalid 15m close"}
+        atr_val = _futures_atr(trigger_df)
+        last = trigger_df.iloc[-1]
+        prev = trigger_df.iloc[-2]
+        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
+        body = abs(_safe_float(last["close"]) - _safe_float(last["open"]))
+        if candle_range > max(atr_val * FUTURES_MAX_IMPULSE_ATR, close * 0.022):
+            return {"ok": False, "stage": "INVALIDATED", "reason": "abnormal 15m candle expansion before entry"}
+        if FUTURES_REQUIRE_TRIGGER_CLOSE and body / candle_range < 0.22:
+            return {"ok": False, "stage": "ARMED", "reason": "15m candle close not decisive yet"}
+        volume_profile = robust_volume_profile(trigger_df)
+        volume_score = _safe_float(volume_profile.get("volume_score"), 45)
+        rsi_now = _safe_float(rsi(trigger_df).iloc[-1], 50)
+        ema20v = _safe_float(ema(trigger_df, 20).iloc[-1])
+        ema50v = _safe_float(ema(trigger_df, 50).iloc[-1])
+        levels = _futures_level_context(trigger_df)
+        support = levels.get("support") or setup_info.get("support")
+        resistance = levels.get("resistance") or setup_info.get("resistance")
+        trigger = None
+        reason = None
+        if direction == "LONG":
+            close_confirm = close > _safe_float(last["open"]) and close >= _safe_float(prev["close"]) and close >= ema20v * 0.998
+            local_break_retest = _safe_float(last["low"]) <= _safe_float(prev["high"]) + atr_val * 0.35 and close > _safe_float(prev["high"])
+            rejection = support and _safe_float(last["low"]) <= support + max(atr_val * 0.65, close * 0.004) and close > support
+            momentum = ema20v >= ema50v * 0.995 and 44 <= rsi_now <= 70
+            if close_confirm:
+                trigger, reason = "15m confirmation candle", "15m closed in LONG direction"
+            if local_break_retest:
+                trigger, reason = "15m local break + retest", "local structure broke and retested"
+            if rejection:
+                trigger, reason = "15m rejection candle", "entry zone rejected support"
+            if volume_score >= 55 and momentum:
+                trigger = trigger or "15m volume/momentum confirmation"
+                reason = reason or "volume and momentum confirm LONG"
+            if resistance and (resistance - close) < max(atr_val * FUTURES_MIN_TP1_ATR_ROOM, close * 0.004):
+                return {"ok": False, "stage": "INVALIDATED", "reason": "LONG too close to resistance"}
+        else:
+            close_confirm = close < _safe_float(last["open"]) and close <= _safe_float(prev["close"]) and close <= ema20v * 1.002
+            local_break_retest = _safe_float(last["high"]) >= _safe_float(prev["low"]) - atr_val * 0.35 and close < _safe_float(prev["low"])
+            rejection = resistance and _safe_float(last["high"]) >= resistance - max(atr_val * 0.65, close * 0.004) and close < resistance
+            momentum = ema20v <= ema50v * 1.005 and 30 <= rsi_now <= 56
+            if close_confirm:
+                trigger, reason = "15m confirmation candle", "15m closed in SHORT direction"
+            if local_break_retest:
+                trigger, reason = "15m local break + retest", "local structure broke down and retested"
+            if rejection:
+                trigger, reason = "15m rejection candle", "entry zone rejected resistance"
+            if volume_score >= 55 and momentum:
+                trigger = trigger or "15m volume/momentum confirmation"
+                reason = reason or "volume and momentum confirm SHORT"
+            if support and (close - support) < max(atr_val * FUTURES_MIN_TP1_ATR_ROOM, close * 0.004):
+                return {"ok": False, "stage": "INVALIDATED", "reason": "SHORT too close to support"}
+        if not trigger:
+            adaptive_setup_lifecycle(symbol, "ARMED", "30m setup ready; waiting for 15m trigger close")
+            return {"ok": False, "stage": "ARMED", "reason": "15m trigger not confirmed yet"}
+        return {
+            "ok": True,
+            "trigger": trigger,
+            "reason": reason,
+            "entry": close,
+            "atr": atr_val,
+            "support": support,
+            "resistance": resistance,
+            "volume_score": volume_score,
+            "rsi": rsi_now,
+        }
+    except Exception as e:
+        return {"ok": False, "stage": "ARMED", "reason": f"futures trigger error: {e}"}
+
+
+def futures_apply_execution_frames(signal):
+    """Validate and rebuild final Futures signal on 30m setup + 15m trigger only."""
+    try:
+        if str(signal.get("type") or "").upper() != "FUTURES":
+            return signal, None
+        symbol = signal.get("pair")
+        direction = str(signal.get("direction") or "").upper()
+        if direction not in ["LONG", "SHORT"]:
+            return None, "invalid futures direction"
+        bias = futures_bias_context(symbol)
+        if not bias.get("ok"):
+            return None, bias.get("reason")
+        macro = bias.get("macro")
+        one_h = bias.get("bias")
+        if direction == "LONG" and macro != "BULL":
+            return None, f"4H {macro} blocks LONG futures"
+        if direction == "SHORT" and macro != "BEAR":
+            return None, f"4H {macro} blocks SHORT futures"
+        if one_h not in ([macro, "RANGE"]):
+            return None, f"1H bias {one_h} conflicts with 4H {macro}"
+
+        setup_df = cached_market_data(symbol, FUTURES_SETUP_TIMEFRAME, 240)
+        trigger_df = cached_market_data(symbol, FUTURES_TRIGGER_TIMEFRAME, 240)
+        setup = futures_setup_context(symbol, direction, one_h, setup_df)
+        if not setup.get("ok"):
+            if setup.get("stage") == "ARMED":
+                adaptive_setup_lifecycle(symbol, "ARMED", setup.get("reason"))
+                return None, f"SETUP_ARMED: {setup.get('reason')}"
+            return None, setup.get("reason")
+        trigger = futures_trigger_context(symbol, direction, trigger_df, setup)
+        if not trigger.get("ok"):
+            if trigger.get("stage") == "ARMED":
+                adaptive_setup_lifecycle(symbol, "ARMED", trigger.get("reason"))
+                return None, f"SETUP_ARMED: {trigger.get('reason')}"
+            return None, trigger.get("reason")
+
+        entry = _safe_float(trigger.get("entry"))
+        atr_val = max(_safe_float(trigger.get("atr")), _safe_float(setup.get("atr")), entry * 0.004)
+        regime_info = {
+            "support": trigger.get("support") or setup.get("support"),
+            "resistance": trigger.get("resistance") or setup.get("resistance"),
+            "recent_low": setup.get("recent_low"),
+            "recent_high": setup.get("recent_high"),
+        }
+        if FUTURES_REJECT_CHASE_ENTRY:
+            planned_entry = _safe_float(signal.get("entry"), entry)
+            if planned_entry > 0 and abs(entry - planned_entry) > atr_val * FUTURES_MAX_ENTRY_ATR_DISTANCE:
+                return None, "ENTRY_MOVED"
+        levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=FUTURES_MIN_RR)
+        if not levels:
+            return None, "no safe 15m/30m RR room"
+        if _safe_float(levels.get("risk_reward"), 0) < FUTURES_MIN_RR:
+            return None, f"RR {levels.get('risk_reward')} below futures minimum {FUTURES_MIN_RR}"
+        if direction == "LONG" and levels.get("resistance") and (levels["tp1"] >= levels["resistance"]):
+            return None, "LONG TP1 too close to/through resistance"
+        if direction == "SHORT" and levels.get("support") and (levels["tp1"] <= levels["support"]):
+            return None, "SHORT TP1 too close to/through support"
+
+        signal.update({
+            "timeframe": FUTURES_TRIGGER_TIMEFRAME,
+            "decision_timeframes": "4H/1H/30m/15m",
+            "futures_macro_trend": macro,
+            "futures_1h_bias": one_h,
+            "futures_setup_timeframe": FUTURES_SETUP_TIMEFRAME,
+            "futures_trigger_timeframe": FUTURES_TRIGGER_TIMEFRAME,
+            "futures_30m_setup": setup.get("setup"),
+            "futures_15m_trigger": trigger.get("trigger"),
+            "entry": format_price(levels["entry"]),
+            "entry_range": f"{format_price(levels['entry'] - atr_val * 0.18)} - {format_price(levels['entry'] + atr_val * 0.18)}",
+            "tp": format_price(levels["tp3"]),
+            "tp1": format_price(levels["tp1"]),
+            "tp2": format_price(levels["tp2"]),
+            "tp3": format_price(levels["tp3"]),
+            "sl": format_price(levels["sl"]),
+            "risk_reward": levels["risk_reward"],
+            "support": format_price(levels.get("support") or regime_info.get("recent_low")),
+            "resistance": format_price(levels.get("resistance") or regime_info.get("recent_high")),
+            "nearest_support": format_price(levels.get("support") or regime_info.get("recent_low")),
+            "nearest_resistance": format_price(levels.get("resistance") or regime_info.get("recent_high")),
+            "stop_loss_reason": "SL placed behind 15m/30m structure with ATR buffer.",
+            "cancel_condition": "Cancel if price leaves the entry range before fill, breaks the 15m structure, or the setup expires.",
+            "signal_expiry_minutes": FUTURES_SIGNAL_EXPIRY_MINUTES,
+            "recommended_leverage": f"Max {FUTURES_MAX_RECOMMENDED_LEVERAGE}x conservative",
+            "signal_quality_reason": (
+                f"4H trend {macro}; 1H bias {one_h}; 30m setup {setup.get('setup')}; "
+                f"15m trigger {trigger.get('trigger')}; {trigger.get('reason')}"
+            ),
+        })
+        return signal, None
+    except Exception as e:
+        return None, f"futures execution frame error: {e}"
 
 
 def btc_market_context():
@@ -4075,6 +4396,10 @@ def finalize_adaptive_signal(signal, df, paid=True):
         )
         trade_type, adjusted_type_scores = choose_trade_type(type_scores)
         signal["type"] = trade_type
+        if trade_type == "FUTURES":
+            signal, futures_reason = futures_apply_execution_frames(signal)
+            if not signal:
+                return None, futures_reason or "futures 15m/30m validation rejected"
         signal.update({
             "type_scores": adjusted_type_scores,
             "spot_score": adjusted_type_scores.get("SPOT", 0),
@@ -4436,6 +4761,11 @@ def generate_signal(symbol, interval="5m"):
     )
     trade_type, adjusted_type_scores = choose_trade_type(type_scores)
     signal["type"] = trade_type
+    if trade_type == "FUTURES":
+        signal, futures_reason = futures_apply_execution_frames(signal)
+        if not signal:
+            _no_trade_reason(symbol, interval, futures_reason or "futures 15m/30m validation rejected")
+            return None, futures_reason or "futures 15m/30m validation rejected"
 
     signal.update({
         "type_scores": adjusted_type_scores,

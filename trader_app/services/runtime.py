@@ -463,18 +463,18 @@ def send(chat_id, text, reply_markup=None):
         )
 
         if r.status_code != 200:
-            log(f"âŒ Telegram send failed: {r.text}")
+            log(f"Telegram send failed: {r.text}")
             return False
 
         data = r.json()
         if not data.get("ok"):
-            log(f"âŒ Telegram API error: {data}")
+            log(f"Telegram API error: {data}")
             return False
 
         return True
 
     except Exception as e:
-        log(f"âŒ Telegram Error: {e}")
+        log(f"Telegram Error: {e}")
         return False
 
     
@@ -1032,7 +1032,7 @@ def init_db():
 
         conn.commit()
         conn.close()
-        log("âœ… DB initialized successfully")
+        log("DB initialized successfully")
 
     except Exception as e:
-        log(f"âŒ init_db error: {e}")
+        log(f"init_db error: {e}")

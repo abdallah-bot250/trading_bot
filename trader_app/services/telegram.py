@@ -7,12 +7,9 @@ from .plan_catalog import (
     login_link_url,
     public_plans_by_market,
 )
-from .runtime import PLAN_LABELS, send
-from .subscriptions import (
-    VIP_ALL_FOREX_CODE,
-    get_user_market_capabilities,
-    get_user_subscription_cards,
-)
+from .runtime import PLAN_LABELS
+from .subscriptions import VIP_ALL_FOREX_CODE
+from .user_entitlements import get_user_entitlements
 
 
 def command_menu(is_admin=False):
@@ -21,8 +18,8 @@ def command_menu(is_admin=False):
         "",
         "Account commands:",
         "/start - Connect your account and check access",
-        "/subscription - View plan and access status",
-        "/plans - Compare Crypto and Forex plans",
+        "/subscription - View Crypto and Forex subscription status",
+        "/plans - Compare Crypto and VIP ALL FOREX plans",
         "/subscribe - Open subscription options",
         "/stats - View account statistics",
         "/affiliate - View referrals and commission balance",
@@ -58,16 +55,16 @@ Broadcast commands are protected and available only to an authorized admin Teleg
 def welcome_message(register_link):
     return f"""NEXORA AI TRADER
 
-Welcome. Nexora filters the market and delivers qualified opportunities only when market conditions are suitable.
+Welcome. Nexora filters the market and sends qualified opportunities only when conditions are suitable.
 
 What Nexora reviews:
 - Trend and market structure
 - Volume and liquidity
 - Multi-timeframe alignment
 - Entry quality and risk
-- Spot/Futures signal suitability
+- Crypto and Forex access based on your active subscriptions
 
-Your free plan includes the first eligible free signals after registration.
+Your free Crypto plan includes the first eligible free signals after registration.
 
 Create or connect your account:
 {register_link}
@@ -77,18 +74,14 @@ After registration, send /start again to complete account linking."""
 
 def linked_message(current_plan, expiry, is_admin=False):
     role = "Admin / Owner" if is_admin else "User"
-    return f"""NEXORA AI TRADER
-
-Account connected successfully.
+    return f"""Account connected successfully.
 
 Role: {role}
-Plan: {PLAN_LABELS.get(current_plan, current_plan or 'Free Trial')}
-Expiry: {expiry or 'not active'}
+Crypto plan: {PLAN_LABELS.get(current_plan, current_plan or 'Free Trial')}
+Crypto expiry: {expiry or 'not active'}
 
-Use /subscription to review your active Crypto and Forex subscriptions.
-Use /plans to compare available plans.
-
-Risk warning: Trading involves risk. Nexora signals support decision-making and do not guarantee profit."""
+Use /subscription to review Crypto and VIP ALL FOREX separately.
+Use /plans to compare available plans."""
 
 
 def _telegram_lang(lang=None):
@@ -110,12 +103,14 @@ def should_show_plans_for_text(text):
         "subscription",
         "crypto",
         "forex",
+        "vip all forex",
         "الخطط",
         "الاسعار",
         "الأسعار",
         "الاشتراك",
         "الاشتراكات",
         "فوركس",
+        "الفوركس",
         "كريبتو",
         "العملات الرقمية",
     ]
@@ -146,8 +141,19 @@ def _billing_line(plan, lang):
 
 def _yes_no(value, lang):
     if lang == "ar":
-        return "متاح" if value else "غير متاح"
+        return "مفعل" if value else "غير مفعل"
     return "Enabled" if value else "Disabled"
+
+
+def _status_text(value, lang):
+    value = str(value or "not active").lower()
+    if lang != "ar":
+        return value.title()
+    return {
+        "active": "نشط",
+        "expired": "منتهي",
+        "not active": "غير نشط",
+    }.get(value, value)
 
 
 def _available_text(value, lang):
@@ -158,7 +164,7 @@ def _available_text(value, lang):
 
 def _plan_block(plan, lang, detailed=False):
     name = plan.get("display_name")
-    market = plan.get("market_type", "").upper()
+    market = str(plan.get("market_type", "")).upper()
     signal_types = ", ".join(plan.get("signal_types") or [])
     if lang == "ar":
         lines = [
@@ -174,7 +180,7 @@ def _plan_block(plan, lang, detailed=False):
             lines.extend([
                 "الأصول المدعومة: " + ", ".join(plan.get("supported_assets") or []),
                 "Forex Auto Trade: غير متاح حاليًا",
-                "التحليل: اتجاه 4H/1H + دخول 15m/5m + دعم ومقاومة + ATR + RSI/MACD + سبريد حقيقي + فلتر أخبار.",
+                "التحليل: اتجاه 4H و1H، Setup على 30m، دخول 15m، دعم ومقاومة، ATR، RSI/MACD، سبريد حقيقي، وفلتر أخبار.",
                 "محتوى الإشارة: " + ", ".join(plan.get("signal_content") or []),
             ])
         if detailed:
@@ -195,7 +201,7 @@ def _plan_block(plan, lang, detailed=False):
         lines.extend([
             "Supported assets: " + ", ".join(plan.get("supported_assets") or []),
             "Forex Auto Trade: Not available",
-            "Analysis: 4H/1H trend + 15m/5m entry + S/R + ATR + RSI/MACD + real spread + news filter.",
+            "Analysis: 4H/1H trend, 30m setup, 15m entry, S/R, ATR, RSI/MACD, real spread, and news filter.",
             "Signal includes: " + ", ".join(plan.get("signal_content") or []),
         ])
     if detailed:
@@ -204,82 +210,52 @@ def _plan_block(plan, lang, detailed=False):
     return "\n".join(lines)
 
 
-def _card_expiry(card):
-    return card.get("expires_at") or card.get("expiry") or "Lifetime"
-
-
-def _legacy_crypto_label(user):
-    plan = str((user or {}).get("plan") or "trial").strip().lower()
-    return PLAN_LABELS.get(plan, plan.title() if plan else "Free Trial")
-
-
-def _legacy_crypto_expiry(user):
-    return (user or {}).get("expiry") or "not active"
-
-
-def _active_subscriptions_text(user, lang, chat_id=None):
-    linked = bool(user and user.get("chat_id"))
-    if not user:
-        if lang == "ar":
-            return (
-                "Your active subscriptions\n"
-                "Crypto plan: Not linked\n"
-                "Crypto expiry: Not linked\n"
-                "Forex plan: Not linked\n"
-                "Forex expiry: Not linked\n"
-                "Telegram linked: No\n"
-                "Crypto signals: Disabled\n"
-                "Forex signals: Disabled"
-            )
-        return (
-            "Your active subscriptions\n"
-            "Crypto plan: Not linked\n"
-            "Crypto expiry: Not linked\n"
-            "Forex plan: Not linked\n"
-            "Forex expiry: Not linked\n"
-            "Telegram linked: No\n"
-            "Crypto signals: Disabled\n"
-            "Forex signals: Disabled"
-        )
-
-    injected_cards = isinstance(user, dict) and user.get("subscription_cards") is not None
-    cards = user.get("subscription_cards") if injected_cards else get_user_subscription_cards(user)
-    crypto_cards = [card for card in cards if str(card.get("market_type") or "crypto").lower() == "crypto"]
-    forex_cards = [card for card in cards if str(card.get("market_type") or "").lower() == "forex"]
-    if injected_cards:
-        capabilities = {
-            "can_receive_crypto": bool(crypto_cards) or bool(_legacy_crypto_label(user) != "Free Trial"),
-            "can_receive_forex": bool(forex_cards),
-        }
-    else:
-        capabilities = get_user_market_capabilities(user.get("id"), user)
-
-    crypto_plan = ", ".join(card.get("display_name") or card.get("product_code") for card in crypto_cards) or _legacy_crypto_label(user)
-    crypto_expiry = ", ".join(str(_card_expiry(card)) for card in crypto_cards) or _legacy_crypto_expiry(user)
-    forex_plan = ", ".join(card.get("display_name") or card.get("product_code") for card in forex_cards) or "Not active"
-    forex_expiry = ", ".join(str(_card_expiry(card)) for card in forex_cards) or "not active"
-
+def active_subscriptions_text(user, lang="en", chat_id=None):
+    lang = _telegram_lang(lang)
+    ent = get_user_entitlements(user=user, chat_id=chat_id)
+    crypto = ent["crypto"]
+    forex = ent["forex"]
     if lang == "ar":
         return "\n".join([
-            "Your active subscriptions",
-            f"Crypto plan: {crypto_plan}",
-            f"Crypto expiry: {crypto_expiry}",
-            f"Forex plan: {forex_plan}",
-            f"Forex expiry: {forex_expiry}",
-            f"Telegram linked: {_yes_no(linked, lang)}",
-            f"Crypto signals: {_yes_no(capabilities.get('can_receive_crypto'), lang)}",
-            f"Forex signals: {_yes_no(capabilities.get('can_receive_forex'), lang)}",
+            "اشتراكاتك الحالية",
+            "",
+            "اشتراك Crypto",
+            f"الخطة: {crypto['display_name']}",
+            f"الحالة: {_status_text(crypto['status'], lang)}",
+            f"الانتهاء: {crypto['expires_at']}",
+            f"Spot Signals: {_yes_no(crypto['can_receive_spot'], lang)}",
+            f"Futures Signals: {_yes_no(crypto['can_receive_futures'], lang)}",
+            f"Auto Trade: {_yes_no(crypto['can_use_auto_trade'], lang)}",
+            "",
+            "اشتراك VIP ALL FOREX",
+            f"الخطة: {forex['display_name']}",
+            f"الحالة: {_status_text(forex['status'], lang)}",
+            f"الانتهاء: {forex['expires_at']}",
+            f"Forex Signals: {_yes_no(forex['can_receive_signals'], lang)}",
+            "Forex Auto Trade: غير متاح حاليًا",
+            "",
+            f"Telegram linked: {_yes_no(ent['telegram_linked'], lang)}",
         ])
 
     return "\n".join([
         "Your active subscriptions",
-        f"Crypto plan: {crypto_plan}",
-        f"Crypto expiry: {crypto_expiry}",
-        f"Forex plan: {forex_plan}",
-        f"Forex expiry: {forex_expiry}",
-        f"Telegram linked: {_yes_no(linked, lang)}",
-        f"Crypto signals: {_yes_no(capabilities.get('can_receive_crypto'), lang)}",
-        f"Forex signals: {_yes_no(capabilities.get('can_receive_forex'), lang)}",
+        "",
+        "Crypto Subscription",
+        f"Plan: {crypto['display_name']}",
+        f"Status: {_status_text(crypto['status'], lang)}",
+        f"Expiry: {crypto['expires_at']}",
+        f"Spot Signals: {_yes_no(crypto['can_receive_spot'], lang)}",
+        f"Futures Signals: {_yes_no(crypto['can_receive_futures'], lang)}",
+        f"Auto Trade: {_yes_no(crypto['can_use_auto_trade'], lang)}",
+        "",
+        "VIP ALL FOREX Subscription",
+        f"Plan: {forex['display_name']}",
+        f"Status: {_status_text(forex['status'], lang)}",
+        f"Expiry: {forex['expires_at']}",
+        f"Forex Signals: {_yes_no(forex['can_receive_signals'], lang)}",
+        "Forex Auto Trade: Not available",
+        "",
+        f"Telegram linked: {_yes_no(ent['telegram_linked'], lang)}",
     ])
 
 
@@ -299,21 +275,21 @@ def telegram_plans_payload(user=None, chat_id=None, lang="en", view="all"):
         title = "خطط Nexora المتاحة"
         intro = "اختر خطة Crypto أو خطة VIP ALL FOREX. الأسعار من نفس كتالوج الموقع، ولا يتم تفعيل أي اشتراك إلا بعد تأكيد الدفع."
         compare = "المقارنة: Crypto للعملات الرقمية Spot/Futures. VIP ALL FOREX للفوركس والذهب يدويًا مع فلتر أخبار وسبريد حقيقي. Auto Trade للفوركس غير متاح حاليًا."
-        not_sure = "لو لست متأكدًا: اختر Crypto لو تتداول العملات الرقمية، واختر Forex لو تتابع العملات والذهب. لا توجد نصيحة مالية شخصية."
+        not_sure = "لو لست متأكدًا: اختر Crypto إذا كنت تتداول العملات الرقمية، واختر Forex إذا كنت تتابع العملات والذهب. هذا ليس نصيحة مالية شخصية."
     else:
         title = "Nexora plans"
-        intro = "Choose Crypto plans or the independent VIP ALL FOREX plan. Telegram uses the same central catalog as the website, and subscriptions activate only after verified payment."
+        intro = "Choose Crypto plans or the independent VIP ALL FOREX plan. Telegram uses the same central catalog as the website. Subscriptions activate only after verified payment."
         compare = "Comparison: Crypto covers Spot/Futures digital-asset signals. VIP ALL FOREX covers manual Forex/Gold analysis with news protection and real spread validation. Forex Auto Trade is not available."
         not_sure = "Not sure? Choose Crypto for digital assets, Forex for currency/gold analysis. This is not personal financial advice."
 
     body = [title, "", intro, ""]
     if view == "compare":
-        body.extend([compare, "", not_sure, "", _active_subscriptions_text(user, lang, chat_id)])
+        body.extend([compare, "", not_sure, "", active_subscriptions_text(user, lang, chat_id)])
     else:
         for plan in selected:
             body.append(_plan_block(plan, lang, detailed=(view in {"forex", "details"})))
             body.append("")
-        body.append(_active_subscriptions_text(user, lang, chat_id))
+        body.append(active_subscriptions_text(user, lang, chat_id))
 
     keyboard = [
         [{"text": "Compare plans" if lang == "en" else "قارن الخطط", "callback_data": "plans:compare"}],
@@ -350,26 +326,51 @@ def plan_explainer_message(lang="en"):
     return text
 
 
-def subscription_message(user):
+def subscription_message(user, lang="en"):
+    lang = _telegram_lang(lang)
     if not user:
-        return (
-            "NEXORA ACCOUNT\n\n"
-            "No account is linked to this Telegram yet. Use /start and connect through the secure website link."
-        )
+        if lang == "ar":
+            return "NEXORA ACCOUNT\n\nلا يوجد حساب مربوط بهذا Telegram. استخدم /start واربط الحساب من الرابط الآمن."
+        return "NEXORA ACCOUNT\n\nNo account is linked to this Telegram yet. Use /start and connect through the secure website link."
 
-    trades = int(user.get("trades") or 0)
-    bot_active = int(user.get("bot_active") or 0)
+    ent = get_user_entitlements(user=user)
+    raw = ent.get("raw_user") or {}
+    trades = int(raw.get("trades") or 0)
+    bot_active = int(raw.get("bot_active") or 0)
     bot_status = "Running" if bot_active == 1 else "Paused"
+    if lang == "ar":
+        bot_status = "يعمل" if bot_active == 1 else "متوقف"
+        return f"""NEXORA SUBSCRIPTION STATUS
 
-    return f"""NEXORA SUBSCRIPTION STATUS
-
-{_active_subscriptions_text(user, "en")}
+{active_subscriptions_text(user, lang)}
 
 Free signals used: {trades}/2
 Bot: {bot_status}
-Forex Auto Trade: Not available
 
-Open your dashboard to manage plan, Telegram connection and signal preferences."""
+أزرار مفيدة:
+Open Dashboard
+Manage Crypto
+Manage Forex
+View Plans
+Reconnect Telegram
+
+تنبيه: التداول فيه مخاطرة والإشارات ليست ضمانًا للربح."""
+
+    return f"""NEXORA SUBSCRIPTION STATUS
+
+{active_subscriptions_text(user, lang)}
+
+Free signals used: {trades}/2
+Bot: {bot_status}
+
+Useful actions:
+Open Dashboard
+Manage Crypto
+Manage Forex
+View Plans
+Reconnect Telegram
+
+Risk warning: Trading is risky. Signals are not profit guarantees."""
 
 
 def user_statistics_message(stats):
