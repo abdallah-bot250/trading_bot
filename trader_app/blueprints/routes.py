@@ -24,7 +24,9 @@ from trader_app.services.telegram import (
     command_menu,
     linked_message,
     plan_explainer_message,
+    should_show_plans_for_text,
     subscription_message,
+    telegram_plans_payload,
     user_statistics_message,
     welcome_message,
 )
@@ -5273,8 +5275,13 @@ def webhook():
         data = request.get_json(silent=True) or {}
 
         message = data.get("message", {}) or {}
-        chat = message.get("chat", {}) or {}
+        callback_query = data.get("callback_query", {}) or {}
+        callback_message = (callback_query.get("message") or {}) if callback_query else {}
+        chat = message.get("chat", {}) or callback_message.get("chat", {}) or {}
         text = (message.get("text") or "").strip()
+        callback_data = (callback_query.get("data") or "").strip()
+        tg_from = message.get("from") or callback_query.get("from") or {}
+        telegram_lang = "ar" if str(tg_from.get("language_code") or "").lower().startswith("ar") else "en"
         chat_id = str(chat.get("id") or "").strip()
 
         if not chat_id:
@@ -5282,10 +5289,34 @@ def webhook():
             return "ok", 200
 
         command = text.split(maxsplit=1)[0].lower() if text else ""
-        update_type = "message" if message else "unknown"
+        update_type = "callback_query" if callback_query else ("message" if message else "unknown")
         TELEGRAM_WEBHOOK_RUNTIME_STATE["last_accepted_update_at"] = datetime.utcnow().isoformat()
         TELEGRAM_WEBHOOK_RUNTIME_STATE["last_rejected_reason"] = None
         log(f"TELEGRAM_UPDATE_ACCEPTED chat_ref={mask_chat_ref(chat_id)} update_type={update_type}")
+
+        if callback_query:
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery",
+                    json={"callback_query_id": callback_query.get("id")},
+                    timeout=5,
+                )
+            except Exception as callback_ack_error:
+                log(f"telegram callback ack skipped: {callback_ack_error}")
+
+        if callback_data.startswith("plans:"):
+            try:
+                view = callback_data.split(":", 1)[1] or "all"
+                conn = db()
+                c = conn.cursor()
+                tg_user = get_telegram_user(c, chat_id)
+                text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view=view)
+                send(chat_id, text_out, reply_markup=markup)
+                conn.close()
+            except Exception as e:
+                log(f"telegram plans callback error: {e}")
+                send(chat_id, "NEXORA PLANS\n\nPlan details are temporarily unavailable. Please open your dashboard.")
+            return "ok", 200
 
 
         if command in ["/help", "/commands"]:
@@ -5300,9 +5331,14 @@ def webhook():
                 send(chat_id, command_menu(False))
             return "ok", 200
 
-        if command in ["/plans", "/pricing"]:
+        if command in ["/plans", "/pricing", "/subscribe"] or (command not in ["/subscription", "/status", "/check_subscription"] and should_show_plans_for_text(text)):
             try:
-                send(chat_id, plan_explainer_message())
+                conn = db()
+                c = conn.cursor()
+                tg_user = get_telegram_user(c, chat_id)
+                text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view="all")
+                send(chat_id, text_out, reply_markup=markup)
+                conn.close()
             except Exception as e:
                 log(f"telegram plans error: {e}")
                 send(chat_id, "NEXORA PLANS\n\nPlan information is temporarily unavailable. Please open your dashboard or pricing page.")
@@ -5476,6 +5512,23 @@ def webhook():
                         referral_code = ensure_user_has_referral_code(chat_id, conn)
 
                     send(chat_id, linked_message(current_plan, expiry, is_admin_flag == 1 ))
+                    try:
+                        plan_text, plan_markup = telegram_plans_payload({
+                            "id": user_id,
+                            "email": email,
+                            "chat_id": chat_id,
+                            "plan": current_plan,
+                            "expiry": expiry,
+                            "is_paid": 1 if is_paid else 0,
+                            "trades": trades,
+                            "bot_active": 1,
+                            "spot_enabled": 1,
+                            "futures_enabled": 1,
+                            "lifetime_owner": lifetime_owner,
+                        }, chat_id=chat_id, lang=telegram_lang, view="all")
+                        send(chat_id, plan_text, reply_markup=plan_markup)
+                    except Exception as plan_start_error:
+                        log(f"telegram start plans skipped: {plan_start_error}")
 
                     if is_admin_flag == 1 :
                         send(chat_id, command_menu(True))
@@ -5568,6 +5621,11 @@ def webhook():
                     register_link = f"{current_base_url()}/register?chat_id={chat_id}"
 
                     send(chat_id, welcome_message(register_link))
+                    try:
+                        plan_text, plan_markup = telegram_plans_payload(None, chat_id=chat_id, lang=telegram_lang, view="all")
+                        send(chat_id, plan_text, reply_markup=plan_markup)
+                    except Exception as plan_start_error:
+                        log(f"telegram unlinked start plans skipped: {plan_start_error}")
 
             except Exception as db_err:
                 log(f"❌ /start DB Error: {db_err}")

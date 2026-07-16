@@ -429,7 +429,7 @@ def telegram_deep_referral_link(referral_code):
     return f"{current_bot_link()}?start=ref_{referral_code}"
 
 
-def send(chat_id, text):
+def send(chat_id, text, reply_markup=None):
     if not TOKEN or not chat_id:
         log(f"TELEGRAM_NOTIFY_SKIPPED token_present={bool(TOKEN)} chat_id_present={bool(chat_id)}")
         return False
@@ -438,22 +438,27 @@ def send(chat_id, text):
     try:
         user_link = f"{current_base_url()}/login?chat_id={chat_id}"
 
+        payload = {
+            "chat_id": str(chat_id),
+            "text": text,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        else:
+            payload["reply_markup"] = {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Open your account",
+                            "url": user_link
+                        }
+                    ]
+                ]
+            }
+
         r = requests.post(
             f"https://api.telegram.org/bot{TOKEN}/sendMessage",
-            json={
-                "chat_id": str(chat_id),
-                "text": text,
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": "ðŸŒ Ø§Ù„Ø¯Ø®ÙˆÙ„ Ø¥Ù„Ù‰ Ø­Ø³Ø§Ø¨Ùƒ",
-                                "url": user_link
-                            }
-                        ]
-                    ]
-                }
-            },
+            json=payload,
             timeout=10
         )
 
