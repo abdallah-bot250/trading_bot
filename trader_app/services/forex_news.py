@@ -14,6 +14,8 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from trader_app.services.forex_providers import tradingeconomics
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = str(os.environ.get(name, "true" if default else "false")).strip().lower()
@@ -29,14 +31,18 @@ def _env_int(name: str, default: int, minimum: int = 0, maximum: int = 1440) -> 
 
 
 NEWS_PROVIDER = os.environ.get("FOREX_NEWS_PROVIDER", "tradingeconomics").strip().lower()
-NEWS_API_KEY = os.environ.get("FOREX_NEWS_API_KEY", "").strip()
-NEWS_API_SECRET = os.environ.get("FOREX_NEWS_API_SECRET", "").strip()
+NEWS_API_KEY = os.environ.get("TRADING_ECONOMICS_API_KEY", os.environ.get("FOREX_NEWS_API_KEY", "")).strip()
+NEWS_API_SECRET = os.environ.get("TRADING_ECONOMICS_API_SECRET", os.environ.get("FOREX_NEWS_API_SECRET", "")).strip()
 NEWS_REQUIRE_REAL = _env_bool("FOREX_REQUIRE_NEWS_CALENDAR", True)
 NEWS_LOOKAHEAD_MINUTES = _env_int("FOREX_NEWS_LOOKAHEAD_MINUTES", 45, 5, 360)
 NEWS_LOOKBACK_MINUTES = _env_int("FOREX_NEWS_LOOKBACK_MINUTES", 20, 0, 180)
 NEWS_CACHE_SECONDS = _env_int("FOREX_NEWS_CACHE_SECONDS", 300, 30, 3600)
 NEWS_TIMEOUT_SECONDS = _env_int("FOREX_NEWS_TIMEOUT_SECONDS", 8, 2, 30)
 NEWS_MIN_IMPORTANCE = _env_int("FOREX_NEWS_MIN_IMPORTANCE", 2, 1, 3)
+NEWS_HIGH_BEFORE_MINUTES = _env_int("FOREX_NEWS_HIGH_BEFORE_MINUTES", 45, 5, 360)
+NEWS_HIGH_AFTER_MINUTES = _env_int("FOREX_NEWS_HIGH_AFTER_MINUTES", 30, 5, 360)
+NEWS_MEDIUM_BEFORE_MINUTES = _env_int("FOREX_NEWS_MEDIUM_BEFORE_MINUTES", 20, 5, 360)
+NEWS_MEDIUM_AFTER_MINUTES = _env_int("FOREX_NEWS_MEDIUM_AFTER_MINUTES", 15, 5, 360)
 
 _CACHE: Dict[str, Tuple[float, List[dict], Optional[str]]] = {}
 
@@ -65,7 +71,7 @@ class NewsDecision:
 
 def configuration_status() -> dict:
     supported = NEWS_PROVIDER == "tradingeconomics"
-    configured = bool(supported and NEWS_API_KEY and NEWS_API_SECRET)
+    configured = bool(supported and tradingeconomics.configuration_status().get("configured"))
     return {
         "provider": NEWS_PROVIDER,
         "supported": supported,
@@ -111,6 +117,25 @@ def _fetch_events() -> Tuple[List[dict], Optional[str]]:
     status = configuration_status()
     if not status["configured"]:
         return [], status["reason"]
+    if NEWS_PROVIDER == "tradingeconomics":
+        result = tradingeconomics.load_events()
+        if not result.ok:
+            return [], result.error or "PROVIDER_UNAVAILABLE"
+        events = []
+        for row in result.events:
+            events.append({
+                "event_id": row.get("event_id"),
+                "datetime": row.get("scheduled_utc"),
+                "country": row.get("country"),
+                "currency": row.get("currency"),
+                "event": row.get("title"),
+                "category": row.get("category"),
+                "importance": row.get("importance"),
+                "actual": row.get("actual"),
+                "forecast": row.get("forecast"),
+                "previous": row.get("previous"),
+            })
+        return events, None
     now = datetime.now(timezone.utc)
     cache_key = now.strftime("%Y-%m-%d")
     cached = _CACHE.get(cache_key)
@@ -189,18 +214,33 @@ def news_decision(symbol: str, now: Optional[datetime] = None) -> NewsDecision:
     relevant_countries = set()
     for currency in currencies:
         relevant_countries.update(CURRENCY_COUNTRIES.get(currency, set()))
-    window_start = now - timedelta(minutes=NEWS_LOOKBACK_MINUTES)
-    window_end = now + timedelta(minutes=NEWS_LOOKAHEAD_MINUTES)
     candidates = []
     for event in events:
         dt = _parse_dt(event.get("datetime"))
         country = str(event.get("country") or "")
-        if not dt or not (window_start <= dt <= window_end):
+        importance = _importance(event)
+        if importance >= 3:
+            before_minutes = NEWS_HIGH_BEFORE_MINUTES
+            after_minutes = NEWS_HIGH_AFTER_MINUTES
+        elif importance >= 2:
+            before_minutes = NEWS_MEDIUM_BEFORE_MINUTES
+            after_minutes = NEWS_MEDIUM_AFTER_MINUTES
+        else:
             continue
-        if relevant_countries and country not in relevant_countries:
+        window_start = dt - timedelta(minutes=before_minutes)
+        window_end = dt + timedelta(minutes=after_minutes)
+        if not dt or not (window_start <= now <= window_end):
+            continue
+        currency = str(event.get("currency") or "").upper()
+        if currency:
+            relevant = currency in currencies
+        else:
+            relevant = (not relevant_countries) or country in relevant_countries
+        if not relevant:
             continue
         candidates.append((abs((dt - now).total_seconds()), event))
     if candidates:
         event = sorted(candidates, key=lambda item: item[0])[0][1]
-        return NewsDecision(False, True, True, NEWS_PROVIDER, "HIGH_IMPACT_NEWS_WINDOW", event=event, checked_at=checked)
+        label = "HIGH" if _importance(event) >= 3 else "MEDIUM"
+        return NewsDecision(False, True, True, NEWS_PROVIDER, f"{label}_IMPACT_NEWS_WINDOW", event=event, checked_at=checked)
     return NewsDecision(True, False, True, NEWS_PROVIDER, "NO_RELEVANT_HIGH_IMPACT_NEWS", checked_at=checked)

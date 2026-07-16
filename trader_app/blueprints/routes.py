@@ -3716,6 +3716,65 @@ def admin_sale_readiness():
     """, metrics=metrics)
 
 
+@admin_bp.route("/admin/production-readiness")
+def admin_production_readiness():
+    admin_guard = require_admin()
+    if admin_guard:
+        return admin_guard
+    try:
+        from forex_analyzer import forex_readiness_status
+        status = forex_readiness_status()
+    except Exception as exc:
+        status = {
+            "ready": False,
+            "checks": {},
+            "provider": {"provider": "unavailable", "configured": False, "reason": str(exc)},
+            "provider_health": {},
+            "news": {},
+            "summary": {},
+            "supported_symbols": [],
+            "unsupported_symbols": [],
+            "last_candidate": None,
+            "last_rejected_reason": str(exc),
+            "auto_trade_status": "FOREX_AUTO_TRADE_DISABLED",
+        }
+        log(f"admin production readiness unavailable: {exc}")
+    return render_template_string("""
+    <!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>Forex Production Readiness | Nexora Admin</title>
+    <style>
+    body{margin:0;background:#050b12;color:#e5eefb;font-family:Inter,Arial,sans-serif}.wrap{max-width:1180px;margin:36px auto;padding:24px}
+    .top{display:flex;justify-content:space-between;gap:12px;align-items:center}.btn{color:#03110d;background:#d4af37;border-radius:12px;padding:10px 14px;text-decoration:none;font-weight:800}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}.card{background:linear-gradient(145deg,rgba(15,27,42,.94),rgba(7,14,23,.96));border:1px solid rgba(212,175,55,.22);border-radius:18px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .ok{color:#17c964}.bad{color:#ff6b6b}.muted{color:#94a3b8}.table{width:100%;border-collapse:collapse;margin-top:14px}.table td,.table th{padding:10px;border-bottom:1px solid rgba(148,163,184,.16);text-align:left;vertical-align:top}
+    code{color:#00c2ff;word-break:break-word}
+    </style></head><body><div class='wrap'>
+    <div class='top'><div><h1>Forex Production Readiness</h1><p class='muted'>Read-only multi-provider monitor. Primary market data is Twelve Data, OANDA is optional, and Forex Auto Trade remains disabled.</p></div><a class='btn' href='/admin'>Back to Admin</a></div>
+    <div class='grid'>
+      <div class='card'><span class='muted'>Overall</span><h2 class='{{ "ok" if status.ready else "bad" }}'>{{ "READY" if status.ready else "NOT READY" }}</h2><p>Ready requires a healthy primary provider, candles, Trading Economics news, Telegram/subscriptions, and shadow diagnostics.</p></div>
+      <div class='card'><span class='muted'>Primary Provider</span><h2>Twelve Data</h2><p>Selected: <strong>{{ status.selected_provider|default(status.provider.provider) }}</strong></p><p>Configured: <strong class='{{ "ok" if status.provider.configured else "bad" }}'>{{ status.provider.configured }}</strong></p></div>
+      <div class='card'><span class='muted'>Secondary Provider</span><h2>OANDA <small class='muted'>(optional)</small></h2><p>Used only when REST v20 credentials are available or as fallback/enhancement.</p></div>
+      <div class='card'><span class='muted'>News</span><h2>Trading Economics</h2><p>Configured: <strong class='{{ "ok" if status.news.configured else "bad" }}'>{{ status.news.configured }}</strong></p><p>Required: {{ status.news.required }}</p></div>
+      <div class='card'><span class='muted'>Candle Provider Healthy</span><h2 class='{{ "ok" if status.checks.candle_provider_healthy else "bad" }}'>{{ status.checks.candle_provider_healthy }}</h2><p>Candle provider: {{ status.selected_provider }}</p></div>
+      <div class='card'><span class='muted'>Pricing Provider Healthy</span><h2 class='{{ "ok" if status.checks.real_bid_ask_available else "bad" }}'>{{ status.checks.real_bid_ask_available }}</h2><p>Pricing provider: {{ status.pricing_provider }}</p></div>
+      <div class='card'><span class='muted'>Forex Delivery Allowed</span><h2 class='{{ "ok" if status.forex_delivery_allowed else "bad" }}'>{{ status.forex_delivery_allowed }}</h2><p>{{ status.delivery_block_reason or "Allowed by current readiness settings." }}</p></div>
+      <div class='card'><span class='muted'>Mode</span><h2>{{ "Shadow" if status.checks.shadow_mode_enabled else "Production" }}</h2><p>Forex production: {{ status.checks.forex_production_mode }}</p><p>Auto trade: {{ status.auto_trade_status }}</p></div>
+    </div>
+    <div class='card' style='margin-top:18px'><h2>Checks</h2><table class='table'>{% for key,value in status.checks.items() %}<tr><td>{{ key.replace('_',' ')|title }}</td><td class='{{ "ok" if value else "bad" }}'>{{ value }}</td></tr>{% endfor %}</table></div>
+    <div class='grid' style='margin-top:18px'>
+      <div class='card'><h2>Supported Forex Symbols</h2><p>{{ status.supported_symbols|join(", ") }}</p></div>
+      <div class='card'><h2>Unsupported / Disabled Until Verified</h2><p>{{ status.unsupported_symbols|join(", ") }}</p><p class='muted'>No fallback fake prices are used for unsupported assets.</p></div>
+    </div>
+    <div class='card' style='margin-top:18px'><h2>Latest Diagnostics</h2><table class='table'>
+      <tr><th>Provider Health</th><td><code>{{ status.provider_health }}</code></td></tr>
+      <tr><th>Scan Summary</th><td><code>{{ status.summary }}</code></td></tr>
+      <tr><th>Last Generated Forex Candidate</th><td><code>{{ status.last_candidate or "None" }}</code></td></tr>
+      <tr><th>Last Rejected Reason</th><td><code>{{ status.last_rejected_reason or "None" }}</code></td></tr>
+    </table></div>
+    </div></body></html>
+    """, status=status)
+
+
 @admin_bp.route("/admin/product-features")
 def admin_product_features_page():
     if not session.get("user"):

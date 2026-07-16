@@ -1620,10 +1620,21 @@ def format_signal(signal, plan=None):
     market_details = ""
     risk_label = "Crypto and derivatives trading are risky. Not financial advice."
     if market_bucket == "forex":
+        spread_value = signal.get("spread")
+        spread_text = "Unavailable" if signal.get("spread_status") == "Unavailable" or spread_value in (None, "", "N/A") else f"{spread_value} pips"
+        market_data = signal.get("market_data_provider") or signal.get("provider") or "N/A"
+        news_provider = signal.get("news_provider") or "Trading Economics"
         market_details = (
             f"\nSession: {signal.get('session', 'N/A')}"
-            f"\nSpread: {signal.get('spread', 'N/A')} pips ({signal.get('spread_source', 'N/A')})"
-            f"\nData: {signal.get('provider', 'N/A')} | {signal.get('data_timestamp', 'N/A')}"
+            f"\nBid/Ask: {signal.get('bid', 'N/A')} / {signal.get('ask', 'N/A')}"
+            f"\nSpread: {spread_text}"
+            f"\n4H/1H: {signal.get('trend_4h', 'N/A')} / {signal.get('trend_1h', 'N/A')}"
+            f"\nSetup: {signal.get('setup_type') or signal.get('setup', 'N/A')}"
+            f"\nRSI/MACD/ATR: {signal.get('rsi', 'N/A')} / {signal.get('macd', 'N/A')} / {signal.get('atr', 'N/A')}"
+            f"\nS/R: {signal.get('support', 'N/A')} / {signal.get('resistance', 'N/A')}"
+            f"\nNews: {news_provider} ({signal.get('news_status', 'N/A')})"
+            f"\nMarket Data: {market_data} | {signal.get('data_timestamp_utc') or signal.get('data_timestamp', 'N/A')}"
+            f"\nSignal ID: {signal.get('signal_id', 'N/A')}"
         )
         risk_label = "Forex, metals, oil, and indices involve substantial risk. Verify broker spread and size positions conservatively. Not financial advice."
 
@@ -1637,6 +1648,7 @@ TF: {signal.get('timeframe', 'N/A')}{market_details}
 Entry: {signal.get('entry', 'N/A')}
 TP1: {tp1}
 TP2: {tp2}
+{("TP3: " + str(signal.get('tp3'))) if market_bucket == "forex" and signal.get('tp3') not in (None, "", "N/A") else ""}
 SL: {signal.get('sl', 'N/A')}
 
 Confidence: {confidence_line}
@@ -1647,6 +1659,7 @@ Why this trade:
 
 Manage:
 Move SL to breakeven after TP1 only after price confirms and according to your own risk plan.
+{("Cancel: " + str(signal.get('cancel_condition'))) if market_bucket == "forex" and signal.get('cancel_condition') else ""}
 
 Risk warning: {risk_label}"""
 

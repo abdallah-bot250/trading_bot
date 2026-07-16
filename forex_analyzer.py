@@ -11,10 +11,14 @@ from trader_app.services.forex_market_data import (
     asset_class_for_symbol,
     forex_failure_code,
     get_ohlcv,
+    get_pricing_quote,
     get_quote,
+    get_twelvedata_reference_price,
     pip_size,
     provider_configuration_status,
     provider_health_status,
+    pricing_provider_health_status,
+    unsupported_symbols,
 )
 from trader_app.services.forex_news import news_decision, configuration_status as news_configuration_status
 
@@ -27,7 +31,11 @@ FOREX_MAX_SPREAD_PIPS = float(os.environ.get("FOREX_MAX_SPREAD_PIPS", "2.5"))
 FOREX_MAX_SIGNALS_PER_CYCLE = int(os.environ.get("FOREX_MAX_SIGNALS_PER_CYCLE", "2"))
 FOREX_NEWS_BLACKOUT_ENABLED = os.environ.get("FOREX_NEWS_BLACKOUT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_NEWS_BLACKOUT_ACTIVE = os.environ.get("FOREX_NEWS_BLACKOUT_ACTIVE", "false").strip().lower() in {"1", "true", "yes", "on"}
-FOREX_REQUIRE_REAL_SPREAD = os.environ.get("FOREX_REQUIRE_REAL_SPREAD", "true").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_REQUIRE_REAL_SPREAD = os.environ.get("FOREX_REQUIRE_REAL_SPREAD", "false").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_PRODUCTION_MODE = os.environ.get("FOREX_PRODUCTION_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_SHADOW_MODE = os.environ.get("FOREX_SHADOW_MODE", "true").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_REQUIRE_DATA_RECONCILIATION = os.environ.get("FOREX_REQUIRE_DATA_RECONCILIATION", "false").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_PRICE_DIVERGENCE_THRESHOLD_PIPS = float(os.environ.get("FOREX_PRICE_DIVERGENCE_THRESHOLD_PIPS", "3.0") or 3.0)
 
 FOREX_SCAN_SUMMARY = {}
 
@@ -49,8 +57,11 @@ def _reset_summary():
         "rejected_news": 0,
         "rejected_news_provider": 0,
         "rejected_real_spread": 0,
+        "rejected_data_freshness": 0,
+        "rejected_divergence": 0,
         "rejected_quality": 0,
         "passed_candidates": 0,
+        "shadow_candidates": 0,
         "final_signals": 0,
         "deliveries": 0,
         "provider": provider_health_status().get("provider"),
@@ -89,6 +100,7 @@ def get_forex_scan_summary(final_signals: Optional[int] = None) -> dict:
     if final_signals is not None:
         data["final_signals"] = int(final_signals or 0)
     data["provider_health"] = provider_health_status()
+    data["pricing_health"] = pricing_provider_health_status()
     return data
 
 
@@ -141,10 +153,41 @@ def _session(now=None):
     return "After_Hours"
 
 
+def _parse_utc(value) -> Optional[datetime]:
+    if value in (None, ""):
+        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(text)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _timestamp_fresh(value, max_age_seconds: Optional[int] = None) -> bool:
+    dt = _parse_utc(value)
+    if not dt:
+        return False
+    max_age = max_age_seconds or int(os.environ.get("FOREX_MAX_PRICE_STALE_SECONDS", "90") or 90)
+    return (datetime.now(timezone.utc) - dt).total_seconds() <= max_age
+
+
 def _spread_pips(symbol: str) -> Tuple[Optional[float], dict]:
-    quote = get_quote(symbol)
+    quote = get_pricing_quote(symbol)
     if not quote.ok:
         return None, {"ok": False, "reason": quote.error or "REAL_SPREAD_UNAVAILABLE", "provider": quote.provider}
+    if not _timestamp_fresh(quote.timestamp):
+        return None, {"ok": False, "reason": "STALE_PRICE", "provider": quote.provider, "quote_timestamp": quote.timestamp}
+    if not getattr(quote, "spread_available", False) or quote.spread in (None, ""):
+        return None, {
+            "ok": True,
+            "reason": "SPREAD_UNAVAILABLE",
+            "provider": quote.provider,
+            "bid": quote.bid,
+            "ask": quote.ask,
+            "price": quote.price,
+            "quote_timestamp": quote.timestamp,
+        }
     pip = pip_size(symbol)
     spread_pips = round(float(quote.spread or 0) / pip, 2) if pip else None
     return spread_pips, {
@@ -155,6 +198,19 @@ def _spread_pips(symbol: str) -> Tuple[Optional[float], dict]:
         "ask": quote.ask,
         "quote_timestamp": quote.timestamp,
     }
+
+
+def _production_requires_real_spread() -> bool:
+    return bool(FOREX_REQUIRE_REAL_SPREAD and FOREX_PRODUCTION_MODE and not FOREX_SHADOW_MODE)
+
+
+def _real_spread_missing_blocks_delivery(spread: Optional[float], quote_meta: dict) -> bool:
+    if not _production_requires_real_spread():
+        return False
+    if spread is None:
+        return True
+    return not (quote_meta.get("bid") is not None and quote_meta.get("ask") is not None and quote_meta.get("quote_timestamp"))
+
 
 def _support_resistance(frame: pd.DataFrame) -> Tuple[float, float]:
     recent = frame.tail(40)
@@ -200,6 +256,25 @@ def _news_ok(symbol: str) -> Tuple[bool, str, Optional[dict]]:
     decision = news_decision(symbol)
     return bool(decision.ok and not decision.blocked), decision.reason, decision.event
 
+
+def _data_reconciliation_ok(symbol: str, quote_meta: dict) -> Tuple[bool, str, Optional[float]]:
+    provider = str(quote_meta.get("provider") or "").lower()
+    bid = quote_meta.get("bid")
+    ask = quote_meta.get("ask")
+    if provider != "oanda" or bid in (None, "") or ask in (None, ""):
+        return True, "not_required_for_provider", None
+    reference = get_twelvedata_reference_price(symbol)
+    if not reference.ok or reference.price in (None, ""):
+        if FOREX_REQUIRE_DATA_RECONCILIATION:
+            return False, reference.error or "REFERENCE_PRICE_UNAVAILABLE", None
+        return True, reference.error or "REFERENCE_PRICE_OPTIONAL_UNAVAILABLE", None
+    mid = (float(bid) + float(ask)) / 2
+    diff_pips = abs(mid - float(reference.price)) / pip_size(symbol)
+    if diff_pips > FOREX_PRICE_DIVERGENCE_THRESHOLD_PIPS:
+        return False, "DATA_PROVIDER_DIVERGENCE", round(diff_pips, 2)
+    return True, "DATA_PROVIDER_MATCH", round(diff_pips, 2)
+
+
 def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Optional[dict]:
     h4_trend = _trend(frames["4h"])
     h1_trend = _trend(frames["1h"])
@@ -218,13 +293,24 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
             _inc("rejected_news_provider")
         return None
     spread, quote_meta = _spread_pips(symbol)
+    spread_display = spread
+    spread_status = "Available" if spread is not None else "Unavailable"
+    spread_for_calc = spread if spread is not None else 0.0
     if spread is None:
-        if FOREX_REQUIRE_REAL_SPREAD:
-            _inc("rejected_real_spread")
+        if quote_meta.get("reason") == "STALE_PRICE":
+            _inc("rejected_data_freshness")
             return None
-        spread = 0.0
-    if spread > FOREX_MAX_SPREAD_PIPS and asset_class_for_symbol(symbol) == "forex":
+        if _real_spread_missing_blocks_delivery(spread, quote_meta):
+            _inc("rejected_real_spread")
+            print(f"FOREX_PRODUCTION_REJECTED symbol={symbol} reason=REAL_SPREAD_UNAVAILABLE")
+            return None
+    if spread_for_calc > FOREX_MAX_SPREAD_PIPS and asset_class_for_symbol(symbol) == "forex":
         _inc("rejected_spread")
+        return None
+    recon_ok, recon_reason, divergence_pips = _data_reconciliation_ok(symbol, quote_meta)
+    if not recon_ok:
+        _inc("rejected_divergence")
+        print(f"DATA_PROVIDER_DIVERGENCE symbol={symbol} diff_pips={divergence_pips} threshold={FOREX_PRICE_DIVERGENCE_THRESHOLD_PIPS}")
         return None
 
     close = entry_frame["close"]
@@ -269,27 +355,33 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
     confidence += 8 if h4_trend == h1_trend else 0
     confidence += 5 if momentum_ok else 0
     confidence += 4 if session in {"London", "London/New_York_Overlap", "New_York"} else 0
-    confidence += 3 if spread <= FOREX_MAX_SPREAD_PIPS else 0
+    confidence += 3 if spread_display is not None and spread_display <= FOREX_MAX_SPREAD_PIPS else 0
     confidence = min(92, confidence)
     if confidence < FOREX_MIN_CONFIDENCE:
         _inc("rejected_quality")
         return None
 
     tp2 = entry + (tp1 - entry) * 1.45
+    tp3 = entry + (tp1 - entry) * 1.85
+    signal_id = f"FX-{symbol}-{tf}-{int(datetime.now(timezone.utc).timestamp())}"
     signal = {
         "pair": symbol,
         "symbol": symbol,
         "type": "FOREX",
         "market_type": "forex",
         "asset_class": asset_class_for_symbol(symbol),
-        "provider": provider_health_status().get("provider") or "twelvedata",
+        "provider": quote_meta.get("provider") or provider_health_status().get("provider") or "twelvedata",
+        "candle_provider": provider_health_status().get("provider") or "twelvedata",
+        "pricing_provider": quote_meta.get("provider") if spread_status == "Available" else None,
+        "market_data_provider": "OANDA" if str(quote_meta.get("provider")).lower() == "oanda" else "Twelve Data",
+        "news_provider": "Trading Economics",
         "direction": direction,
         "timeframe": tf,
         "entry": round(entry, 5 if pip < 0.01 else 2),
         "tp": round(tp1, 5 if pip < 0.01 else 2),
         "tp1": round(tp1, 5 if pip < 0.01 else 2),
         "tp2": round(tp2, 5 if pip < 0.01 else 2),
-        "tp3": None,
+        "tp3": round(tp3, 5 if pip < 0.01 else 2),
         "sl": round(sl, 5 if pip < 0.01 else 2),
         "confidence": confidence,
         "display_confidence": confidence,
@@ -304,16 +396,37 @@ def _build_signal(symbol: str, tf: str, frames: Dict[str, pd.DataFrame]) -> Opti
         "setup_type": "trend_pullback_continuation",
         "market_regime": "FOREX_TREND",
         "session": session,
-        "spread": spread,
+        "spread": spread_display,
+        "spread_status": spread_status,
+        "real_bid_ask_available": spread_status == "Available",
         "spread_source": quote_meta.get("reason"),
         "bid": quote_meta.get("bid"),
         "ask": quote_meta.get("ask"),
         "quote_timestamp": quote_meta.get("quote_timestamp"),
+        "price_timestamp_utc": quote_meta.get("quote_timestamp"),
+        "data_reconciliation": recon_reason,
+        "data_divergence_pips": divergence_pips,
         "pip_size": pip,
         "data_timestamp": str(entry_frame.iloc[-1].get("time") or ""),
+        "data_timestamp_utc": str(entry_frame.iloc[-1].get("time") or ""),
+        "trend_4h": h4_trend,
+        "trend_1h": h1_trend,
+        "setup": "Pullback / Retest",
+        "rsi": round(rsi, 2),
+        "macd": round(float(macd.iloc[-1]), 6),
+        "macd_signal": round(float(macd_signal.iloc[-1]), 6),
+        "atr": round(float(atr), 6),
+        "support": round(support, 6),
+        "resistance": round(resistance, 6),
+        "news_status": news_reason,
+        "nearest_news_event": news_event,
+        "signal_id": signal_id,
+        "entry_range": f"{round(entry - spread_for_calc * pip, 5 if pip < 0.01 else 2)} - {round(entry + spread_for_calc * pip, 5 if pip < 0.01 else 2)}",
+        "stop_loss_reason": "Stop is placed beyond recent structure and ATR buffer.",
+        "cancel_condition": "Cancel if price breaks the opposite structure level, spread widens above limit, or high-impact news enters the block window.",
         "reason": (
             f"{direction} because 4H and 1H trends are {h4_trend}; price returned to the EMA20/EMA50 pullback zone; "
-            f"RSI={rsi:.1f} and MACD confirms momentum; session={session}; real spread={spread} pips; "
+            f"RSI={rsi:.1f} and MACD confirms momentum; session={session}; spread={spread_display if spread_display is not None else 'Unavailable'}; "
             f"news_check={news_reason}; SL is beyond structure/ATR and TP starts at RR={rr}."
         ),
         "analysis_components": {
@@ -387,9 +500,97 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
                 break
     signals = sorted(signals, key=lambda s: (float(s.get("display_confidence") or 0), float(s.get("risk_reward") or 0)), reverse=True)
     final = signals[:limit]
+    FOREX_SCAN_SUMMARY["shadow_candidates"] = len(final)
+    FOREX_SCAN_SUMMARY["forex_production_mode"] = bool(FOREX_PRODUCTION_MODE)
+    FOREX_SCAN_SUMMARY["forex_shadow_mode"] = bool(FOREX_SHADOW_MODE)
+    if FOREX_SHADOW_MODE or not FOREX_PRODUCTION_MODE:
+        FOREX_SCAN_SUMMARY["final_signals"] = 0
+        FOREX_SCAN_SUMMARY["last_shadow_candidate"] = final[0] if final else None
+        if final:
+            print(f"FOREX_SHADOW_SIGNAL_RECORDED pair={final[0].get('pair')} direction={final[0].get('direction')} rr={final[0].get('risk_reward')}")
+        return []
+    if FOREX_REQUIRE_REAL_SPREAD:
+        allowed = []
+        for signal in final:
+            if signal.get("real_bid_ask_available") and signal.get("pricing_provider") and signal.get("spread") not in (None, "", "N/A"):
+                allowed.append(signal)
+            else:
+                _inc("rejected_real_spread")
+                print(f"FOREX_PRODUCTION_REJECTED symbol={signal.get('symbol')} reason=REAL_SPREAD_UNAVAILABLE")
+        final = allowed
     FOREX_SCAN_SUMMARY["final_signals"] = len(final)
     return final
 
 
 def forex_auto_trade_status() -> str:
     return "FOREX_AUTO_TRADE_DISABLED" if not FOREX_AUTO_TRADE_ENABLED else "FOREX_AUTO_TRADE_DISABLED broker_adapter_not_verified"
+
+
+def forex_readiness_status() -> dict:
+    provider = provider_configuration_status()
+    news = news_configuration_status()
+    summary = get_forex_scan_summary()
+    provider_health = provider_health_status()
+    pricing_health = pricing_provider_health_status()
+    provider_configured = bool(provider.get("configured"))
+    provider_selected = provider.get("selected_provider") or provider.get("provider")
+    pricing_provider = pricing_health.get("pricing_provider")
+    real_bid_ask_available = bool(pricing_provider)
+    delivery_allowed = bool(
+        provider_configured
+        and (real_bid_ask_available or not FOREX_REQUIRE_REAL_SPREAD)
+        and (bool(news.get("configured")) or not news.get("required"))
+        and not FOREX_AUTO_TRADE_ENABLED
+    )
+    block_reason = ""
+    if not provider_configured:
+        block_reason = provider.get("reason") or "CANDLE_PROVIDER_NOT_CONFIGURED"
+    elif FOREX_REQUIRE_REAL_SPREAD and not real_bid_ask_available:
+        block_reason = "REAL_SPREAD_UNAVAILABLE"
+    elif news.get("required") and not news.get("configured"):
+        block_reason = news.get("reason") or "NEWS_PROVIDER_NOT_CONFIGURED"
+    ready_checks = {
+        "primary_provider": "twelvedata",
+        "candle_provider_configured": provider_configured,
+        "candle_provider_healthy": bool(provider_health.get("ok")) or provider.get("reason") == "OK",
+        "pricing_provider_configured": real_bid_ask_available,
+        "real_bid_ask_available": real_bid_ask_available,
+        "forex_delivery_allowed": delivery_allowed,
+        "oanda_optional": True,
+        "oanda_configured": bool((provider.get("providers") or {}).get("oanda", {}).get("configured")),
+        "candles_working": bool(summary.get("symbols_with_data", 0)),
+        "real_spread_required": bool(FOREX_REQUIRE_REAL_SPREAD),
+        "spread_warning": not FOREX_REQUIRE_REAL_SPREAD,
+        "news_calendar_working": bool(news.get("configured")),
+        "shadow_mode_enabled": bool(FOREX_SHADOW_MODE),
+        "forex_production_mode": bool(FOREX_PRODUCTION_MODE),
+        "forex_auto_trade_enabled": bool(FOREX_AUTO_TRADE_ENABLED),
+    }
+    ready = (
+        ready_checks["candle_provider_configured"]
+        and (ready_checks["real_bid_ask_available"] or not FOREX_REQUIRE_REAL_SPREAD)
+        and (ready_checks["news_calendar_working"] or not news.get("required"))
+        and ready_checks["shadow_mode_enabled"]
+        and not ready_checks["forex_auto_trade_enabled"]
+    )
+    return {
+        "ready": bool(ready),
+        "checks": ready_checks,
+        "provider": provider,
+        "provider_health": provider_health,
+        "pricing_health": pricing_health,
+        "news": news,
+        "summary": summary,
+        "supported_symbols": list(FOREX_SYMBOLS),
+        "unsupported_symbols": unsupported_symbols(),
+        "primary_provider": "Twelve Data",
+        "secondary_provider": "OANDA (optional)",
+        "selected_provider": provider_selected,
+        "pricing_provider": pricing_provider or "Unavailable",
+        "readiness_level": "READY" if ready else ("DEGRADED" if provider_configured and not FOREX_PRODUCTION_MODE else "NOT_READY"),
+        "forex_delivery_allowed": delivery_allowed,
+        "delivery_block_reason": block_reason,
+        "last_candidate": summary.get("last_shadow_candidate"),
+        "last_rejected_reason": summary.get("disabled_reason") or next(iter((summary.get("failure_reasons") or {}).keys()), ""),
+        "auto_trade_status": forex_auto_trade_status(),
+    }
