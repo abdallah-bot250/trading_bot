@@ -1634,6 +1634,7 @@ def format_signal(signal, plan=None):
     why = _compact_trade_reason(signal)
     setup_line = f"\nStrategy: {setup}" if setup else ""
     confidence_line = f"{confidence}%" if confidence not in (None, "", "N/A") else "N/A"
+    risk_value = signal.get("risk_percent") or signal.get("risk") or signal.get("recommended_risk") or "1%"
 
     market_bucket = signal_market_bucket(signal)
     market_details = ""
@@ -1683,6 +1684,7 @@ TP2: {tp2}
 SL: {signal.get('sl', 'N/A')}
 
 Confidence: {confidence_line}
+Risk: {risk_value}
 RR: {rr if rr not in (None, '', 'N/A') else 'N/A'}{setup_line}
 
 Why this trade:

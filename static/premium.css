@@ -3832,3 +3832,28 @@ html[dir="rtl"] body.nx-dashboard-hard-ui .language-switcher.nx-language-menu {
     grid-template-columns: 1fr;
   }
 }
+
+/* Production auth polish */
+.nx-auth-final .language-switcher{
+  top:22px!important;
+  inset-inline-end:28px!important;
+  max-width:min(92vw,520px)!important;
+  overflow:hidden!important;
+  white-space:nowrap!important;
+}
+.nx-auth-final .nx-auth-page{align-items:center!important}
+.nx-auth-final .nx-auth-brand{padding:8px 12px!important;border-radius:18px!important;background:rgba(4,12,20,.42)!important;border:1px solid rgba(212,175,55,.18)!important}
+.nx-auth-final .nx-auth-card-final{scrollbar-gutter:stable!important}
+.nx-auth-final .nx-auth-card-final form{display:grid!important;gap:2px!important}
+.nx-auth-final .nx-auth-links a{display:inline-block!important;margin:4px 0!important}
+.nx-auth-final .telegram-note{padding:16px!important;margin-bottom:18px!important;line-height:1.8!important}
+html[dir="rtl"] .nx-auth-final .telegram-note,
+html[dir="rtl"] .nx-auth-final .nx-auth-card-final{text-align:right!important}
+html[dir="ltr"] .nx-auth-final .telegram-note,
+html[dir="ltr"] .nx-auth-final .nx-auth-card-final{text-align:left!important}
+@media(max-width:760px){
+  .nx-auth-final .language-switcher{position:fixed!important;top:78px!important;inset-inline:14px!important;margin:auto!important;justify-content:center!important}
+  .nx-auth-final .nx-auth-brand{top:14px!important;inset-inline-start:14px!important}
+  .nx-auth-final .nx-auth-page{padding-top:132px!important}
+  .nx-auth-final .nx-auth-card-final{padding:22px 18px!important}
+}

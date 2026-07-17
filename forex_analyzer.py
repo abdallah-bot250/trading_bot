@@ -495,8 +495,8 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
     FOREX_SCAN_SUMMARY["real_spread_required"] = bool(FOREX_REQUIRE_REAL_SPREAD)
     if news_config.get("required") and not news_config.get("configured"):
         FOREX_SCAN_SUMMARY["disabled"] = True
-        FOREX_SCAN_SUMMARY["disabled_reason"] = f"NEWS_{news_config.get('reason') or 'PROVIDER_NOT_CONFIGURED'}"
-        print(f"FOREX_NEWS_PROVIDER_STATUS provider={news_config.get('provider')} configured=false required=true reason={news_config.get('reason')}")
+        FOREX_SCAN_SUMMARY["disabled_reason"] = "FOREX_DISABLED_NO_NEWS_PROVIDER"
+        print(f"FOREX_DISABLED_NO_NEWS_PROVIDER provider={news_config.get('provider')} configured=false required=true reason={news_config.get('reason')}")
         return []
     print(f"FOREX_NEWS_PROVIDER_STATUS provider={news_config.get('provider')} configured={str(bool(news_config.get('configured'))).lower()} required={str(bool(news_config.get('required'))).lower()}")
     limit = limit or FOREX_MAX_SIGNALS_PER_CYCLE

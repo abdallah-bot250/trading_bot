@@ -31,6 +31,7 @@ def _env_int(name: str, default: int, minimum: int = 0, maximum: int = 1440) -> 
 
 
 NEWS_PROVIDER = os.environ.get("FOREX_NEWS_PROVIDER", "tradingeconomics").strip().lower()
+NEWS_PROVIDERS = os.environ.get("FOREX_NEWS_PROVIDERS", "").strip()
 NEWS_API_KEY = os.environ.get("TRADING_ECONOMICS_API_KEY", os.environ.get("FOREX_NEWS_API_KEY", "")).strip()
 NEWS_API_SECRET = os.environ.get("TRADING_ECONOMICS_API_SECRET", os.environ.get("FOREX_NEWS_API_SECRET", "")).strip()
 NEWS_REQUIRE_REAL = _env_bool("FOREX_REQUIRE_NEWS_CALENDAR", True)
@@ -69,18 +70,73 @@ class NewsDecision:
     checked_at: Optional[str] = None
 
 
-def configuration_status() -> dict:
-    supported = NEWS_PROVIDER == "tradingeconomics"
-    configured = bool(supported and tradingeconomics.configuration_status().get("configured"))
-    reason = "OK"
-    if not configured:
-        reason = "PROVIDER_NOT_SUPPORTED" if not supported else "NEWS_PROVIDER_NOT_CONFIGURED"
+def _provider_candidates() -> List[str]:
+    raw = NEWS_PROVIDERS or NEWS_PROVIDER or "tradingeconomics"
+    values = [p.strip().lower() for p in raw.split(",") if p.strip()]
+    for provider in ("tradingeconomics", "finnhub", "financialmodelingprep"):
+        if provider not in values:
+            values.append(provider)
+    return values
+
+
+def _provider_status(provider: str) -> dict:
+    provider = str(provider or "").strip().lower()
+    if provider == "tradingeconomics":
+        status = tradingeconomics.configuration_status()
+        configured = bool(status.get("configured"))
+        return {
+            "provider": provider,
+            "supported": True,
+            "configured": configured,
+            "reason": "OK" if configured else "NEWS_PROVIDER_NOT_CONFIGURED",
+        }
+    if provider == "finnhub":
+        configured = bool(os.environ.get("FINNHUB_API_KEY") or os.environ.get("FOREX_NEWS_FINNHUB_API_KEY"))
+        return {
+            "provider": provider,
+            "supported": True,
+            "configured": configured,
+            "reason": "OK" if configured else "NEWS_PROVIDER_NOT_CONFIGURED",
+        }
+    if provider in {"financialmodelingprep", "fmp"}:
+        configured = bool(os.environ.get("FMP_API_KEY") or os.environ.get("FOREX_NEWS_FMP_API_KEY"))
+        return {
+            "provider": "financialmodelingprep",
+            "supported": True,
+            "configured": configured,
+            "reason": "OK" if configured else "NEWS_PROVIDER_NOT_CONFIGURED",
+        }
     return {
-        "provider": NEWS_PROVIDER,
+        "provider": provider,
+        "supported": False,
+        "configured": False,
+        "reason": "PROVIDER_NOT_SUPPORTED",
+    }
+
+
+def configuration_status() -> dict:
+    tried = []
+    supported = False
+    for provider in _provider_candidates():
+        status = _provider_status(provider)
+        tried.append(status["provider"])
+        supported = supported or bool(status.get("supported"))
+        if status.get("supported") and status.get("configured"):
+            return {
+                "provider": status["provider"],
+                "providers_tried": tried,
+                "supported": True,
+                "configured": True,
+                "required": NEWS_REQUIRE_REAL,
+                "reason": "OK",
+            }
+    return {
+        "provider": ",".join(tried) or NEWS_PROVIDER,
+        "providers_tried": tried,
         "supported": supported,
-        "configured": configured,
+        "configured": False,
         "required": NEWS_REQUIRE_REAL,
-        "reason": reason,
+        "reason": "NO_TRUSTED_NEWS_PROVIDER",
     }
 
 
@@ -120,7 +176,8 @@ def _fetch_events() -> Tuple[List[dict], Optional[str]]:
     status = configuration_status()
     if not status["configured"]:
         return [], status["reason"]
-    if NEWS_PROVIDER == "tradingeconomics":
+    provider = str(status.get("provider") or "").lower()
+    if provider == "tradingeconomics":
         result = tradingeconomics.load_events()
         if not result.ok:
             return [], result.error or "PROVIDER_UNAVAILABLE"
@@ -140,15 +197,21 @@ def _fetch_events() -> Tuple[List[dict], Optional[str]]:
             })
         return events, None
     now = datetime.now(timezone.utc)
-    cache_key = now.strftime("%Y-%m-%d")
+    cache_key = f"{provider}:{now.strftime('%Y-%m-%d')}"
     cached = _CACHE.get(cache_key)
     if cached and time.time() - cached[0] <= NEWS_CACHE_SECONDS:
         return list(cached[1]), cached[2]
 
     start = (now - timedelta(days=1)).date().isoformat()
     end = (now + timedelta(days=1)).date().isoformat()
-    url = "https://api.tradingeconomics.com/calendar"
-    params = {"c": f"{NEWS_API_KEY}:{NEWS_API_SECRET}", "d1": start, "d2": end, "importance": NEWS_MIN_IMPORTANCE}
+    if provider == "finnhub":
+        url = "https://finnhub.io/api/v1/calendar/economic"
+        params = {"token": os.environ.get("FINNHUB_API_KEY") or os.environ.get("FOREX_NEWS_FINNHUB_API_KEY"), "from": start, "to": end}
+    elif provider == "financialmodelingprep":
+        url = "https://financialmodelingprep.com/api/v3/economic_calendar"
+        params = {"apikey": os.environ.get("FMP_API_KEY") or os.environ.get("FOREX_NEWS_FMP_API_KEY"), "from": start, "to": end}
+    else:
+        return [], "PROVIDER_NOT_SUPPORTED"
     try:
         response = requests.get(url, params=params, timeout=NEWS_TIMEOUT_SECONDS)
         if response.status_code in {401, 403}:
@@ -164,18 +227,22 @@ def _fetch_events() -> Tuple[List[dict], Optional[str]]:
             _CACHE[cache_key] = (time.time(), [], error)
             return [], error
         payload = response.json()
-        rows = payload if isinstance(payload, list) else []
+        if provider == "finnhub":
+            rows = payload.get("economicCalendar") if isinstance(payload, dict) else []
+        else:
+            rows = payload if isinstance(payload, list) else []
         events = []
         for row in rows:
             if not isinstance(row, dict) or _importance(row) < NEWS_MIN_IMPORTANCE:
                 continue
-            dt = _parse_dt(row.get("Date") or row.get("date"))
+            dt = _parse_dt(row.get("Date") or row.get("date") or row.get("datetime") or row.get("time"))
             if not dt:
                 continue
             events.append({
                 "datetime": dt.isoformat(),
                 "country": str(row.get("Country") or row.get("country") or "").strip(),
-                "event": str(row.get("Event") or row.get("event") or row.get("Category") or "Economic event").strip(),
+                "currency": str(row.get("currency") or row.get("Currency") or "").strip().upper(),
+                "event": str(row.get("Event") or row.get("event") or row.get("Category") or row.get("title") or "Economic event").strip(),
                 "importance": _importance(row),
                 "actual": row.get("Actual") or row.get("actual"),
                 "forecast": row.get("Forecast") or row.get("forecast"),
@@ -204,14 +271,14 @@ def news_decision(symbol: str, now: Optional[datetime] = None) -> NewsDecision:
     checked = now.isoformat()
     if not status["configured"]:
         if NEWS_REQUIRE_REAL:
-            return NewsDecision(False, True, False, NEWS_PROVIDER, status["reason"], checked_at=checked)
-        return NewsDecision(True, False, False, NEWS_PROVIDER, "NEWS_CALENDAR_OPTIONAL_NOT_CONFIGURED", checked_at=checked)
+            return NewsDecision(False, True, False, str(status.get("provider") or NEWS_PROVIDER), status["reason"], checked_at=checked)
+        return NewsDecision(True, False, False, str(status.get("provider") or NEWS_PROVIDER), "NEWS_CALENDAR_OPTIONAL_NOT_CONFIGURED", checked_at=checked)
 
     events, error = _fetch_events()
     if error:
         if NEWS_REQUIRE_REAL:
-            return NewsDecision(False, True, True, NEWS_PROVIDER, error, checked_at=checked)
-        return NewsDecision(True, False, True, NEWS_PROVIDER, f"NEWS_PROVIDER_DEGRADED:{error}", checked_at=checked)
+            return NewsDecision(False, True, True, str(status.get("provider") or NEWS_PROVIDER), error, checked_at=checked)
+        return NewsDecision(True, False, True, str(status.get("provider") or NEWS_PROVIDER), f"NEWS_PROVIDER_DEGRADED:{error}", checked_at=checked)
 
     currencies = currencies_for_symbol(symbol)
     relevant_countries = set()
@@ -245,5 +312,5 @@ def news_decision(symbol: str, now: Optional[datetime] = None) -> NewsDecision:
     if candidates:
         event = sorted(candidates, key=lambda item: item[0])[0][1]
         label = "HIGH" if _importance(event) >= 3 else "MEDIUM"
-        return NewsDecision(False, True, True, NEWS_PROVIDER, f"{label}_IMPACT_NEWS_WINDOW", event=event, checked_at=checked)
-    return NewsDecision(True, False, True, NEWS_PROVIDER, "NO_RELEVANT_HIGH_IMPACT_NEWS", checked_at=checked)
+        return NewsDecision(False, True, True, str(status.get("provider") or NEWS_PROVIDER), f"{label}_IMPACT_NEWS_WINDOW", event=event, checked_at=checked)
+    return NewsDecision(True, False, True, str(status.get("provider") or NEWS_PROVIDER), "NO_RELEVANT_HIGH_IMPACT_NEWS", checked_at=checked)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>تسجيل الدخول | Nexora AI Trader</title>
+<title>{% if current_lang == 'ar' %}تسجيل الدخول{% else %}Login{% endif %} | Nexora AI Trader</title>
 <link rel="stylesheet" href="/static/premium.css?v=final-sale-4">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
@@ -31,22 +31,26 @@
 
   <main class="nx-auth-page">
     <section class="nx-auth-copy" aria-label="Nexora intro">
-      <h1>Welcome back to <em>Nexora AI Trader</em></h1>
-      <p>Premium crypto signal intelligence with risk-managed delivery, Telegram connection, and a clean trading dashboard.</p>
+      <h1>{% if current_lang == 'ar' %}مرحبًا بعودتك إلى <em>Nexora AI Trader</em>{% else %}Welcome back to <em>Nexora AI Trader</em>{% endif %}</h1>
+      <p>{% if current_lang == 'ar' %}منصة تداول ذكية بإشارات كريبتو وفوركس، إدارة مخاطر، وربط تيليجرام آمن.{% else %}Premium crypto and Forex signal intelligence with risk-managed Telegram delivery and a clean trading dashboard.{% endif %}</p>
       <div class="nx-auth-badges">
-        <span>AI Analysis</span><span>Risk Managed</span><span>Telegram Delivery</span>
+        {% if current_lang == 'ar' %}
+          <span>تحليل ذكي</span><span>إدارة مخاطر</span><span>تنبيهات تيليجرام</span>
+        {% else %}
+          <span>AI Analysis</span><span>Risk Managed</span><span>Telegram Delivery</span>
+        {% endif %}
       </div>
       <div class="nx-auth-stats">
-        <div class="nx-auth-stat"><strong>90%+</strong><span>Accuracy Rate</span></div>
-        <div class="nx-auth-stat"><strong>24/7</strong><span>Monitoring</span></div>
-        <div class="nx-auth-stat"><strong>1000+</strong><span>Active Traders</span></div>
-        <div class="nx-auth-stat"><strong>Fast</strong><span>Signals</span></div>
+        <div class="nx-auth-stat"><strong>AI</strong><span>{% if current_lang == 'ar' %}تحليل{% else %}Analysis{% endif %}</span></div>
+        <div class="nx-auth-stat"><strong>24/7</strong><span>{% if current_lang == 'ar' %}متابعة{% else %}Monitoring{% endif %}</span></div>
+        <div class="nx-auth-stat"><strong>S/R</strong><span>{% if current_lang == 'ar' %}دعم ومقاومة{% else %}Support / Resistance{% endif %}</span></div>
+        <div class="nx-auth-stat"><strong>MTF</strong><span>{% if current_lang == 'ar' %}فريمات متعددة{% else %}Multi-timeframe{% endif %}</span></div>
       </div>
     </section>
 
     <section class="nx-auth-card-final" aria-label="Login form">
-      <h2 class="nx-auth-title">تسجيل الدخول</h2>
-      <p class="nx-auth-subtitle">مرحبًا بعودتك، ادخل لحسابك وربط البوت بسهولة.</p>
+      <h2 class="nx-auth-title">{% if current_lang == 'ar' %}تسجيل الدخول{% else %}Sign in{% endif %}</h2>
+      <p class="nx-auth-subtitle">{% if current_lang == 'ar' %}ادخل لحسابك لإدارة الاشتراك وربط تيليجرام بأمان.{% else %}Access your dashboard, subscriptions, and secure Telegram linking.{% endif %}</p>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -57,31 +61,32 @@
       {% endwith %}
 
       <div class="telegram-note">
-        <strong>⚠️ مش بتوصلك Signals؟</strong><br>
-        افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك من الموقع لتأكيد الحساب.<br>
-        <a href="{{ bot_link }}" target="_blank">Open Bot</a>
-        <a href="/bot-check">Verify Bot الرسمي</a>
+        <strong>{% if current_lang == 'ar' %}⚠️ لا تصلك الإشارات؟{% else %}⚠️ Not receiving signals?{% endif %}</strong><br>
+        {% if current_lang == 'ar' %}افتح البوت الرسمي واتبع رابط الربط الآمن، ثم سجل دخولك لتأكيد الحساب.{% else %}Open the official bot, use the secure link flow, then sign in to confirm your account.{% endif %}<br>
+        <a href="{{ bot_link }}" target="_blank">{% if current_lang == 'ar' %}فتح البوت{% else %}Open Bot{% endif %}</a>
+        <a href="/bot-check">{% if current_lang == 'ar' %}فحص الربط{% else %}Verify Bot{% endif %}</a>
       </div>
 
       <form method="POST" action="{{ url_for('auth.login', chat_id=chat_id) if chat_id else url_for('auth.login') }}">
         {{ csrf_field() }}
         <input type="hidden" name="chat_id" value="{{ chat_id }}">
         <div class="form-group">
-          <label for="email">Email Address</label>
-          <input type="email" id="email" name="email" placeholder="Enter your email" required autocomplete="email">
+          <label for="email">{% if current_lang == 'ar' %}البريد الإلكتروني{% else %}Email Address{% endif %}</label>
+          <input type="email" id="email" name="email" placeholder="{% if current_lang == 'ar' %}أدخل بريدك الإلكتروني{% else %}Enter your email{% endif %}" required autocomplete="email">
         </div>
         <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+          <label for="password">{% if current_lang == 'ar' %}كلمة المرور{% else %}Password{% endif %}</label>
+          <input type="password" id="password" name="password" placeholder="{% if current_lang == 'ar' %}أدخل كلمة المرور{% else %}Enter your password{% endif %}" required autocomplete="current-password">
         </div>
-        <button type="submit" class="btn">Sign In / تسجيل الدخول</button>
+        <button type="submit" class="btn">{% if current_lang == 'ar' %}تسجيل الدخول{% else %}Sign In{% endif %}</button>
       </form>
 
       <div class="nx-auth-links">
-        <a href="/forgot-password">Forgot Password? / نسيت كلمة المرور؟</a><br>
-        Do not have an account? <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">Create Account</a>
+        <a href="/forgot-password">{% if current_lang == 'ar' %}نسيت كلمة المرور؟{% else %}Forgot Password?{% endif %}</a><br>
+        {% if current_lang == 'ar' %}ليس لديك حساب؟{% else %}Do not have an account?{% endif %}
+        <a href="{{ url_for('auth.register', chat_id=chat_id) if chat_id else url_for('auth.register') }}">{% if current_lang == 'ar' %}إنشاء حساب{% else %}Create Account{% endif %}</a>
       </div>
-      <p class="nx-auth-small">بعد الدخول يمكنك تفعيل الخطة، مراجعة الفواتير، وربط تيليجرام بأمان.</p>
+      <p class="nx-auth-small">{% if current_lang == 'ar' %}بعد الدخول يمكنك تفعيل الخطة، مراجعة الفواتير، وربط تيليجرام بأمان.{% else %}After sign-in you can manage plans, invoices, Telegram linking, and account security.{% endif %}</p>
     </section>
   </main>
 

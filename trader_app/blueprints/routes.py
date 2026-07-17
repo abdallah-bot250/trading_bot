@@ -23,6 +23,7 @@ from trader_app.services.telegram import (
     broadcast_result_message,
     command_menu,
     linked_message,
+    main_menu_payload,
     plan_explainer_message,
     should_show_plans_for_text,
     subscription_message,
@@ -5411,18 +5412,21 @@ def webhook():
             except Exception as callback_ack_error:
                 log(f"telegram callback ack skipped: {callback_ack_error}")
 
-        if callback_data.startswith("plans:"):
+        if callback_data.startswith("menu:") or callback_data.startswith("plans:"):
             try:
                 view = callback_data.split(":", 1)[1] or "all"
                 conn = db()
                 c = conn.cursor()
                 tg_user = get_telegram_user(c, chat_id)
-                text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view=view)
+                if view == "home":
+                    text_out, markup = main_menu_payload(tg_user, chat_id=chat_id, lang=telegram_lang)
+                else:
+                    text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view=view)
                 send(chat_id, text_out, reply_markup=markup)
                 conn.close()
             except Exception as e:
-                log(f"telegram plans callback error: {e}")
-                send(chat_id, "NEXORA PLANS\n\nPlan details are temporarily unavailable. Please open your dashboard.")
+                log(f"telegram menu callback error: {e}")
+                send(chat_id, "NEXORA\n\nMenu is temporarily unavailable. Please open your dashboard.")
             return "ok", 200
 
 
@@ -5431,7 +5435,8 @@ def webhook():
                 conn = db()
                 c = conn.cursor()
                 tg_user = get_telegram_user(c, chat_id)
-                send(chat_id, command_menu(is_telegram_admin_user(tg_user)))
+                text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view="help")
+                send(chat_id, text_out, reply_markup=markup)
                 conn.close()
             except Exception as e:
                 log(f"telegram help error: {e}")
@@ -5456,8 +5461,8 @@ def webhook():
                 conn = db()
                 c = conn.cursor()
                 tg_user = get_telegram_user(c, chat_id)
-                send(chat_id, subscription_message(tg_user))
-                send(chat_id, "Tip: send /plans to compare Free Earn and paid direct access.")
+                text_out, markup = telegram_plans_payload(tg_user, chat_id=chat_id, lang=telegram_lang, view="account")
+                send(chat_id, text_out, reply_markup=markup)
                 conn.close()
             except Exception as e:
                 log(f"telegram subscription error: {e}")
@@ -5632,121 +5637,14 @@ def webhook():
                         "lifetime_owner": lifetime_owner,
                         "is_admin": is_admin_flag,
                     }
-                    send(chat_id, "Account connected successfully.")
-                    send(chat_id, subscription_message(user_payload, lang=telegram_lang))
-                    try:
-                        plan_text, plan_markup = telegram_plans_payload(user_payload, chat_id=chat_id, lang=telegram_lang, view="all")
-                        send(chat_id, plan_text, reply_markup=plan_markup)
-                    except Exception as plan_start_error:
-                        log(f"telegram start plans skipped: {plan_start_error}")
-
-                    if is_admin_flag == 1 :
-                        send(chat_id, command_menu(True))
-                        return "ok", 200
-
-                    if is_paid:
-                        aff_link = telegram_referral_link(referral_code)
-                        send(chat_id, f"""Affiliate link:
-
-{aff_link}
-
-Every new user who joins through your link is tracked under your account.
-""")
-
-                        return "ok", 200
-
-                    if trades < 2:
-                        free_signals = get_top_free_signals(limit=2)
-                        log(f"Free signals returned: {len(free_signals or [])}")
-
-                        if not free_signals:
-                            send(chat_id, "NEXORA MARKET UPDATE\n\nNo qualified trade opportunity is available right now. Nexora is waiting for cleaner market structure instead of forcing a weak trade.")
-                        else:
-                            sent_count = 0
-
-                            for i, signal in enumerate(free_signals, 1):
-                                success = send(chat_id, f"Free signal #{i}\n" + format_signal(signal))
-
-                                if success:
-                                    sent_count += 1
-
-                            if sent_count > 0:
-                                c.execute("""
-                                    UPDATE users
-                                    SET trades = LEAST(COALESCE(trades, 0) + %s, 2)
-                                    WHERE id = %s
-                                """, (sent_count, user_id))
-                                conn.commit()
-
-                                if telegram_lang == "ar":
-                                    send(chat_id, f"""تم إرسال {sent_count} صفقة مجانية من البوت.
-
-النسخة المجانية هدفها إنك تشوف طريقة شغل البوت وجودة الفلترة،
-لكنها ليست كل إمكانيات النظام.
-
-في النسخة المدفوعة هتستفيد بـ:
-• فرص أقوى
-• فلترة أعلى
-• إشارات مستمرة حسب حالة السوق
-• تقليل الدخول العشوائي
-• وفي Elite تقدر تربط حسابك للتنفيذ التلقائي
-
-البوت مش بيبعت صفقات لمجرد الإرسال،
-هو بيستنى الفرصة الواضحة فقط.
-
-لو حابب تكمل:
-ادخل على الموقع وفعّل الباقة المناسبة ليك.
-""")
-                                else:
-                                    send(chat_id, f"""{sent_count} free signal(s) were sent.
-
-The free plan shows how Nexora filters market opportunities, but it does not include every paid feature.
-
-Paid plans provide stronger filtering, direct delivery according to market quality, and eligible automation controls.
-
-Nexora does not send random trades. It waits for clear opportunities only.
-""")
-                            else:
-                                send(chat_id, "❌ حصلت مشكلة أثناء إرسال الإشارات المجانية. حاول /start مرة تانية.")
-
-                    else:
-                        aff_link = telegram_referral_link(referral_code)
-
-                        if telegram_lang == "ar":
-                            send(chat_id, f"""أنت استلمت الصفقتين المجانيين بالفعل.
-
-لو حابب تكمل وتستقبل إشارات أقوى بشكل مستمر،
-تقدر تفعّل الباقة المناسبة من الموقع.
-
-البوت بيختار الفرص على حسب حالة السوق،
-ومش هدفه كثرة الصفقات... هدفه الجودة أولًا.
-
-ولو حابب تكسب من البوت كمان،
-ده رابط الأفلييت الخاص بك:
-
-{aff_link}
-""")
-                        else:
-                            send(chat_id, f"""You already received your free eligible signals.
-
-To continue receiving direct premium opportunities, activate the plan that fits your market: Crypto or VIP ALL FOREX.
-
-Nexora prioritizes quality over quantity.
-
-Your affiliate link:
-
-{aff_link}
-""")
+                    menu_text, menu_markup = main_menu_payload(user_payload, chat_id=chat_id, lang=telegram_lang)
+                    send(chat_id, menu_text, reply_markup=menu_markup)
 
                 else:
                     register_link = f"{current_base_url()}/register?chat_id={chat_id}"
 
-                    send(chat_id, welcome_message(register_link))
-                    try:
-                        plan_text, plan_markup = telegram_plans_payload(None, chat_id=chat_id, lang=telegram_lang, view="all")
-                        send(chat_id, plan_text, reply_markup=plan_markup)
-                    except Exception as plan_start_error:
-                        log(f"telegram unlinked start plans skipped: {plan_start_error}")
+                    menu_text, menu_markup = main_menu_payload(None, chat_id=chat_id, lang=telegram_lang)
+                    send(chat_id, menu_text, reply_markup=menu_markup)
 
             except Exception as db_err:
                 log(f"❌ /start DB Error: {db_err}")
