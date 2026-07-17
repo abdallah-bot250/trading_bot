@@ -28,7 +28,7 @@ FOREX_SYMBOLS = [
     "NAS100", "SPX500",
 ]
 
-FOREX_TIMEFRAMES = ["5m", "15m", "1h", "4h"]
+FOREX_TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]
 
 TWELVEDATA_SYMBOL_MAP = {
     "EURUSD": "EUR/USD",
@@ -52,6 +52,7 @@ TWELVEDATA_SYMBOL_MAP = {
 TWELVEDATA_INTERVAL_MAP = {
     "5m": "5min",
     "15m": "15min",
+    "30m": "30min",
     "1h": "1h",
     "4h": "4h",
 }
@@ -113,12 +114,27 @@ class ProviderQuoteResult:
 
 _CANDLE_CACHE: Dict[Tuple[str, str, str, int], Tuple[float, ProviderCandlesResult]] = {}
 _QUOTE_CACHE: Dict[Tuple[str, str], Tuple[float, ProviderQuoteResult]] = {}
+_REQUEST_BUDGET = {
+    "window_started": time.time(),
+    "minute_used": 0,
+    "day_started": datetime.now(timezone.utc).date().isoformat(),
+    "day_used": 0,
+    "rate_limit_hits": 0,
+    "symbols_deferred": 0,
+}
 _LAST_STATUS = {
     "selected_provider": None,
     "provider_health": {},
     "fallback_used": False,
     "last_error": "",
     "checked_at": None,
+}
+_LAST_PRICING_STATUS = {
+    "provider": None,
+    "ok": False,
+    "last_success_at": None,
+    "last_error": "",
+    "last_symbol": "",
 }
 
 
@@ -138,8 +154,123 @@ def _cache_seconds() -> int:
     return _env_int("FOREX_CACHE_SECONDS", 180, 10, 3600)
 
 
+def _cache_seconds_for_timeframe(timeframe: str) -> int:
+    tf = str(timeframe or "").strip().lower()
+    defaults = {
+        "4h": 21600,
+        "1h": 3600,
+        "30m": 900,
+        "15m": 300,
+        "5m": 300,
+    }
+    env_names = {
+        "4h": "FOREX_CACHE_SECONDS_4H",
+        "1h": "FOREX_CACHE_SECONDS_1H",
+        "30m": "FOREX_CACHE_SECONDS_30M",
+        "15m": "FOREX_CACHE_SECONDS_15M",
+        "5m": "FOREX_CACHE_SECONDS_5M",
+    }
+    return _env_int(env_names.get(tf, "FOREX_CACHE_SECONDS"), defaults.get(tf, _cache_seconds()), 30, 86400)
+
+
 def _quote_cache_seconds() -> int:
     return _env_int("FOREX_QUOTE_CACHE_SECONDS", 15, 1, 300)
+
+
+def _budget_limit_per_minute() -> int:
+    return _env_int("FOREX_TWELVEDATA_REQUESTS_PER_MINUTE", 8, 1, 120)
+
+
+def _budget_limit_per_day() -> int:
+    return _env_int("FOREX_TWELVEDATA_REQUESTS_PER_DAY", 800, 1, 100000)
+
+
+def _budget_daily_reserve() -> int:
+    return _env_int("FOREX_TWELVEDATA_DAILY_RESERVE", 25, 0, 100000)
+
+
+def _reset_budget_windows() -> None:
+    now = time.time()
+    if now - float(_REQUEST_BUDGET.get("window_started") or 0) >= 60:
+        _REQUEST_BUDGET["window_started"] = now
+        _REQUEST_BUDGET["minute_used"] = 0
+    today = datetime.now(timezone.utc).date().isoformat()
+    if _REQUEST_BUDGET.get("day_started") != today:
+        _REQUEST_BUDGET["day_started"] = today
+        _REQUEST_BUDGET["day_used"] = 0
+        _REQUEST_BUDGET["rate_limit_hits"] = 0
+        _REQUEST_BUDGET["symbols_deferred"] = 0
+
+
+def request_budget_status() -> dict:
+    _reset_budget_windows()
+    minute_limit = _budget_limit_per_minute()
+    day_limit = _budget_limit_per_day()
+    reserve = _budget_daily_reserve()
+    minute_used = int(_REQUEST_BUDGET.get("minute_used") or 0)
+    day_used = int(_REQUEST_BUDGET.get("day_used") or 0)
+    safe_daily_remaining = max(0, day_limit - reserve - day_used)
+    return {
+        "requests_used": day_used,
+        "minute_used": minute_used,
+        "requests_remaining_estimate": max(0, day_limit - day_used),
+        "safe_daily_remaining": safe_daily_remaining,
+        "minute_remaining": max(0, minute_limit - minute_used),
+        "symbols_deferred": int(_REQUEST_BUDGET.get("symbols_deferred") or 0),
+        "rate_limit_hits": int(_REQUEST_BUDGET.get("rate_limit_hits") or 0),
+        "minute_limit": minute_limit,
+        "daily_limit": day_limit,
+        "daily_reserve": reserve,
+    }
+
+
+def _request_allowed(provider: str) -> Tuple[bool, str]:
+    if str(provider or "").lower() != "twelvedata":
+        return True, "OK"
+    status = request_budget_status()
+    if status["minute_remaining"] <= 0:
+        _REQUEST_BUDGET["rate_limit_hits"] = int(_REQUEST_BUDGET.get("rate_limit_hits") or 0) + 1
+        return False, "REQUEST_BUDGET_MINUTE_EXHAUSTED"
+    if status["safe_daily_remaining"] <= 0:
+        _REQUEST_BUDGET["rate_limit_hits"] = int(_REQUEST_BUDGET.get("rate_limit_hits") or 0) + 1
+        return False, "REQUEST_BUDGET_DAILY_NEAR_LIMIT"
+    return True, "OK"
+
+
+def _record_request(provider: str, error: str = "") -> None:
+    if str(provider or "").lower() != "twelvedata":
+        return
+    _reset_budget_windows()
+    _REQUEST_BUDGET["minute_used"] = int(_REQUEST_BUDGET.get("minute_used") or 0) + 1
+    _REQUEST_BUDGET["day_used"] = int(_REQUEST_BUDGET.get("day_used") or 0) + 1
+    if str(error or "").upper() == "RATE_LIMITED":
+        _REQUEST_BUDGET["rate_limit_hits"] = int(_REQUEST_BUDGET.get("rate_limit_hits") or 0) + 1
+    status = request_budget_status()
+    try:
+        print(
+            "FOREX_REQUEST_BUDGET "
+            f"requests_used={status['requests_used']} "
+            f"requests_remaining_estimate={status['requests_remaining_estimate']} "
+            f"symbols_deferred={status['symbols_deferred']} "
+            f"rate_limit_hits={status['rate_limit_hits']}"
+        )
+    except Exception:
+        pass
+
+
+def forex_symbols_for_cycle(symbols: Optional[List[str]] = None) -> Tuple[List[str], List[str]]:
+    base = list(symbols or FOREX_SYMBOLS)
+    if not base:
+        return [], []
+    per_cycle = _env_int("FOREX_SYMBOLS_PER_CYCLE", 2, 1, len(base))
+    slot_seconds = _env_int("FOREX_SYMBOL_ROTATION_SECONDS", 300, 60, 86400)
+    slot = int(time.time() // slot_seconds)
+    start = (slot * per_cycle) % len(base)
+    selected = [base[(start + idx) % len(base)] for idx in range(min(per_cycle, len(base)))]
+    selected_set = set(selected)
+    deferred = [symbol for symbol in base if symbol not in selected_set]
+    _REQUEST_BUDGET["symbols_deferred"] = len(deferred)
+    return selected, deferred
 
 
 def pricing_provider_priority() -> List[str]:
@@ -280,10 +411,15 @@ def pricing_provider_health_status() -> dict:
     for provider in pricing_provider_priority():
         configured, reason = provider_configured(provider)
         providers[provider] = {"configured": configured, "reason": reason}
+    healthy = bool(_LAST_PRICING_STATUS.get("ok") and _LAST_PRICING_STATUS.get("last_success_at"))
     return {
-        "pricing_provider": next((p for p in pricing_provider_priority() if provider_configured(p)[0]), None),
+        "pricing_provider": _LAST_PRICING_STATUS.get("provider") if healthy else next((p for p in pricing_provider_priority() if provider_configured(p)[0]), None),
         "providers": providers,
         "requires_real_bid_ask": True,
+        "healthy": healthy,
+        "last_success_at": _LAST_PRICING_STATUS.get("last_success_at"),
+        "last_error": _LAST_PRICING_STATUS.get("last_error"),
+        "last_symbol": _LAST_PRICING_STATUS.get("last_symbol"),
     }
 
 
@@ -338,12 +474,16 @@ def _twelvedata_quote(symbol: str) -> ProviderQuoteResult:
     if not key:
         return ProviderQuoteResult(False, symbol, "twelvedata", error="TWELVEDATA_API_KEY_MISSING")
     try:
+        allowed, reason = _request_allowed("twelvedata")
+        if not allowed:
+            return ProviderQuoteResult(False, symbol, "twelvedata", error=reason)
         response = requests.get(
             "https://api.twelvedata.com/quote",
             params={"symbol": provider_symbol(symbol, "twelvedata"), "apikey": key},
             timeout=_timeout(),
         )
         status = response.status_code
+        _record_request("twelvedata", "RATE_LIMITED" if status == 429 else "")
         data = response.json() if response.content else {}
         if status in {401, 403}:
             return ProviderQuoteResult(False, symbol, "twelvedata", error="AUTH_FAILED", status_code=status)
@@ -468,8 +608,21 @@ def get_pricing_quote(symbol: str) -> ProviderQuoteResult:
         if result.ok and result.spread_available and result.bid is not None and result.ask is not None and result.spread is not None:
             result.fallback_used = index > 0
             _remember(provider, True, result.fallback_used)
+            _LAST_PRICING_STATUS.update({
+                "provider": provider,
+                "ok": True,
+                "last_success_at": datetime.now(timezone.utc).isoformat(),
+                "last_error": "",
+                "last_symbol": symbol,
+            })
             return result
         errors[provider] = result.error or "REAL_BID_ASK_UNAVAILABLE"
+        _LAST_PRICING_STATUS.update({
+            "provider": provider,
+            "ok": False,
+            "last_error": errors[provider],
+            "last_symbol": symbol,
+        })
         _remember(provider, False, index > 0, errors[provider])
     error_text = ";".join(f"{k}:{v}" for k, v in errors.items()) or "REAL_SPREAD_UNAVAILABLE"
     return ProviderQuoteResult(False, symbol, pricing_provider_priority()[0] if pricing_provider_priority() else "", error=error_text)
@@ -487,8 +640,12 @@ def _twelvedata_candles(symbol: str, timeframe: str, outputsize: int) -> Provide
         "format": "JSON",
     }
     try:
+        allowed, reason = _request_allowed("twelvedata")
+        if not allowed:
+            return ProviderCandlesResult(False, symbol, timeframe, "twelvedata", [], error=reason)
         response = requests.get("https://api.twelvedata.com/time_series", params=params, timeout=_timeout())
         status = response.status_code
+        _record_request("twelvedata", "RATE_LIMITED" if status == 429 else "")
         data = response.json() if response.content else {}
         if status in {401, 403}:
             return ProviderCandlesResult(False, symbol, timeframe, "twelvedata", [], error="AUTH_FAILED", status_code=status)
@@ -543,7 +700,7 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ProviderCan
             errors[provider] = "OHLC_NOT_ENABLED"
             continue
         cache_key = (provider, symbol, timeframe, int(outputsize))
-        cached = _cache_get(_CANDLE_CACHE, cache_key, _cache_seconds())
+        cached = _cache_get(_CANDLE_CACHE, cache_key, _cache_seconds_for_timeframe(timeframe))
         result = cached
         if not result:
             result = _oanda_candles(symbol, timeframe, outputsize) if provider == "oanda" else _twelvedata_candles(symbol, timeframe, outputsize)
@@ -559,14 +716,25 @@ def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ProviderCan
 
 
 def supported_symbols() -> List[str]:
-    return list(FOREX_SYMBOLS)
+    selected = selected_provider()
+    if selected == "oanda":
+        return [s for s in FOREX_SYMBOLS if s in oanda.OANDA_SYMBOL_MAP]
+    if selected == "finnhub":
+        return []
+    verified = [s for s in FOREX_SYMBOLS if s in TWELVEDATA_SYMBOL_MAP and asset_class_for_symbol(s) in {"forex", "metal"}]
+    if str(os.environ.get("FOREX_ENABLE_UNVERIFIED_CFD_SYMBOLS", "false")).strip().lower() in {"1", "true", "yes", "on"}:
+        verified = [s for s in FOREX_SYMBOLS if s in TWELVEDATA_SYMBOL_MAP]
+    return verified
 
 
 def unsupported_symbols() -> List[str]:
     selected = selected_provider()
     if selected == "oanda":
         return [s for s in FOREX_SYMBOLS if s not in oanda.OANDA_SYMBOL_MAP]
-    return []
+    if selected == "finnhub":
+        return list(FOREX_SYMBOLS)
+    supported = set(supported_symbols())
+    return [s for s in FOREX_SYMBOLS if s not in supported]
 
 
 def diagnostic_status() -> dict:
@@ -580,4 +748,5 @@ def diagnostic_status() -> dict:
         "supported_symbols": supported_symbols(),
         "unsupported_symbols": unsupported_symbols(),
         "priority": provider_priority(),
+        "request_budget": request_budget_status(),
     }

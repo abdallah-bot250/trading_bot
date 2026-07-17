@@ -130,6 +130,14 @@ def pricing_provider_health_status() -> dict:
     return manager.pricing_provider_health_status()
 
 
+def request_budget_status() -> dict:
+    return manager.request_budget_status()
+
+
+def forex_symbols_for_cycle(symbols=None):
+    return manager.forex_symbols_for_cycle(symbols)
+
+
 def get_twelvedata_reference_price(symbol: str) -> ForexQuoteResult:
     """Return a Twelve Data reference price without changing the active provider."""
     return _quote_from_manager(manager._twelvedata_quote(manager.normalize_forex_symbol(symbol)))

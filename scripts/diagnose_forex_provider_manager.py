@@ -138,8 +138,8 @@ def test_spread_policy():
         FOREX_PRODUCTION_MODE="true",
         FOREX_SHADOW_MODE="false",
     )
-    assert_true("REAL_SPREAD_FALSE_WARNING", not analyzer._production_requires_real_spread())
-    print("WARNING_FOREX_REQUIRE_REAL_SPREAD_FALSE: production_delivery_can_continue_without_real_spread")
+    assert_true("REAL_SPREAD_FALSE_UNSAFE", analyzer._unsafe_production_configuration())
+    print("UNSAFE_PRODUCTION_CONFIGURATION: production_delivery_blocked_without_real_spread=true")
 
 
 def main():
@@ -195,8 +195,10 @@ def main():
 
     diag = manager.diagnostic_status()
     assert_true("SUPPORTED_SYMBOLS", "EURUSD" in diag.get("supported_symbols", []))
+    assert_true("REQUEST_BUDGET_PRESENT", "request_budget" in diag)
     print(f"SUPPORTED_SYMBOLS count={len(diag.get('supported_symbols', []))}")
     print(f"UNSUPPORTED_SYMBOLS count={len(diag.get('unsupported_symbols', []))}")
+    print(f"REQUEST_BUDGET {diag.get('request_budget')}")
     test_spread_policy()
     print("FOREX_PROVIDER_MANAGER_OK")
 

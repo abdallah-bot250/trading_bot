@@ -37,7 +37,13 @@
 - `OANDA_ENVIRONMENT` - optional; `practice` first, `live` only after shadow validation.
 - `OANDA_API_BASE_URL` - optional practice URL: `https://api-fxpractice.oanda.com`.
 - `OANDA_STREAM_BASE_URL` - optional practice stream URL: `https://stream-fxpractice.oanda.com`.
-- `FOREX_REQUIRE_REAL_SPREAD` - default `false` for shadow evaluation; set `true` before production Forex delivery. Twelve Data may not provide bid/ask, so spread is shown as `Unavailable` instead of being fabricated.
+- `FOREX_REQUIRE_REAL_SPREAD` - default `true`. Production Forex delivery is blocked unless a real bid, ask, spread, and fresh pricing timestamp are available.
+- `FOREX_TWELVEDATA_REQUESTS_PER_MINUTE` - default `8`; central Twelve Data request budget for Basic 8 style limits.
+- `FOREX_TWELVEDATA_REQUESTS_PER_DAY` - default `800`; estimated daily Twelve Data budget.
+- `FOREX_TWELVEDATA_DAILY_RESERVE` - default `25`; stop new Twelve Data requests before the daily limit is fully exhausted.
+- `FOREX_SYMBOLS_PER_CYCLE` - default `2`; rotate symbols instead of requesting every symbol every scan.
+- `FOREX_SYMBOL_ROTATION_SECONDS` - default `300`; rotation slot size.
+- `FOREX_CACHE_SECONDS_4H`, `FOREX_CACHE_SECONDS_1H`, `FOREX_CACHE_SECONDS_30M`, `FOREX_CACHE_SECONDS_15M` - staggered timeframe cache durations.
 - `FOREX_REQUIRE_NEWS_CALENDAR` - keep `true`; unavailable calendar fails closed.
 - `FOREX_PRODUCTION_MODE` - keep `false` until readiness passes.
 - `FOREX_SHADOW_MODE` - keep `true` during practice/shadow evaluation.

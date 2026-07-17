@@ -32,6 +32,7 @@ OANDA_SYMBOL_MAP = {
 OANDA_TIMEFRAME_MAP = {
     "5m": "M5",
     "15m": "M15",
+    "30m": "M30",
     "1h": "H1",
     "4h": "H4",
 }

@@ -72,12 +72,15 @@ class NewsDecision:
 def configuration_status() -> dict:
     supported = NEWS_PROVIDER == "tradingeconomics"
     configured = bool(supported and tradingeconomics.configuration_status().get("configured"))
+    reason = "OK"
+    if not configured:
+        reason = "PROVIDER_NOT_SUPPORTED" if not supported else "NEWS_PROVIDER_NOT_CONFIGURED"
     return {
         "provider": NEWS_PROVIDER,
         "supported": supported,
         "configured": configured,
         "required": NEWS_REQUIRE_REAL,
-        "reason": "OK" if configured else ("PROVIDER_NOT_SUPPORTED" if not supported else "API_KEY_MISSING"),
+        "reason": reason,
     }
 
 

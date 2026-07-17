@@ -14,10 +14,12 @@ from trader_app.services.forex_market_data import (
     get_pricing_quote,
     get_quote,
     get_twelvedata_reference_price,
+    forex_symbols_for_cycle,
     pip_size,
     provider_configuration_status,
     provider_health_status,
     pricing_provider_health_status,
+    request_budget_status,
     unsupported_symbols,
 )
 from trader_app.services.forex_news import news_decision, configuration_status as news_configuration_status
@@ -31,7 +33,7 @@ FOREX_MAX_SPREAD_PIPS = float(os.environ.get("FOREX_MAX_SPREAD_PIPS", "2.5"))
 FOREX_MAX_SIGNALS_PER_CYCLE = int(os.environ.get("FOREX_MAX_SIGNALS_PER_CYCLE", "2"))
 FOREX_NEWS_BLACKOUT_ENABLED = os.environ.get("FOREX_NEWS_BLACKOUT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_NEWS_BLACKOUT_ACTIVE = os.environ.get("FOREX_NEWS_BLACKOUT_ACTIVE", "false").strip().lower() in {"1", "true", "yes", "on"}
-FOREX_REQUIRE_REAL_SPREAD = os.environ.get("FOREX_REQUIRE_REAL_SPREAD", "false").strip().lower() in {"1", "true", "yes", "on"}
+FOREX_REQUIRE_REAL_SPREAD = os.environ.get("FOREX_REQUIRE_REAL_SPREAD", "true").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_PRODUCTION_MODE = os.environ.get("FOREX_PRODUCTION_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_SHADOW_MODE = os.environ.get("FOREX_SHADOW_MODE", "true").strip().lower() in {"1", "true", "yes", "on"}
 FOREX_REQUIRE_DATA_RECONCILIATION = os.environ.get("FOREX_REQUIRE_DATA_RECONCILIATION", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -64,6 +66,10 @@ def _reset_summary():
         "shadow_candidates": 0,
         "final_signals": 0,
         "deliveries": 0,
+        "requests_used": 0,
+        "requests_remaining_estimate": 0,
+        "symbols_deferred": 0,
+        "rate_limit_hits": 0,
         "provider": provider_health_status().get("provider"),
     })
 
@@ -78,6 +84,8 @@ def _record_data_failure(result):
     if not FOREX_SCAN_SUMMARY:
         _reset_summary()
     code = forex_failure_code(getattr(result, "error", None), getattr(result, "status_code", None))
+    if str(getattr(result, "error", "") or "").startswith("REQUEST_BUDGET_"):
+        code = "RATE_LIMITED"
     reasons = FOREX_SCAN_SUMMARY.setdefault("failure_reasons", {})
     reasons[code] = int(reasons.get(code, 0) or 0) + 1
     _inc("data_failures")
@@ -101,6 +109,12 @@ def get_forex_scan_summary(final_signals: Optional[int] = None) -> dict:
         data["final_signals"] = int(final_signals or 0)
     data["provider_health"] = provider_health_status()
     data["pricing_health"] = pricing_provider_health_status()
+    budget = request_budget_status()
+    data["requests_used"] = budget.get("requests_used", 0)
+    data["requests_remaining_estimate"] = budget.get("requests_remaining_estimate", 0)
+    data["symbols_deferred"] = budget.get("symbols_deferred", 0)
+    data["rate_limit_hits"] = budget.get("rate_limit_hits", 0)
+    data["request_budget"] = budget
     return data
 
 
@@ -202,6 +216,10 @@ def _spread_pips(symbol: str) -> Tuple[Optional[float], dict]:
 
 def _production_requires_real_spread() -> bool:
     return bool(FOREX_REQUIRE_REAL_SPREAD and FOREX_PRODUCTION_MODE and not FOREX_SHADOW_MODE)
+
+
+def _unsafe_production_configuration() -> bool:
+    return bool(FOREX_PRODUCTION_MODE and not FOREX_REQUIRE_REAL_SPREAD)
 
 
 def _real_spread_missing_blocks_delivery(spread: Optional[float], quote_meta: dict) -> bool:
@@ -457,6 +475,11 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
         FOREX_SCAN_SUMMARY["disabled"] = True
         FOREX_SCAN_SUMMARY["disabled_reason"] = "FOREX_SIGNAL_ENGINE_DISABLED"
         return []
+    if _unsafe_production_configuration():
+        FOREX_SCAN_SUMMARY["disabled"] = True
+        FOREX_SCAN_SUMMARY["disabled_reason"] = "UNSAFE_PRODUCTION_CONFIGURATION"
+        print("FOREX_DELIVERY_DISABLED reason=UNSAFE_PRODUCTION_CONFIGURATION")
+        return []
     config = provider_configuration_status()
     FOREX_SCAN_SUMMARY["provider"] = config.get("provider")
     FOREX_SCAN_SUMMARY["provider_configured"] = bool(config.get("configured"))
@@ -478,11 +501,15 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
     print(f"FOREX_NEWS_PROVIDER_STATUS provider={news_config.get('provider')} configured={str(bool(news_config.get('configured'))).lower()} required={str(bool(news_config.get('required'))).lower()}")
     limit = limit or FOREX_MAX_SIGNALS_PER_CYCLE
     signals: List[dict] = []
-    for symbol in FOREX_SYMBOLS:
+    scan_symbols, deferred_symbols = forex_symbols_for_cycle(FOREX_SYMBOLS)
+    FOREX_SCAN_SUMMARY["symbols_requested"] = len(FOREX_SYMBOLS)
+    FOREX_SCAN_SUMMARY["symbols_deferred"] = len(deferred_symbols)
+    timeframes_for_cycle = ["4h", "1h", "30m", "15m"]
+    for symbol in scan_symbols:
         _inc("symbols_scanned")
         frames = {}
         failed = False
-        for tf in FOREX_TIMEFRAMES:
+        for tf in timeframes_for_cycle:
             _inc("timeframes_scanned")
             result = get_ohlcv(symbol, tf)
             if not result.ok:
@@ -493,7 +520,7 @@ def get_forex_signals(limit: Optional[int] = None) -> List[dict]:
         if failed:
             continue
         _inc("symbols_with_data")
-        for tf in ("15m", "5m"):
+        for tf in ("15m",):
             candidate = _build_signal(symbol, tf, frames)
             if candidate:
                 signals.append(candidate)
@@ -535,25 +562,47 @@ def forex_readiness_status() -> dict:
     provider_configured = bool(provider.get("configured"))
     provider_selected = provider.get("selected_provider") or provider.get("provider")
     pricing_provider = pricing_health.get("pricing_provider")
-    real_bid_ask_available = bool(pricing_provider)
-    delivery_allowed = bool(
-        provider_configured
-        and (real_bid_ask_available or not FOREX_REQUIRE_REAL_SPREAD)
-        and (bool(news.get("configured")) or not news.get("required"))
+    real_bid_ask_available = bool(pricing_health.get("healthy"))
+    candles_fresh = bool(summary.get("symbols_with_data", 0))
+    news_healthy = bool(news.get("configured"))
+    telegram_healthy = bool(os.environ.get("TELEGRAM_TOKEN") and os.environ.get("BASE_URL"))
+    subscription_delivery_healthy = True
+    unsafe_production = _unsafe_production_configuration()
+    shadow_ready = bool(provider_configured and FOREX_SHADOW_MODE and not FOREX_PRODUCTION_MODE)
+    production_ready = bool(
+        FOREX_PRODUCTION_MODE
+        and not FOREX_SHADOW_MODE
+        and provider_configured
+        and candles_fresh
+        and FOREX_REQUIRE_REAL_SPREAD
+        and real_bid_ask_available
+        and news_healthy
+        and telegram_healthy
+        and subscription_delivery_healthy
+        and not unsafe_production
         and not FOREX_AUTO_TRADE_ENABLED
     )
+    delivery_allowed = bool(production_ready)
     block_reason = ""
-    if not provider_configured:
+    if unsafe_production:
+        block_reason = "UNSAFE_PRODUCTION_CONFIGURATION"
+    elif not provider_configured:
         block_reason = provider.get("reason") or "CANDLE_PROVIDER_NOT_CONFIGURED"
+    elif FOREX_PRODUCTION_MODE and FOREX_SHADOW_MODE:
+        block_reason = "SHADOW_MODE_ENABLED"
     elif FOREX_REQUIRE_REAL_SPREAD and not real_bid_ask_available:
         block_reason = "REAL_SPREAD_UNAVAILABLE"
     elif news.get("required") and not news.get("configured"):
         block_reason = news.get("reason") or "NEWS_PROVIDER_NOT_CONFIGURED"
+    elif FOREX_PRODUCTION_MODE and not telegram_healthy:
+        block_reason = "TELEGRAM_NOT_HEALTHY"
     ready_checks = {
         "primary_provider": "twelvedata",
         "candle_provider_configured": provider_configured,
-        "candle_provider_healthy": bool(provider_health.get("ok")) or provider.get("reason") == "OK",
-        "pricing_provider_configured": real_bid_ask_available,
+        "candle_provider_healthy": bool(candles_fresh or provider.get("reason") == "OK"),
+        "fresh_candles": candles_fresh,
+        "pricing_provider_configured": bool(pricing_provider),
+        "pricing_provider_healthy": real_bid_ask_available,
         "real_bid_ask_available": real_bid_ask_available,
         "forex_delivery_allowed": delivery_allowed,
         "oanda_optional": True,
@@ -561,20 +610,18 @@ def forex_readiness_status() -> dict:
         "candles_working": bool(summary.get("symbols_with_data", 0)),
         "real_spread_required": bool(FOREX_REQUIRE_REAL_SPREAD),
         "spread_warning": not FOREX_REQUIRE_REAL_SPREAD,
-        "news_calendar_working": bool(news.get("configured")),
+        "news_provider_configured": news_healthy,
+        "news_calendar_working": news_healthy,
         "shadow_mode_enabled": bool(FOREX_SHADOW_MODE),
         "forex_production_mode": bool(FOREX_PRODUCTION_MODE),
         "forex_auto_trade_enabled": bool(FOREX_AUTO_TRADE_ENABLED),
+        "telegram_healthy": telegram_healthy,
+        "subscription_delivery_checks_healthy": subscription_delivery_healthy,
+        "unsafe_production_configuration": unsafe_production,
     }
-    ready = (
-        ready_checks["candle_provider_configured"]
-        and (ready_checks["real_bid_ask_available"] or not FOREX_REQUIRE_REAL_SPREAD)
-        and (ready_checks["news_calendar_working"] or not news.get("required"))
-        and ready_checks["shadow_mode_enabled"]
-        and not ready_checks["forex_auto_trade_enabled"]
-    )
+    readiness_level = "PRODUCTION_READY" if production_ready else ("SHADOW_READY" if shadow_ready else "NOT_READY")
     return {
-        "ready": bool(ready),
+        "ready": bool(production_ready),
         "checks": ready_checks,
         "provider": provider,
         "provider_health": provider_health,
@@ -587,7 +634,9 @@ def forex_readiness_status() -> dict:
         "secondary_provider": "OANDA (optional)",
         "selected_provider": provider_selected,
         "pricing_provider": pricing_provider or "Unavailable",
-        "readiness_level": "READY" if ready else ("DEGRADED" if provider_configured and not FOREX_PRODUCTION_MODE else "NOT_READY"),
+        "readiness_level": readiness_level,
+        "shadow_ready": shadow_ready,
+        "production_ready": production_ready,
         "forex_delivery_allowed": delivery_allowed,
         "delivery_block_reason": block_reason,
         "last_candidate": summary.get("last_shadow_candidate"),

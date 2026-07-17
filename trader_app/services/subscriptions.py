@@ -227,8 +227,51 @@ def get_user_active_subscriptions(user_id, conn=None):
             conn.close()
 
 
+def get_user_latest_subscription(user_id, product_code=None, market_type=None, conn=None):
+    """Return the latest subscription row for display, including expired rows.
+
+    This is intentionally not used for delivery entitlement. Signal eligibility
+    must continue to use get_user_active_subscriptions / has_active_subscription.
+    """
+    if not user_id:
+        return None
+    conn, should_close = _own_connection(conn)
+    try:
+        ensure_user_subscriptions_table(conn)
+        c = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        filters = ["user_id = %s"]
+        params = [user_id]
+        if product_code:
+            filters.append("product_code = %s")
+            params.append(str(product_code))
+        if market_type:
+            filters.append("market_type = %s")
+            params.append(str(market_type))
+        c.execute(f"""
+            SELECT *,
+                   CASE
+                     WHEN status = 'active' AND (expires_at IS NULL OR expires_at >= NOW()) THEN 'active'
+                     WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
+                     ELSE COALESCE(status, 'not active')
+                   END AS display_status
+            FROM user_subscriptions
+            WHERE {' AND '.join(filters)}
+            ORDER BY expires_at DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+        """, tuple(params))
+        return _row_to_dict(c.fetchone())
+    finally:
+        if should_close:
+            conn.close()
+
+
 def has_active_subscription(user_id, product_code, conn=None):
     return any(row.get("product_code") == product_code for row in get_user_active_subscriptions(user_id, conn))
+
+
+def has_active_market_subscription(user_id, market_type, conn=None):
+    market = str(market_type or "").strip().lower()
+    return any(str(row.get("market_type") or "").strip().lower() == market for row in get_user_active_subscriptions(user_id, conn))
 
 
 def legacy_crypto_subscription_from_user(user):
@@ -262,6 +305,11 @@ def get_user_subscription_cards(user, conn=None):
         cards.append(legacy)
     user_id = user.get("id") if user else None
     cards.extend(get_user_active_subscriptions(user_id, conn) if user_id else [])
+    latest_forex = get_user_latest_subscription(user_id, market_type=VIP_ALL_FOREX_MARKET_TYPE, conn=conn) if user_id else None
+    if latest_forex and not any(card.get("product_code") in VIP_ALL_FOREX_PAYMENT_CODES for card in cards):
+        latest_forex["status"] = latest_forex.get("display_status") or latest_forex.get("status") or "not active"
+        latest_forex["display_only"] = True
+        cards.append(latest_forex)
     seen = set()
     unique_cards = []
     for card in cards:
@@ -276,7 +324,7 @@ def get_user_subscription_cards(user, conn=None):
 def get_user_market_capabilities(user_id, user=None, conn=None):
     plan = str((user or {}).get("plan") or "trial").strip().lower()
     has_crypto = plan in {"trial", "basic", "pro", "vip", "pro_2y"}
-    has_forex = has_active_subscription(user_id, VIP_ALL_FOREX_CODE, conn) if user_id else False
+    has_forex = has_active_market_subscription(user_id, VIP_ALL_FOREX_MARKET_TYPE, conn) if user_id else False
     return {
         "can_receive_crypto": has_crypto,
         "can_receive_forex": has_forex,
@@ -309,7 +357,8 @@ def format_subscriptions_for_telegram(user, conn=None):
     for card in cards:
         expires = card.get("expires_at") or "No expiry"
         market = str(card.get("market_type") or "crypto").upper()
-        lines.append(f"- {card.get('display_name') or card.get('product_code')} ({market}) expires: {expires}")
+        status = card.get("display_status") or card.get("status") or "not active"
+        lines.append(f"- {card.get('display_name') or card.get('product_code')} ({market}) status: {status}, expires: {expires}")
     if not any(card.get("product_code") == VIP_ALL_FOREX_CODE for card in cards):
         lines.append("- VIP ALL FOREX: Not active")
     return lines
