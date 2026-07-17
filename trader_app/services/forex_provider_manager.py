@@ -439,11 +439,23 @@ def _parse_timestamp(value) -> Optional[datetime]:
         return None
 
 
-def _is_stale(data_timestamp: Optional[str]) -> bool:
+def _timeframe_seconds(timeframe: Optional[str]) -> int:
+    return {"5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400}.get(str(timeframe or "").lower(), 1800)
+
+
+def _is_stale(data_timestamp: Optional[str], timeframe: Optional[str] = None) -> bool:
+    """Timeframe-aware freshness check for the latest *closed* candle.
+
+    A single 30-minute limit incorrectly marks healthy 1H/4H candles stale.
+    Keep the configured floor, while allowing up to roughly two candle periods
+    plus a small provider/clock buffer.
+    """
     dt = _parse_timestamp(data_timestamp)
     if not dt:
         return True
-    max_age = _env_int("FOREX_MAX_CANDLE_STALE_SECONDS", 1800, 60, 86400)
+    configured = _env_int("FOREX_MAX_CANDLE_STALE_SECONDS", 1800, 60, 86400)
+    interval_allowance = (_timeframe_seconds(timeframe) * 2) + 300
+    max_age = max(configured, interval_allowance)
     return (datetime.now(timezone.utc) - dt).total_seconds() > max_age
 
 
@@ -670,7 +682,7 @@ def _twelvedata_candles(symbol: str, timeframe: str, outputsize: int) -> Provide
         if len(candles) < 60:
             return ProviderCandlesResult(False, symbol, timeframe, "twelvedata", candles, error="EMPTY_CANDLES", status_code=status)
         timestamp = candles[-1].get("time")
-        stale = _is_stale(timestamp)
+        stale = _is_stale(timestamp, timeframe)
         return ProviderCandlesResult(not stale, symbol, timeframe, "twelvedata", candles, error="STALE_DATA" if stale else None, data_timestamp=timestamp, stale=stale, status_code=status)
     except requests.exceptions.Timeout:
         return ProviderCandlesResult(False, symbol, timeframe, "twelvedata", [], error="TIMEOUT")
@@ -680,7 +692,7 @@ def _twelvedata_candles(symbol: str, timeframe: str, outputsize: int) -> Provide
 
 def _oanda_candles(symbol: str, timeframe: str, outputsize: int) -> ProviderCandlesResult:
     result = oanda.get_candles(symbol, timeframe, outputsize)
-    return ProviderCandlesResult(result.ok, symbol, timeframe, "oanda", result.candles, error=result.error, data_timestamp=result.data_timestamp, stale=_is_stale(result.data_timestamp) if result.data_timestamp else False, status_code=result.status_code)
+    return ProviderCandlesResult(result.ok, symbol, timeframe, "oanda", result.candles, error=result.error, data_timestamp=result.data_timestamp, stale=_is_stale(result.data_timestamp, timeframe) if result.data_timestamp else False, status_code=result.status_code)
 
 
 def get_ohlcv(symbol: str, timeframe: str, outputsize: int = 120) -> ProviderCandlesResult:

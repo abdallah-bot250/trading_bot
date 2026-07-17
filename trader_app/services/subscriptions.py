@@ -332,7 +332,7 @@ def get_user_market_capabilities(user_id, user=None, conn=None):
         "can_receive_indices": has_forex,
         "can_receive_oil": has_forex,
         "can_auto_trade_crypto": plan in AUTO_TRADE_PLANS,
-        "can_auto_trade_forex": has_forex,
+        "can_auto_trade_forex": False,
         "forex_auto_trade_status": "Disabled until MT5/exchange execution is verified",
     }
 
@@ -359,6 +359,6 @@ def format_subscriptions_for_telegram(user, conn=None):
         market = str(card.get("market_type") or "crypto").upper()
         status = card.get("display_status") or card.get("status") or "not active"
         lines.append(f"- {card.get('display_name') or card.get('product_code')} ({market}) status: {status}, expires: {expires}")
-    if not any(card.get("product_code") == VIP_ALL_FOREX_CODE for card in cards):
+    if not any(card.get("product_code") in VIP_ALL_FOREX_PAYMENT_CODES for card in cards):
         lines.append("- VIP ALL FOREX: Not active")
     return lines

@@ -484,39 +484,59 @@ def adaptive_supply_calibration(signal, checklist):
         return False, f"supply_calibration_error:{e}"
 
 
-def b_plus_mtf_path_context(playbook_mtf, direction):
-    """Separate B+ MTF allowance without weakening strict A/A+ confirmation."""
+def evaluate_mtf_alignment(playbook_mtf, direction):
+    """Return one canonical MTF classification used by every early/late gate."""
     try:
         mtf = playbook_mtf or {}
-        desired = "BULL" if str(direction).upper() == "LONG" else "BEAR"
-        major = str(mtf.get("major") or "").upper()
-        confirm = str(mtf.get("confirm") or "").upper()
-        state = str(mtf.get("state") or "").upper()
+        direction = str(direction or "").upper()
+        desired = "BULL" if direction == "LONG" else "BEAR" if direction == "SHORT" else "UNKNOWN"
+        major = str(mtf.get("major") or "UNKNOWN").upper()
+        confirm = str(mtf.get("confirm") or "UNKNOWN").upper()
         frames = mtf.get("frames") or {}
-        setup_dir = str((frames.get(FUTURES_SETUP_TIMEFRAME) or {}).get("direction") or "").upper()
-        trigger_dir = str((frames.get(FUTURES_TRIGGER_TIMEFRAME) or {}).get("direction") or "").upper()
+        setup_dir = str((frames.get(FUTURES_SETUP_TIMEFRAME) or {}).get("direction") or "UNKNOWN").upper()
+        trigger_dir = str((frames.get(FUTURES_TRIGGER_TIMEFRAME) or {}).get("direction") or "UNKNOWN").upper()
 
-        if state == "HARD_CONFLICT" or (major == "BULL" and confirm == "BEAR") or (major == "BEAR" and confirm == "BULL"):
-            return {"ok": False, "reason": f"HARD_CONFLICT 4H={major} 1H={confirm}"}
-        macro_range_path = major == "RANGE" and confirm == desired
-        soft_trend_path = major == desired and confirm == "RANGE"
-        if not (soft_trend_path or macro_range_path):
-            return {"ok": False, "reason": f"B+ MTF path not eligible 4H={major} 1H={confirm}"}
-        if setup_dir != desired:
-            return {"ok": False, "reason": f"30m setup direction {setup_dir or 'UNKNOWN'} does not confirm {direction}"}
-        if trigger_dir not in {desired, "RANGE"}:
-            return {"ok": False, "reason": f"15m trigger direction {trigger_dir or 'UNKNOWN'} does not confirm {direction}"}
-        return {
-            "ok": True,
-            "state": "B_PLUS_MTF_CONFIRMED",
-            "reason": f"B+ MTF path accepted 4H={major} 1H={confirm} 30m={setup_dir} 15m={trigger_dir}",
+        base = {
             "major": major,
             "confirm": confirm,
+            "desired": desired,
             "setup_tf_direction": setup_dir,
             "trigger_tf_direction": trigger_dir,
         }
+        if desired == "UNKNOWN" or major == "UNKNOWN" or confirm == "UNKNOWN":
+            return {**base, "ok": False, "classification": "INVALID_ALIGNMENT", "reason": "MTF data unavailable"}
+        if (major == "BULL" and confirm == "BEAR") or (major == "BEAR" and confirm == "BULL"):
+            return {**base, "ok": False, "classification": "HARD_CONFLICT", "reason": f"HARD_CONFLICT 4H={major} 1H={confirm}"}
+        if major == desired and confirm == desired:
+            return {**base, "ok": True, "classification": "STRICT_ALIGNMENT", "reason": f"strict MTF alignment 4H={major} 1H={confirm}"}
+        if major == desired and confirm == "RANGE":
+            if setup_dir != desired:
+                return {**base, "ok": False, "classification": "SOFT_ALIGNMENT", "reason": f"missing_30m_setup: 30m={setup_dir} expected={desired}"}
+            if trigger_dir not in {desired, "RANGE"}:
+                return {**base, "ok": False, "classification": "SOFT_ALIGNMENT", "reason": f"missing_15m_trigger: 15m={trigger_dir} expected={desired}/RANGE"}
+            return {**base, "ok": True, "classification": "SOFT_ALIGNMENT", "reason": f"soft MTF alignment 4H={major} 1H=RANGE 30m={setup_dir} 15m={trigger_dir}"}
+        if major == "RANGE" and confirm == desired:
+            if setup_dir != desired or trigger_dir != desired:
+                return {**base, "ok": False, "classification": "RANGE_ANCHOR", "reason": f"MTF_RANGE_ANCHOR_NOT_CONFIRMED 30m={setup_dir} 15m={trigger_dir} expected={desired}"}
+            return {**base, "ok": True, "classification": "RANGE_ANCHOR", "reason": f"range-anchor B+ alignment 4H=RANGE 1H={confirm} 30m={setup_dir} 15m={trigger_dir}"}
+        return {**base, "ok": False, "classification": "INVALID_ALIGNMENT", "reason": f"MTF does not support {direction}: 4H={major} 1H={confirm}"}
     except Exception as e:
-        return {"ok": False, "reason": f"B+ MTF path error: {e}"}
+        return {"ok": False, "classification": "INVALID_ALIGNMENT", "reason": f"MTF evaluation error: {e}"}
+
+
+def b_plus_mtf_path_context(playbook_mtf, direction):
+    """Separate B+ MTF allowance without weakening strict A/A+ confirmation."""
+    result = evaluate_mtf_alignment(playbook_mtf, direction)
+    if result.get("classification") not in {"SOFT_ALIGNMENT", "RANGE_ANCHOR"}:
+        return {**result, "ok": False}
+    if not result.get("ok"):
+        return result
+    return {
+        **result,
+        "ok": True,
+        "state": "B_PLUS_MTF_CONFIRMED",
+        "reason": f"B+ MTF path accepted: {result.get('reason')}",
+    }
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -4115,15 +4135,19 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
         return rejected(f"hard MTF conflict: {mtf.get('reason')}")
 
     if regime in ["STRONG_BULL", "WEAK_BULL", "BULL_TREND"]:
-        if mtf.get("state") != "BULL_CONFIRMED":
-            if mtf.get("state") == "SOFT_CONFLICT" and range_pos <= 0.45 and liquidity_info.get("reclaim_after_sweep"):
-                setup = "trend_pullback_continuation"
-                reason = "4H bull, 1H range, discount reclaim confirmed"
-            else:
-                return rejected(f"trend LONG requires strict 4H/1H BULL MTF: {mtf.get('reason')}", "ARMED")
-        else:
-            setup = "trend_pullback_continuation"
+        mtf_decision = evaluate_mtf_alignment(mtf, "LONG")
+        if mtf_decision.get("classification") == "HARD_CONFLICT":
+            return rejected(mtf_decision.get("reason"), "INVALIDATED")
+        if not mtf_decision.get("ok"):
+            return rejected(mtf_decision.get("reason"), "ARMED")
+        setup = "trend_pullback_continuation"
+        if mtf_decision.get("classification") == "STRICT_ALIGNMENT":
             reason = "4H and 1H bull trend continuation"
+        else:
+            reason = mtf_decision.get("reason")
+            mtf["b_plus_mtf_path"] = True
+            mtf["alignment_classification"] = mtf_decision.get("classification")
+            _adaptive_log("MTF_SOFT_ALIGNMENT_ALLOWED", symbol=symbol, direction="LONG", major=mtf_decision.get("major"), confirm=mtf_decision.get("confirm"))
         return {
             "ok": True,
             "direction": "LONG",
@@ -4136,15 +4160,19 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
         }
 
     if regime in ["STRONG_BEAR", "WEAK_BEAR", "BEAR_TREND"]:
-        if mtf.get("state") != "BEAR_CONFIRMED":
-            if mtf.get("state") == "SOFT_CONFLICT" and range_pos >= 0.55 and liquidity_info.get("rejection_wick"):
-                setup = "trend_following_confirmed"
-                reason = "4H bear, 1H range, premium rejection confirmed"
-            else:
-                return rejected(f"trend SHORT requires strict 4H/1H BEAR MTF: {mtf.get('reason')}", "ARMED")
-        else:
-            setup = "trend_following_confirmed"
+        mtf_decision = evaluate_mtf_alignment(mtf, "SHORT")
+        if mtf_decision.get("classification") == "HARD_CONFLICT":
+            return rejected(mtf_decision.get("reason"), "INVALIDATED")
+        if not mtf_decision.get("ok"):
+            return rejected(mtf_decision.get("reason"), "ARMED")
+        setup = "trend_following_confirmed"
+        if mtf_decision.get("classification") == "STRICT_ALIGNMENT":
             reason = "4H and 1H bear trend continuation"
+        else:
+            reason = mtf_decision.get("reason")
+            mtf["b_plus_mtf_path"] = True
+            mtf["alignment_classification"] = mtf_decision.get("classification")
+            _adaptive_log("MTF_SOFT_ALIGNMENT_ALLOWED", symbol=symbol, direction="SHORT", major=mtf_decision.get("major"), confirm=mtf_decision.get("confirm"))
         return {
             "ok": True,
             "direction": "SHORT",
