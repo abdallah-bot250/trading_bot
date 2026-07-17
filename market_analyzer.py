@@ -86,6 +86,14 @@ SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
 SIGNAL_SCAN_DIAGNOSTICS = {}
 SIGNAL_SCAN_UNIQUE_SYMBOLS = set()
+SIGNAL_SUPPLY_24H = {
+    "started_at": time.time(),
+    "scans": 0,
+    "setups_confirmed": 0,
+    "candidates": 0,
+    "signals": 0,
+    "rejections": {},
+}
 ENTRY_MANAGER_LOG_CACHE = {}
 ENTRY_MANAGER_LOG_TTL_SECONDS = 300
 ALLOWED_DYNAMIC_BASE_ASSETS = {
@@ -102,8 +110,20 @@ def reset_signal_scan_diagnostics():
         "scanned": 0,
         "scan_attempts": 0,
         "unique_symbols_scanned": 0,
+        "playbooks_selected": 0,
+        "setups_confirmed": 0,
+        "entry_confirmations_passed": 0,
         "candidates_built": 0,
+        "finalized_candidates": 0,
         "rejections_by_code": {},
+        "mtf_hard_conflict": 0,
+        "mtf_soft_conflict": 0,
+        "entry_missing": 0,
+        "entry_stale": 0,
+        "liquidity_invalid": 0,
+        "quality_score": 0,
+        "late_entry": 0,
+        "risk_reward": 0,
         "rejected_low_volatility": 0,
         "rejected_mtf": 0,
         "rejected_liquidity": 0,
@@ -124,6 +144,12 @@ def _scan_diag_inc(key, amount=1):
         if not SIGNAL_SCAN_DIAGNOSTICS:
             reset_signal_scan_diagnostics()
         SIGNAL_SCAN_DIAGNOSTICS[key] = int(SIGNAL_SCAN_DIAGNOSTICS.get(key, 0) or 0) + amount
+        if key in {"scan_attempts", "scanned"}:
+            SIGNAL_SUPPLY_24H["scans"] = int(SIGNAL_SUPPLY_24H.get("scans", 0) or 0) + amount
+        elif key == "setups_confirmed":
+            SIGNAL_SUPPLY_24H["setups_confirmed"] = int(SIGNAL_SUPPLY_24H.get("setups_confirmed", 0) or 0) + amount
+        elif key == "candidates_built":
+            SIGNAL_SUPPLY_24H["candidates"] = int(SIGNAL_SUPPLY_24H.get("candidates", 0) or 0) + amount
     except Exception:
         pass
 
@@ -146,6 +172,11 @@ def get_signal_scan_diagnostics(final_signals=None):
     data["unique_symbols_scanned"] = len(SIGNAL_SCAN_UNIQUE_SYMBOLS)
     if final_signals is not None:
         data["final_signals"] = int(final_signals or 0)
+        try:
+            SIGNAL_SUPPLY_24H["signals"] = int(final_signals or 0)
+        except Exception:
+            pass
+    _maybe_log_supply_safety_guard()
     return data
 
 
@@ -192,7 +223,69 @@ def _record_scan_rejection(reason):
         _scan_diag_inc("rejected_quality")
     elif code in {"INVALID_ENTRY", "LOW_RR", "STALE_DATA", "DATA_SOURCE_FAILURE", "DUPLICATE", "COOLDOWN"}:
         _scan_diag_inc("rejected_entry")
+    _record_fine_rejection(reason, code)
     return code
+
+
+def _record_fine_rejection(reason, code=None):
+    try:
+        text = str(reason or "").upper()
+        key = None
+        if "HARD_CONFLICT" in text or "HARD MTF" in text or ("4H BULL" in text and "1H BEAR" in text) or ("4H BEAR" in text and "1H BULL" in text):
+            key = "mtf_hard_conflict"
+        elif "SOFT_CONFLICT" in text or ("4H BULL" in text and "1H RANGE" in text) or ("4H BEAR" in text and "1H RANGE" in text):
+            key = "mtf_soft_conflict"
+        elif "NO RETEST" in text or "NO ENTRY" in text or "TRIGGER NOT CONFIRMED" in text or "SETUP_ARMED" in text:
+            key = "entry_missing"
+        elif "STALE" in text or "EXPIRED" in text:
+            key = "entry_stale"
+        elif code == "LOW_LIQUIDITY" or "LIQUIDITY" in text or "VOLUME" in text:
+            key = "liquidity_invalid"
+        elif code in {"LOW_FINAL_SCORE", "AI_REJECTED", "HIGH_VOLATILITY"} or "QUALITY" in text or "CONFIDENCE" in text or "SCORE" in text:
+            key = "quality_score"
+        elif "LATE" in text or "CHASE" in text or "ENTRY_MOVED" in text or "MOVED" in text:
+            key = "late_entry"
+        elif code == "LOW_RR" or "RR" in text or "RISK/REWARD" in text:
+            key = "risk_reward"
+        if key:
+            _scan_diag_inc(key)
+            rejections = SIGNAL_SUPPLY_24H.setdefault("rejections", {})
+            rejections[key] = int(rejections.get(key, 0) or 0) + 1
+    except Exception:
+        pass
+
+
+def _maybe_log_supply_safety_guard():
+    try:
+        now = time.time()
+        elapsed = now - float(SIGNAL_SUPPLY_24H.get("started_at", now) or now)
+        if elapsed < 86400:
+            return
+        scans = int(SIGNAL_SUPPLY_24H.get("scans", 0) or 0)
+        setups = int(SIGNAL_SUPPLY_24H.get("setups_confirmed", 0) or 0)
+        candidates = int(SIGNAL_SUPPLY_24H.get("candidates", 0) or 0)
+        signals = int(SIGNAL_SUPPLY_24H.get("signals", 0) or 0)
+        rejections = dict(SIGNAL_SUPPLY_24H.get("rejections", {}) or {})
+        dominant = sorted(rejections.items(), key=lambda item: item[1], reverse=True)[:4]
+        print(
+            "SIGNAL_SUPPLY_24H "
+            f"scans_24h={scans} setups_confirmed_24h={setups} "
+            f"candidates_24h={candidates} signals_24h={signals} "
+            f"dominant_rejections={dominant}"
+        )
+        if scans > 500 and candidates == 0:
+            print("SIGNAL_SUPPLY_CRITICAL_OVERFILTERING")
+        SIGNAL_SUPPLY_24H.clear()
+        SIGNAL_SUPPLY_24H.update({
+            "started_at": now,
+            "scans": 0,
+            "setups_confirmed": 0,
+            "candidates": 0,
+            "signals": 0,
+            "rejections": {},
+        })
+    except Exception:
+        pass
 
 
 def _large_cap_symbol(symbol):
@@ -204,6 +297,8 @@ def _large_cap_symbol(symbol):
 
 def classify_opportunity_tier(signal):
     try:
+        if signal.get("b_plus_mtf_path") is True or signal.get("mtf_path") == "soft_alignment" or signal.get("mtf_soft_conflict") is True:
+            return "B_PLUS"
         display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)), 0)
         final_score = _safe_float(signal.get("final_score", display_conf), 0)
         rr = _safe_float(signal.get("risk_reward", 0), 0)
@@ -253,7 +348,6 @@ B_PLUS_HARD_REJECT_MARKERS = (
     "LOW_VOLUME_CHOP",
     "FAKE_BREAKOUT",
     "HARD MTF CONFLICT",
-    "MTF CONFLICT",
     "STALE",
     "INVALID RR",
     "INVALID ENTRY",
@@ -388,6 +482,41 @@ def adaptive_supply_calibration(signal, checklist):
         return True, "adaptive_supply_calibration_applied"
     except Exception as e:
         return False, f"supply_calibration_error:{e}"
+
+
+def b_plus_mtf_path_context(playbook_mtf, direction):
+    """Separate B+ MTF allowance without weakening strict A/A+ confirmation."""
+    try:
+        mtf = playbook_mtf or {}
+        desired = "BULL" if str(direction).upper() == "LONG" else "BEAR"
+        major = str(mtf.get("major") or "").upper()
+        confirm = str(mtf.get("confirm") or "").upper()
+        state = str(mtf.get("state") or "").upper()
+        frames = mtf.get("frames") or {}
+        setup_dir = str((frames.get(FUTURES_SETUP_TIMEFRAME) or {}).get("direction") or "").upper()
+        trigger_dir = str((frames.get(FUTURES_TRIGGER_TIMEFRAME) or {}).get("direction") or "").upper()
+
+        if state == "HARD_CONFLICT" or (major == "BULL" and confirm == "BEAR") or (major == "BEAR" and confirm == "BULL"):
+            return {"ok": False, "reason": f"HARD_CONFLICT 4H={major} 1H={confirm}"}
+        macro_range_path = major == "RANGE" and confirm == desired
+        soft_trend_path = major == desired and confirm == "RANGE"
+        if not (soft_trend_path or macro_range_path):
+            return {"ok": False, "reason": f"B+ MTF path not eligible 4H={major} 1H={confirm}"}
+        if setup_dir != desired:
+            return {"ok": False, "reason": f"30m setup direction {setup_dir or 'UNKNOWN'} does not confirm {direction}"}
+        if trigger_dir not in {desired, "RANGE"}:
+            return {"ok": False, "reason": f"15m trigger direction {trigger_dir or 'UNKNOWN'} does not confirm {direction}"}
+        return {
+            "ok": True,
+            "state": "B_PLUS_MTF_CONFIRMED",
+            "reason": f"B+ MTF path accepted 4H={major} 1H={confirm} 30m={setup_dir} 15m={trigger_dir}",
+            "major": major,
+            "confirm": confirm,
+            "setup_tf_direction": setup_dir,
+            "trigger_tf_direction": trigger_dir,
+        }
+    except Exception as e:
+        return {"ok": False, "reason": f"B+ MTF path error: {e}"}
 EXCLUDED_BASE_ASSETS = {
     "USD", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "UST", "USTC",
     "EUR", "TRY", "GBP", "BRL", "AUD", "BIDR", "NGN", "RUB", "UAH",
@@ -980,16 +1109,35 @@ def robust_volume_profile(df, lookback=24):
     This prevents the engine from incorrectly rejecting large-cap pairs.
     """
     try:
-        series = _volume_series(df).dropna()
-        if len(series) < max(8, lookback // 2):
-            return {"volume_ratio": 1.0, "volume_state": "UNKNOWN", "volume_score": 50}
+        closed_df = closed_candle_frame(df)
+        series = _volume_series(closed_df).dropna()
+        if len(series) < 22:
+            return {
+                "volume_ratio": 0.0,
+                "volume_state": "THIN",
+                "volume_score": 38,
+                "current_closed_volume": None,
+                "average_volume_20": None,
+                "data_source": "quote_volume" if df is not None and "quote_volume" in getattr(df, "columns", []) else "volume",
+                "candle_closed": True,
+                "fail_closed": True,
+            }
         current = _safe_float(series.iloc[-1])
-        history = series.iloc[-(lookback + 1):-1] if len(series) > lookback else series.iloc[:-1]
+        history = series.iloc[-21:-1] if len(series) >= 21 else series.iloc[:-1]
         history = history[history > 0]
         if current <= 0 or history.empty:
-            return {"volume_ratio": 0.0, "volume_state": "THIN", "volume_score": 38}
+            return {
+                "volume_ratio": 0.0,
+                "volume_state": "THIN",
+                "volume_score": 38,
+                "current_closed_volume": round(current, 6),
+                "average_volume_20": 0,
+                "data_source": "quote_volume" if df is not None and "quote_volume" in getattr(df, "columns", []) else "volume",
+                "candle_closed": True,
+            }
         median_ref = _safe_float(history.median())
         mean_ref = _safe_float(history.mean())
+        avg20 = _safe_float(history.mean())
         # Use the larger stable reference, but cap extreme spike influence.
         ref = max(median_ref, min(mean_ref, median_ref * 2.5 if median_ref > 0 else mean_ref))
         ratio = current / ref if ref > 0 else 0.0
@@ -1001,7 +1149,24 @@ def robust_volume_profile(df, lookback=24):
             state, score = "NORMAL", 58
         else:
             state, score = "THIN", 38
-        return {"volume_ratio": round(ratio, 3), "volume_state": state, "volume_score": score}
+        profile = {
+            "volume_ratio": round(ratio, 3),
+            "volume_state": state,
+            "volume_score": score,
+            "current_closed_volume": round(current, 6),
+            "average_volume_20": round(avg20, 6),
+            "data_source": "quote_volume" if df is not None and "quote_volume" in getattr(df, "columns", []) else "volume",
+            "candle_closed": True,
+        }
+        if SIGNAL_DEBUG_LOGS:
+            print(
+                "VOLUME_PROFILE "
+                f"current_closed_volume={profile['current_closed_volume']} "
+                f"average_volume_20={profile['average_volume_20']} "
+                f"volume_ratio={profile['volume_ratio']} "
+                f"data_source={profile['data_source']} candle_closed=True"
+            )
+        return profile
     except Exception:
         return {"volume_ratio": 0.0, "volume_state": "UNKNOWN", "volume_score": 45}
 
@@ -2500,6 +2665,32 @@ def _bounded(value, low=0, high=100):
     return max(low, min(high, value))
 
 
+def closed_candle_frame(df):
+    """Return only closed candles; when no explicit flag exists, skip the live tail."""
+    try:
+        if df is None or len(df) == 0:
+            return df
+        frame = df.copy()
+        for col in ("complete", "closed", "is_closed"):
+            if col in frame.columns:
+                return frame[frame[col].astype(bool)].copy()
+        if len(frame) > 8:
+            return frame.iloc[:-1].copy()
+        return frame.copy()
+    except Exception:
+        return df
+
+
+def recent_closed_candles(df, count=3):
+    try:
+        frame = closed_candle_frame(df)
+        if frame is None:
+            return frame
+        return frame.tail(count).copy()
+    except Exception:
+        return df.tail(count) if df is not None else df
+
+
 def build_signal_quality_report(signal):
     try:
         confidence = _safe_float(signal.get("confidence"), 0)
@@ -2829,40 +3020,74 @@ def smart_money_entry_zone(df, direction, regime_info):
         if close <= 0 or atr_val <= 0:
             return {"ok": False, "setup": None, "reason": "invalid smart-money baseline"}
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
-        candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
-        upper_wick_ratio = (_safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))) / candle_range
-        lower_wick_ratio = (min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])) / candle_range
+        closed_df = closed_candle_frame(df)
+        if closed_df is None or len(closed_df) < 5:
+            return {"ok": False, "setup": None, "reason": "insufficient closed candles for entry confirmation"}
         mid_range = recent_low + ((recent_high - recent_low) * 0.5) if recent_high > recent_low else close
-        fvg_long = len(df) >= 3 and _safe_float(df["low"].iloc[-1]) > _safe_float(df["high"].iloc[-3])
-        fvg_short = len(df) >= 3 and _safe_float(df["high"].iloc[-1]) < _safe_float(df["low"].iloc[-3])
+        recent = list(reversed(range(max(1, len(closed_df) - 3), len(closed_df))))
+        for idx in recent:
+            age = (len(closed_df) - 1) - idx
+            last = closed_df.iloc[idx]
+            prev = closed_df.iloc[idx - 1]
+            candle_close = _safe_float(last["close"])
+            candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), candle_close * 0.0001)
+            upper_wick_ratio = (_safe_float(last["high"]) - max(_safe_float(last["open"]), _safe_float(last["close"]))) / candle_range
+            lower_wick_ratio = (min(_safe_float(last["open"]), _safe_float(last["close"])) - _safe_float(last["low"])) / candle_range
+            fvg_long = idx >= 2 and _safe_float(closed_df["low"].iloc[idx]) > _safe_float(closed_df["high"].iloc[idx - 2])
+            fvg_short = idx >= 2 and _safe_float(closed_df["high"].iloc[idx]) < _safe_float(closed_df["low"].iloc[idx - 2])
+            age_note = f"; entry_confirmation_age_candles={age}"
 
-        if direction == "LONG":
-            if support and abs(close - support) <= max(atr_val * 0.85, close * 0.007):
-                return {"ok": True, "setup": "Bounce from Support", "reason": "entry near support with defined invalidation"}
-            if lower_wick_ratio >= 0.45 and _safe_float(last["low"]) < recent_low and close > recent_low:
-                return {"ok": True, "setup": "Liquidity Sweep", "reason": "sell-side liquidity swept and reclaimed"}
-            if _safe_float(prev["high"]) < close and _safe_float(last["low"]) <= _safe_float(prev["high"]) + atr_val * 0.25:
-                return {"ok": True, "setup": "Break + Retest", "reason": "breakout retested prior high"}
-            if fvg_long and close <= mid_range:
-                return {"ok": True, "setup": "Fair Value Gap", "reason": "bullish imbalance inside discount area"}
-            if close <= mid_range and regime_info.get("regime") in ["ACCUMULATION", "WEAK_BULL", "STRONG_BULL"]:
-                return {"ok": True, "setup": "Discount Pullback", "reason": "price in discount relative to recent range"}
-        else:
-            if resistance and abs(resistance - close) <= max(atr_val * 0.85, close * 0.007):
-                return {"ok": True, "setup": "Bounce from Resistance", "reason": "entry near resistance with defined invalidation"}
-            if upper_wick_ratio >= 0.45 and _safe_float(last["high"]) > recent_high and close < recent_high:
-                return {"ok": True, "setup": "Liquidity Sweep", "reason": "buy-side liquidity swept and rejected"}
-            if _safe_float(prev["low"]) > close and _safe_float(last["high"]) >= _safe_float(prev["low"]) - atr_val * 0.25:
-                return {"ok": True, "setup": "Break + Retest", "reason": "breakdown retested prior low"}
-            if fvg_short and close >= mid_range:
-                return {"ok": True, "setup": "Fair Value Gap", "reason": "bearish imbalance inside premium area"}
-            if close >= mid_range and regime_info.get("regime") in ["DISTRIBUTION", "WEAK_BEAR", "STRONG_BEAR"]:
-                return {"ok": True, "setup": "Premium Pullback", "reason": "price in premium relative to recent range"}
+            if direction == "LONG":
+                if support and abs(candle_close - support) <= max(atr_val * 0.85, candle_close * 0.007):
+                    return {"ok": True, "setup": "Bounce from Support", "reason": "recent closed candle bounced from support with defined invalidation" + age_note, "entry_confirmation_age_candles": age}
+                if lower_wick_ratio >= 0.45 and _safe_float(last["low"]) < recent_low and candle_close > recent_low:
+                    return {"ok": True, "setup": "Liquidity Sweep", "reason": "recent sell-side liquidity swept and reclaimed" + age_note, "entry_confirmation_age_candles": age}
+                if _safe_float(prev["high"]) < candle_close and _safe_float(last["low"]) <= _safe_float(prev["high"]) + atr_val * 0.25:
+                    return {"ok": True, "setup": "Break + Retest", "reason": "recent breakout retested prior high" + age_note, "entry_confirmation_age_candles": age}
+                if fvg_long and candle_close <= mid_range:
+                    return {"ok": True, "setup": "Fair Value Gap", "reason": "recent bullish imbalance inside discount area" + age_note, "entry_confirmation_age_candles": age}
+                if candle_close <= mid_range and regime_info.get("regime") in ["ACCUMULATION", "WEAK_BULL", "STRONG_BULL"]:
+                    return {"ok": True, "setup": "Discount Pullback", "reason": "recent pullback in discount relative to range" + age_note, "entry_confirmation_age_candles": age}
+            else:
+                if resistance and abs(resistance - candle_close) <= max(atr_val * 0.85, candle_close * 0.007):
+                    return {"ok": True, "setup": "Bounce from Resistance", "reason": "recent closed candle rejected resistance with defined invalidation" + age_note, "entry_confirmation_age_candles": age}
+                if upper_wick_ratio >= 0.45 and _safe_float(last["high"]) > recent_high and candle_close < recent_high:
+                    return {"ok": True, "setup": "Liquidity Sweep", "reason": "recent buy-side liquidity swept and rejected" + age_note, "entry_confirmation_age_candles": age}
+                if _safe_float(prev["low"]) > candle_close and _safe_float(last["high"]) >= _safe_float(prev["low"]) - atr_val * 0.25:
+                    return {"ok": True, "setup": "Break + Retest", "reason": "recent breakdown retested prior low" + age_note, "entry_confirmation_age_candles": age}
+                if fvg_short and candle_close >= mid_range:
+                    return {"ok": True, "setup": "Fair Value Gap", "reason": "recent bearish imbalance inside premium area" + age_note, "entry_confirmation_age_candles": age}
+                if candle_close >= mid_range and regime_info.get("regime") in ["DISTRIBUTION", "WEAK_BEAR", "STRONG_BEAR"]:
+                    return {"ok": True, "setup": "Premium Pullback", "reason": "recent pullback in premium relative to range" + age_note, "entry_confirmation_age_candles": age}
         return {"ok": False, "setup": None, "reason": "no retest, pullback, liquidity sweep, order block, FVG, or S/R bounce"}
     except Exception as e:
         return {"ok": False, "setup": None, "reason": f"smart money filter error: {e}"}
+
+
+def late_entry_after_confirmation_guard(df, direction, regime_info, smart_entry):
+    try:
+        age = int(smart_entry.get("entry_confirmation_age_candles"))
+        if age not in {0, 1, 2}:
+            return False, "ENTRY_STALE: entry confirmation outside 0-2 closed candle window"
+        closed_df = closed_candle_frame(df)
+        if closed_df is None or len(closed_df) < age + 2:
+            return False, "ENTRY_STALE: insufficient closed candles after confirmation"
+        latest_close = _safe_float(closed_df["close"].iloc[-1])
+        confirmation_close = _safe_float(closed_df["close"].iloc[-1 - age])
+        atr_val = max(_safe_float(regime_info.get("atr")), latest_close * 0.003 if latest_close else 0.0)
+        if latest_close <= 0 or confirmation_close <= 0 or atr_val <= 0:
+            return False, "ENTRY_STALE: invalid late-entry baseline"
+        max_chase = max(atr_val * 0.75, latest_close * 0.006)
+        directional_move = latest_close - confirmation_close if direction == "LONG" else confirmation_close - latest_close
+        if directional_move > max_chase:
+            return False, (
+                "LATE_ENTRY: price moved too far after confirmation "
+                f"move={round(directional_move, 8)} max_allowed={round(max_chase, 8)} "
+                f"age={age}"
+            )
+        return True, f"entry timing valid age={age} move={round(directional_move, 8)}"
+    except Exception as e:
+        return False, f"LATE_ENTRY guard error: {e}"
 
 
 def expert_quality_checklist(signal, regime_info, expert_context):
@@ -3336,6 +3561,7 @@ def _adaptive_log(event, **kwargs):
 def adaptive_liquidity_map(df, regime_info=None):
     try:
         regime_info = regime_info or {}
+        df = closed_candle_frame(df)
         if df is None or len(df) < 40:
             return {
                 "liquidity_context": "INSUFFICIENT_DATA",
@@ -3891,7 +4117,7 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
     if regime in ["STRONG_BULL", "WEAK_BULL", "BULL_TREND"]:
         if mtf.get("state") != "BULL_CONFIRMED":
             if mtf.get("state") == "SOFT_CONFLICT" and range_pos <= 0.45 and liquidity_info.get("reclaim_after_sweep"):
-                setup = "trend_pullback_reclaim"
+                setup = "trend_pullback_continuation"
                 reason = "4H bull, 1H range, discount reclaim confirmed"
             else:
                 return rejected(f"trend LONG requires strict 4H/1H BULL MTF: {mtf.get('reason')}", "ARMED")
@@ -3912,7 +4138,7 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
     if regime in ["STRONG_BEAR", "WEAK_BEAR", "BEAR_TREND"]:
         if mtf.get("state") != "BEAR_CONFIRMED":
             if mtf.get("state") == "SOFT_CONFLICT" and range_pos >= 0.55 and liquidity_info.get("rejection_wick"):
-                setup = "trend_rejection_continuation"
+                setup = "trend_following_confirmed"
                 reason = "4H bear, 1H range, premium rejection confirmed"
             else:
                 return rejected(f"trend SHORT requires strict 4H/1H BEAR MTF: {mtf.get('reason')}", "ARMED")
@@ -4053,6 +4279,9 @@ def adaptive_opportunity_score(signal):
             + btc_score * 0.04
             + (50 + performance) * 0.01
         )
+        if signal.get("mtf_path") == "soft_alignment" or signal.get("mtf_soft_conflict") is True:
+            score -= 6
+            signal["scoring_penalty_reason"] = "SOFT_MTF_ALIGNMENT_PENALTY"
         score = int(_bounded(round(score), 0, 100))
         signal["opportunity_score"] = score
         signal["ranking_reason"] = (
@@ -4226,8 +4455,10 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             reason = playbook.get("reason", "adaptive playbook rejected")
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook}
+        _scan_diag_inc("playbooks_selected")
         _adaptive_log("PLAYBOOK_SELECTED", symbol=symbol, regime=regime, playbook=playbook.get("playbook"))
         adaptive_setup_lifecycle(symbol, "CONFIRMED", "playbook confirmed", playbook.get("strategy_name"))
+        _scan_diag_inc("setups_confirmed")
         regime_info = {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_mtf_playbook": playbook.get("mtf")}
 
         risk_brain = adaptive_dynamic_risk_brain(regime_info, btc_info, liquidity_info, playbook.get("mtf", {}))
@@ -4243,18 +4474,37 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 
         expert_mtf = expert_multi_timeframe_context(symbol, direction, df if interval == "5m" else None)
         mtf_override_ok = playbook.get("playbook") in {"RANGE", "ACCUMULATION", "DISTRIBUTION", "BREAKOUT_EXPANSION"} and playbook.get("mtf", {}).get("state") in {"RANGE_CONFIRMED", "RANGE_WITH_LOWER_TF_TREND", "SOFT_CONFLICT"}
-        if expert_mtf.get("state") != "CONFIRMED" and not mtf_override_ok:
+        b_plus_mtf = b_plus_mtf_path_context(playbook.get("mtf"), direction)
+        if expert_mtf.get("state") != "CONFIRMED" and not mtf_override_ok and not b_plus_mtf.get("ok"):
             reason = f"MTF rejected: {expert_mtf.get('reason')}"
+            if b_plus_mtf.get("reason"):
+                reason = f"{reason}; b_plus={b_plus_mtf.get('reason')}"
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, "expert_mtf": expert_mtf}
         if mtf_override_ok:
             expert_mtf = {**expert_mtf, "state": "CONFIRMED", "score": max(_safe_float(expert_mtf.get("score"), 0), 80), "reason": f"playbook override: {playbook.get('mtf', {}).get('reason')}"}
+        elif b_plus_mtf.get("ok") and expert_mtf.get("state") != "CONFIRMED":
+            expert_mtf = {
+                **expert_mtf,
+                "state": "CONFIRMED",
+                "score": max(_safe_float(expert_mtf.get("score"), 0), 78),
+                "reason": b_plus_mtf.get("reason"),
+                "b_plus_mtf_path": True,
+                "b_plus_mtf_context": b_plus_mtf,
+            }
+            regime_info["b_plus_mtf_path"] = True
+            regime_info["b_plus_mtf_reason"] = b_plus_mtf.get("reason")
 
         smart_entry = smart_money_entry_zone(df, direction, regime_info)
         if not smart_entry.get("ok"):
             reason = f"Entry rejected: {smart_entry.get('reason')}"
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, "smart_money": smart_entry}
+        entry_timing_ok, entry_timing_reason = late_entry_after_confirmation_guard(df, direction, regime_info, smart_entry)
+        if not entry_timing_ok:
+            _no_trade_reason(symbol, interval, entry_timing_reason)
+            return None, entry_timing_reason, {**regime_info, "smart_money": smart_entry}
+        _scan_diag_inc("entry_confirmations_passed")
 
         exhausted, exhaustion_reason = trend_exhaustion_filter(df, direction)
         if exhausted:
@@ -4324,6 +4574,8 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "expert_volatility": volatility_state,
             "smart_money_setup": smart_entry.get("setup"),
             "smart_money_reason": smart_entry.get("reason"),
+            "entry_confirmation_age_candles": smart_entry.get("entry_confirmation_age_candles"),
+            "entry_timing_reason": entry_timing_reason,
             "news_filter": news_reason,
             "atr": atr_val,
             "atr_ratio": regime_info.get("atr_ratio"),
@@ -4336,6 +4588,8 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "adaptive_playbook": playbook.get("playbook"),
             "setup_lifecycle": "CONFIRMED",
             "b_plus_calibration_pending": b_plus_pending,
+            "b_plus_mtf_path": bool(expert_mtf.get("b_plus_mtf_path")),
+            "b_plus_mtf_reason": expert_mtf.get("reason") if expert_mtf.get("b_plus_mtf_path") else None,
             "liquidity_context": liquidity_info.get("liquidity_context"),
             "liquidity_score": liquidity_info.get("liquidity_score"),
             "liquidity_reason": liquidity_info.get("liquidity_reason"),
@@ -4348,6 +4602,15 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "entry_location_grade": 86 if smart_entry.get("ok") else 45,
             "setup_validity_score": confidence,
         }
+        if signal.get("b_plus_mtf_path"):
+            signal["b_plus_calibration_pending"] = True
+            signal["b_plus_calibrated"] = True
+            signal["quality_tier"] = "B_PLUS"
+            signal["opportunity_tier"] = "B_PLUS"
+            signal["mtf_path"] = "soft_alignment"
+            signal["mtf_soft_conflict"] = True
+            signal["confidence_cap_reason"] = "b_plus_soft_mtf_path_cap"
+            playbook["confidence_cap"] = min(_safe_float(playbook.get("confidence_cap"), 78) or 78, 78)
         apply_adaptive_confidence_cap(signal, playbook.get("confidence_cap"), f"{playbook.get('playbook')} confidence cap")
         relative_strength_context(symbol, signal)
         adaptive_opportunity_score(signal)
@@ -4475,6 +4738,7 @@ def finalize_adaptive_signal(signal, df, paid=True):
             _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
             return None, final_reason
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
+        _scan_diag_inc("finalized_candidates")
         return managed_signal, None
     except Exception as e:
         return None, f"adaptive finalize error: {e}"
@@ -5184,9 +5448,20 @@ def get_top_free_signals(limit=2):
             if len(best) >= limit:
                 break
 
-    for selected in best:
-        candidate_pipeline_log("FINAL_SIGNAL_SELECTED", selected.get("pair"), selected.get("timeframe"), stage="final_selection", signal=selected, tier=selected.get("quality_tier") or selected.get("opportunity_tier"))
     print(f"Top signals selected: {_selected_signal_summary(best)}")
+    try:
+        _scan_diag_inc("final_signals", len(best))
+        for selected in best:
+            candidate_pipeline_log(
+                "FINAL_SIGNAL_SELECTED",
+                selected.get("pair"),
+                selected.get("timeframe"),
+                stage="selection",
+                signal=selected,
+                tier=selected.get("quality_tier") or selected.get("opportunity_tier"),
+            )
+    except Exception:
+        pass
     return best
 
 # ================= DRY RUN / SIGNAL HUNTER VERIFICATION =================
