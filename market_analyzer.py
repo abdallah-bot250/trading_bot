@@ -101,6 +101,10 @@ ALLOWED_DYNAMIC_BASE_ASSETS = {
     "AVAX", "DOT", "LTC", "BCH", "ATOM", "NEAR", "APT", "ARB", "OP", "INJ",
     "RUNE", "FET", "HBAR", "XLM", "ICP", "ETC", "FIL", "AAVE", "UNI", "SUI",
 }
+KNOWN_PROBLEMATIC_BASE_ASSETS = {
+    "REKT", "MOG", "TROLL", "NOBODY", "MEME", "PEPE", "DOGS", "SHIB", "BONK",
+    "S", "G",
+}
 
 
 def reset_signal_scan_diagnostics():
@@ -548,6 +552,28 @@ EXCLUDED_BASE_KEYWORDS = {
 }
 EXCLUDED_SYMBOL_PARTS = ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")
 SHORT_BASE_ALLOWLIST = {"BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "TRX", "TON", "DOT", "LTC", "BCH", "APT", "ARB", "FET", "SUI", "OP"}
+SYMBOL_UNIVERSE_FILTER_STATS = {}
+
+
+def _reset_symbol_universe_stats():
+    SYMBOL_UNIVERSE_FILTER_STATS.clear()
+    SYMBOL_UNIVERSE_FILTER_STATS.update({
+        "total_exchange_symbols": 0,
+        "filtered_by_reason": {},
+        "liquid_symbols_count": 0,
+        "selected_final_count": 0,
+        "fallback_reason": "none",
+    })
+
+
+def _symbol_filter_stat(reason):
+    try:
+        if not SYMBOL_UNIVERSE_FILTER_STATS:
+            _reset_symbol_universe_stats()
+        reasons = SYMBOL_UNIVERSE_FILTER_STATS.setdefault("filtered_by_reason", {})
+        reasons[reason] = int(reasons.get(reason, 0) or 0) + 1
+    except Exception:
+        pass
 
 
 def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
@@ -586,6 +612,8 @@ def _symbol_filter_reason(symbol):
         return "starts_with_1000"
     if base in EXCLUDED_BASE_ASSETS:
         return "stable_or_fiat_base"
+    if base in KNOWN_PROBLEMATIC_BASE_ASSETS:
+        return "known_problematic_base"
     if any(ch in base for ch in ["_", "-", "/"]):
         return "invalid_base_characters"
     for keyword in EXCLUDED_BASE_KEYWORDS:
@@ -593,8 +621,6 @@ def _symbol_filter_reason(symbol):
             return f"excluded_keyword_{keyword}"
     if len(base) <= 1 and base not in SHORT_BASE_ALLOWLIST:
         return "base_too_short"
-    if base not in ALLOWED_DYNAMIC_BASE_ASSETS:
-        return "not_in_large_cap_allowlist"
     return None
 
 
@@ -602,6 +628,7 @@ def _is_tradeable_usdt_symbol(symbol):
     try:
         reason = _symbol_filter_reason(symbol)
         if reason:
+            _symbol_filter_stat(reason)
             _log_symbol_filtered(symbol, reason)
             return False
         return True
@@ -611,6 +638,8 @@ def _is_tradeable_usdt_symbol(symbol):
 
 
 def _ticker_volume_map(url):
+    if not SYMBOL_UNIVERSE_FILTER_STATS:
+        _reset_symbol_universe_stats()
     data, status = _safe_market_json(url)
     volumes = {}
     if not isinstance(data, list):
@@ -623,12 +652,16 @@ def _ticker_volume_map(url):
             quote_volume = float(row.get("quoteVolume") or 0)
             if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
                 volumes[symbol] = max(volumes.get(symbol, 0), quote_volume)
+            else:
+                _symbol_filter_stat("below_min_quote_volume")
         except Exception:
             continue
     return volumes, status
 
 
 def _exchange_symbols(url, market_type):
+    if not SYMBOL_UNIVERSE_FILTER_STATS:
+        _reset_symbol_universe_stats()
     data, status = _safe_market_json(url)
     symbols = set()
     if not isinstance(data, dict):
@@ -636,18 +669,23 @@ def _exchange_symbols(url, market_type):
     for row in data.get("symbols", []):
         try:
             symbol = str(row.get("symbol") or "").upper()
+            SYMBOL_UNIVERSE_FILTER_STATS["total_exchange_symbols"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("total_exchange_symbols", 0) or 0) + 1
             if not _is_tradeable_usdt_symbol(symbol):
                 continue
             if market_type == "spot":
                 if row.get("status") != "TRADING":
+                    _symbol_filter_stat("inactive_or_non_trading")
                     continue
                 permissions = row.get("permissions") or []
                 if permissions and "SPOT" not in permissions and "TRADING" not in permissions:
+                    _symbol_filter_stat("spot_permission_missing")
                     continue
             else:
                 if row.get("status") != "TRADING":
+                    _symbol_filter_stat("inactive_or_non_trading")
                     continue
                 if row.get("contractType") not in (None, "PERPETUAL"):
+                    _symbol_filter_stat("non_perpetual_futures")
                     continue
             symbols.add(symbol)
         except Exception:
@@ -657,16 +695,14 @@ def _exchange_symbols(url, market_type):
 
 def _rank_symbol_universe(symbols, volume_maps):
     ranked = []
-    zero_volume = []
     for symbol in symbols:
         volume = max([volume_map.get(symbol, 0) for volume_map in volume_maps] or [0])
         if volume >= MIN_DYNAMIC_QUOTE_VOLUME:
             ranked.append((symbol, volume))
         else:
-            zero_volume.append((symbol, 0))
+            _symbol_filter_stat("below_min_quote_volume")
     ranked.sort(key=lambda item: item[1], reverse=True)
-    zero_volume.sort(key=lambda item: (SYMBOLS.index(item[0]) if item[0] in SYMBOLS else 999, item[0]))
-    ranked = ranked + zero_volume
+    SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = len(ranked)
 
     pinned = [symbol for symbol in SYMBOLS if symbol in {item[0] for item in ranked}]
     ordered = []
@@ -721,6 +757,7 @@ def get_scan_symbols(force_refresh=False):
     if cached and not force_refresh and now - DYNAMIC_SYMBOL_CACHE.get("time", 0) < DYNAMIC_SYMBOLS_TTL_SECONDS:
         return list(cached)
 
+    _reset_symbol_universe_stats()
     all_symbols = set()
     exchange_info_symbols = set()
     volume_maps = []
@@ -762,24 +799,35 @@ def get_scan_symbols(force_refresh=False):
     else:
         selected = list(SYMBOLS)
         failures.append("fallback=all_sources_empty")
+        SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = "all_sources_empty"
 
     if not selected:
         selected = list(SYMBOLS)
         failures.append("fallback=ranked_empty")
+        SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = "ranked_empty"
 
     matched_count = len([symbol for symbol in selected if any(symbol in volume_map for volume_map in volume_maps)])
-    selected, fallback_added_count = _merge_min_dynamic_symbols(selected, exchange_info_symbols or all_symbols)
+    fallback_added_count = 0
+    if selected and selected != list(SYMBOLS):
+        selected = selected[:MAX_DYNAMIC_SYMBOLS] if MAX_DYNAMIC_SYMBOLS > 0 else selected
+    elif selected == list(SYMBOLS):
+        limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else len(selected)
+        selected = selected[:limit]
 
     DYNAMIC_SYMBOL_CACHE["time"] = now
     DYNAMIC_SYMBOL_CACHE["symbols"] = selected
+    SYMBOL_UNIVERSE_FILTER_STATS["selected_final_count"] = len(selected)
     symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
     print(
         "DYNAMIC_SYMBOLS_SELECTED "
         f"count={len(selected)} max={symbol_limit} "
         f"sources={json.dumps(source_counts, sort_keys=True)} "
+        f"total_exchange_symbols={SYMBOL_UNIVERSE_FILTER_STATS.get('total_exchange_symbols', 0)} "
+        f"filtered_by_reason={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('filtered_by_reason', {}), sort_keys=True)} "
+        f"liquid_symbols_count={SYMBOL_UNIVERSE_FILTER_STATS.get('liquid_symbols_count', 0)} "
         f"exchange_info_count={exchange_info_count} ticker_count={ticker_count} "
         f"matched_count={matched_count} fallback_added_count={fallback_added_count} final_count={len(selected)} "
-        f"fallback_reason={'; '.join(failures[:4]) or 'none'}"
+        f"fallback_reason={'; '.join(failures[:4]) or SYMBOL_UNIVERSE_FILTER_STATS.get('fallback_reason', 'none')}"
     )
     return list(selected)
 
