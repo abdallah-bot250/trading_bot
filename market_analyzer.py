@@ -563,6 +563,11 @@ def _reset_symbol_universe_stats():
         "liquid_symbols_count": 0,
         "selected_final_count": 0,
         "fallback_reason": "none",
+        "missing_ticker_data": 0,
+        "invalid_volume": 0,
+        "below_min_quote_volume": 0,
+        "symbol_match_failed": 0,
+        "schema_warnings": [],
     })
 
 
@@ -584,6 +589,41 @@ def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
         return response.json(), 200
     except Exception as e:
         return None, str(e)
+
+
+def _normalize_exchange_symbol(symbol):
+    """Normalize exchange symbols for matching while preserving raw symbols for API calls."""
+    return str(symbol or "").upper().strip().replace("-", "").replace("_", "").replace("/", "")
+
+
+def _quote_turnover_from_row(row, provider):
+    """Return USDT quote turnover only; never estimate quote volume from base quantity."""
+    keys = ("quoteVolume", "quote_volume", "volValue", "turnover", "quoteTurnover", "quoteVolume24h")
+    for key in keys:
+        if key in row:
+            value = _safe_float(row.get(key), 0)
+            if value > 0:
+                return value, key
+    return 0.0, "missing_quote_turnover"
+
+
+def _record_symbol_universe_schema_warning(label, status, raw_count, sample):
+    try:
+        sample_keys = sorted(list((sample or {}).keys()))[:20] if isinstance(sample, dict) else []
+        warning = {
+            "label": label,
+            "status": status,
+            "raw_count": raw_count,
+            "sample_keys": sample_keys,
+        }
+        SYMBOL_UNIVERSE_FILTER_STATS.setdefault("schema_warnings", []).append(warning)
+        print(
+            "DYNAMIC_SYMBOLS_SCHEMA_WARNING "
+            f"label={label} status={status} raw_count={raw_count} "
+            f"sample_keys={json.dumps(sample_keys)}"
+        )
+    except Exception:
+        pass
 
 
 def _log_symbol_filtered(symbol, reason):
@@ -637,26 +677,40 @@ def _is_tradeable_usdt_symbol(symbol):
         return False
 
 
-def _ticker_volume_map(url):
+def _ticker_volume_map(url, label="UNKNOWN_TICKER"):
     if not SYMBOL_UNIVERSE_FILTER_STATS:
         _reset_symbol_universe_stats()
     data, status = _safe_market_json(url)
     volumes = {}
-    if not isinstance(data, list):
-        return volumes, status
+    rows = data if isinstance(data, list) else []
+    raw_count = len(rows)
+    parsed_count = 0
+    if not rows:
+        SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+        return volumes, status, {"raw_count": raw_count, "parsed_count": parsed_count}
     for row in data:
         try:
-            symbol = str(row.get("symbol") or "").upper()
+            raw_symbol = row.get("symbol") if isinstance(row, dict) else ""
+            symbol = _normalize_exchange_symbol(raw_symbol)
+            if not symbol:
+                _symbol_filter_stat("symbol_match_failed")
+                SYMBOL_UNIVERSE_FILTER_STATS["symbol_match_failed"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("symbol_match_failed", 0) or 0) + 1
+                continue
             if not _is_tradeable_usdt_symbol(symbol):
                 continue
-            quote_volume = float(row.get("quoteVolume") or 0)
-            if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
-                volumes[symbol] = max(volumes.get(symbol, 0), quote_volume)
-            else:
-                _symbol_filter_stat("below_min_quote_volume")
+            quote_volume, _volume_key = _quote_turnover_from_row(row, label)
+            if quote_volume <= 0:
+                _symbol_filter_stat("invalid_volume")
+                SYMBOL_UNIVERSE_FILTER_STATS["invalid_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("invalid_volume", 0) or 0) + 1
+                continue
+            parsed_count += 1
+            volumes[symbol] = max(volumes.get(symbol, 0), quote_volume)
         except Exception:
+            _symbol_filter_stat("invalid_volume")
             continue
-    return volumes, status
+    if status == 200 and raw_count > 0 and parsed_count == 0:
+        _record_symbol_universe_schema_warning(label, status, raw_count, rows[0] if rows else {})
+    return volumes, status, {"raw_count": raw_count, "parsed_count": parsed_count}
 
 
 def _exchange_symbols(url, market_type):
@@ -665,10 +719,11 @@ def _exchange_symbols(url, market_type):
     data, status = _safe_market_json(url)
     symbols = set()
     if not isinstance(data, dict):
-        return symbols, status
+        return symbols, status, 0
+    raw_count = len(data.get("symbols", []) or [])
     for row in data.get("symbols", []):
         try:
-            symbol = str(row.get("symbol") or "").upper()
+            symbol = _normalize_exchange_symbol(row.get("symbol"))
             SYMBOL_UNIVERSE_FILTER_STATS["total_exchange_symbols"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("total_exchange_symbols", 0) or 0) + 1
             if not _is_tradeable_usdt_symbol(symbol):
                 continue
@@ -691,17 +746,29 @@ def _exchange_symbols(url, market_type):
             symbols.add(symbol)
         except Exception:
             continue
-    return symbols, status
+    return symbols, status, raw_count
 
 
 def _rank_symbol_universe(symbols, volume_maps):
     ranked = []
+    if not volume_maps:
+        for _symbol in symbols:
+            _symbol_filter_stat("missing_ticker_data")
+            SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+        SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = 0
+        return ranked
     for symbol in symbols:
-        volume = max([volume_map.get(symbol, 0) for volume_map in volume_maps] or [0])
+        matched_volumes = [volume_map[symbol] for volume_map in volume_maps if symbol in volume_map]
+        if not matched_volumes:
+            _symbol_filter_stat("missing_ticker_data")
+            SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+            continue
+        volume = max(matched_volumes)
         if volume >= MIN_DYNAMIC_QUOTE_VOLUME:
             ranked.append((symbol, volume))
         else:
             _symbol_filter_stat("below_min_quote_volume")
+            SYMBOL_UNIVERSE_FILTER_STATS["below_min_quote_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("below_min_quote_volume", 0) or 0) + 1
     ranked.sort(key=lambda item: item[1], reverse=True)
     SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = len(ranked)
 
@@ -722,30 +789,41 @@ def _alternative_exchange_universe():
     """Filtered non-Binance universe used only when Binance universe sources fail."""
     data, status = _safe_market_json("https://api.kucoin.com/api/v1/market/allTickers")
     ranked = []
+    meta = {"raw_count": 0, "parsed_count": 0}
     if not isinstance(data, dict):
-        return [], f"KUCOIN={status}"
+        SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+        return [], f"KUCOIN={status}", meta
     rows = ((data.get("data") or {}).get("ticker") or [])
+    meta["raw_count"] = len(rows)
+    if not rows:
+        SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+        return [], f"KUCOIN={status}", meta
     for row in rows:
         try:
             raw_symbol = str(row.get("symbol") or "").upper()
-            symbol = raw_symbol.replace("-", "")
+            symbol = _normalize_exchange_symbol(raw_symbol)
             if not symbol.endswith("USDT"):
                 continue
             SYMBOL_UNIVERSE_FILTER_STATS["total_exchange_symbols"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("total_exchange_symbols", 0) or 0) + 1
             if not _is_tradeable_usdt_symbol(symbol):
                 continue
             SYMBOL_UNIVERSE_FILTER_STATS["eligible_before_volume_filter"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("eligible_before_volume_filter", 0) or 0) + 1
-            quote_volume = _safe_float(row.get("volValue") or row.get("quoteVolume"), 0)
+            quote_volume, _volume_key = _quote_turnover_from_row(row, "KUCOIN_TICKER")
             if quote_volume <= 0:
-                last_price = _safe_float(row.get("last"), 0)
-                base_volume = _safe_float(row.get("vol"), 0)
-                quote_volume = last_price * base_volume
+                _symbol_filter_stat("invalid_volume")
+                SYMBOL_UNIVERSE_FILTER_STATS["invalid_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("invalid_volume", 0) or 0) + 1
+                continue
+            meta["parsed_count"] += 1
             if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
                 ranked.append((symbol, quote_volume))
             else:
                 _symbol_filter_stat("below_min_quote_volume")
+                SYMBOL_UNIVERSE_FILTER_STATS["below_min_quote_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("below_min_quote_volume", 0) or 0) + 1
         except Exception:
+            _symbol_filter_stat("invalid_volume")
             continue
+    if status == 200 and meta["raw_count"] > 0 and meta["parsed_count"] == 0:
+        _record_symbol_universe_schema_warning("KUCOIN_TICKER", status, meta["raw_count"], rows[0] if rows else {})
     ranked.sort(key=lambda item: item[1], reverse=True)
     SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = max(
         int(SYMBOL_UNIVERSE_FILTER_STATS.get("liquid_symbols_count", 0) or 0),
@@ -761,7 +839,7 @@ def _alternative_exchange_universe():
         selected.append(symbol)
         if MAX_DYNAMIC_SYMBOLS > 0 and len(selected) >= MAX_DYNAMIC_SYMBOLS:
             break
-    return selected, "KUCOIN"
+    return selected, "KUCOIN", meta
 
 
 def _merge_min_dynamic_symbols(selected, supported_symbols):
@@ -810,6 +888,8 @@ def get_scan_symbols(force_refresh=False):
     volume_maps = []
     failures = []
     source_counts = {}
+    source_raw_counts = {}
+    ticker_meta = {}
     exchange_info_count = 0
     ticker_count = 0
 
@@ -818,7 +898,8 @@ def get_scan_symbols(force_refresh=False):
         ("https://api.binance.us/api/v3/exchangeInfo", "spot", "BINANCE_US_SPOT"),
         ("https://fapi.binance.com/fapi/v1/exchangeInfo", "futures", "BINANCE_FUTURES"),
     ]:
-        symbols, status = _exchange_symbols(url, market_type)
+        symbols, status, raw_count = _exchange_symbols(url, market_type)
+        source_raw_counts[label] = raw_count
         source_counts[label] = len(symbols or [])
         exchange_info_count += len(symbols or [])
         if symbols:
@@ -832,9 +913,11 @@ def get_scan_symbols(force_refresh=False):
         ("https://api.binance.us/api/v3/ticker/24hr", "BINANCE_US_TICKER"),
         ("https://fapi.binance.com/fapi/v1/ticker/24hr", "BINANCE_FUTURES_TICKER"),
     ]:
-        volume_map, status = _ticker_volume_map(url)
+        volume_map, status, meta = _ticker_volume_map(url, label)
+        ticker_meta[label] = meta
+        source_raw_counts[label] = int((meta or {}).get("raw_count", 0) or 0)
         source_counts[label] = len(volume_map or {})
-        ticker_count += len(volume_map or {})
+        ticker_count += int((meta or {}).get("parsed_count", 0) or 0)
         if volume_map:
             volume_maps.append(volume_map)
             all_symbols.update(volume_map.keys())
@@ -844,7 +927,11 @@ def get_scan_symbols(force_refresh=False):
     if all_symbols:
         selected = _rank_symbol_universe(all_symbols, volume_maps)
     else:
-        selected, alt_status = _alternative_exchange_universe()
+        selected, alt_status, alt_meta = _alternative_exchange_universe()
+        source_raw_counts["KUCOIN"] = int((alt_meta or {}).get("raw_count", 0) or 0)
+        source_counts["KUCOIN_TICKER"] = int((alt_meta or {}).get("parsed_count", 0) or 0)
+        ticker_meta["KUCOIN_TICKER"] = alt_meta
+        ticker_count += int((alt_meta or {}).get("parsed_count", 0) or 0)
         if selected:
             failures.append(f"fallback=alternative_exchange_universe:{alt_status}")
             SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"alternative_exchange_universe:{alt_status}"
@@ -854,7 +941,11 @@ def get_scan_symbols(force_refresh=False):
             SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"all_sources_empty; alternative={alt_status}"
 
     if not selected:
-        selected, alt_status = _alternative_exchange_universe()
+        selected, alt_status, alt_meta = _alternative_exchange_universe()
+        source_raw_counts["KUCOIN"] = int((alt_meta or {}).get("raw_count", 0) or 0)
+        source_counts["KUCOIN_TICKER"] = int((alt_meta or {}).get("parsed_count", 0) or 0)
+        ticker_meta["KUCOIN_TICKER"] = alt_meta
+        ticker_count += int((alt_meta or {}).get("parsed_count", 0) or 0)
         if selected:
             failures.append(f"fallback=alternative_exchange_universe:{alt_status}")
             SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"alternative_exchange_universe:{alt_status}"
@@ -890,6 +981,10 @@ def get_scan_symbols(force_refresh=False):
         f"count={len(selected)} max={symbol_limit} configured_max={MAX_DYNAMIC_SYMBOLS} "
         f"min_quote_volume={MIN_DYNAMIC_QUOTE_VOLUME} source_used={source_used} "
         f"sources={json.dumps(source_counts, sort_keys=True)} "
+        f"raw_binance_spot={source_raw_counts.get('BINANCE_SPOT', 0)} "
+        f"raw_binance_futures={source_raw_counts.get('BINANCE_FUTURES', 0)} "
+        f"raw_binance_us={source_raw_counts.get('BINANCE_US_SPOT', 0)} "
+        f"raw_kucoin={source_raw_counts.get('KUCOIN', 0)} "
         f"total_exchange_symbols={SYMBOL_UNIVERSE_FILTER_STATS.get('total_exchange_symbols', 0)} "
         f"eligible_before_volume_filter={SYMBOL_UNIVERSE_FILTER_STATS.get('eligible_before_volume_filter', 0)} "
         f"excluded_stablecoin={filter_reasons.get('stable_or_fiat_base', 0)} "
@@ -897,13 +992,18 @@ def get_scan_symbols(force_refresh=False):
         f"excluded_inactive_non_perpetual={filter_reasons.get('inactive_or_non_trading', 0) + filter_reasons.get('non_perpetual_futures', 0)} "
         f"excluded_blocklist_problematic={filter_reasons.get('known_problematic_base', 0) + filter_reasons.get('starts_with_1000', 0)} "
         f"excluded_low_volume={filter_reasons.get('below_min_quote_volume', 0)} "
+        f"missing_ticker_data={SYMBOL_UNIVERSE_FILTER_STATS.get('missing_ticker_data', 0)} "
+        f"invalid_volume={SYMBOL_UNIVERSE_FILTER_STATS.get('invalid_volume', 0)} "
+        f"below_min_quote_volume={SYMBOL_UNIVERSE_FILTER_STATS.get('below_min_quote_volume', 0)} "
+        f"symbol_match_failed={SYMBOL_UNIVERSE_FILTER_STATS.get('symbol_match_failed', 0)} "
         f"filtered_by_reason={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('filtered_by_reason', {}), sort_keys=True)} "
         f"liquid_symbols_count={SYMBOL_UNIVERSE_FILTER_STATS.get('liquid_symbols_count', 0)} "
         f"exchange_info_count={exchange_info_count} ticker_count={ticker_count} "
+        f"ticker_meta={json.dumps(ticker_meta, sort_keys=True)} "
         f"matched_count={matched_count} fallback_added_count={fallback_added_count} final_count={len(selected)} "
         f"fetch_failures={json.dumps(failures, sort_keys=True)} "
         f"fallback_reason={fallback_reason} "
-        f"first20={json.dumps(selected[:20])}"
+        f"selected_first_20={json.dumps(selected[:20])}"
     )
     return list(selected)
 
