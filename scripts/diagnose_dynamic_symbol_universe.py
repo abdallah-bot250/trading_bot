@@ -109,9 +109,55 @@ def build_kucoin_tickers():
     return {"data": {"ticker": rows}}
 
 
+def build_large_kucoin_tickers(total=1042, liquid=160):
+    rows = []
+    priority_bases = [
+        "GALA", "SEI", "WLD", "TIA", "JUP", "ONDO", "PENDLE", "RENDER",
+        "LDO", "WIF", "PYTH", "ENA", "MANTA", "STRK", "MAV", "BLUR",
+        "SAGA", "ARKM", "EIGEN", "ALT", "ACE", "MAGIC", "ROSE", "KSM",
+        "MKR", "COMP", "SNX", "CRV", "DYDX", "GMX", "GMT", "AXS",
+        "SAND", "MANA", "APE", "CHZ", "IMX", "FLOW", "MINA", "CELO",
+        "ZEC", "DASH", "IOTA", "KAVA", "QTUM", "ZIL", "BAT", "ANKR",
+        "HOT", "SKL", "IOST", "STORJ", "YFI", "ZRX", "ENS", "MASK",
+        "LRC", "ONE", "ONT", "ZEN", "SFP", "CKB", "DENT", "ACH",
+        "API3", "TRB", "SSV", "LPT", "GLM", "ID", "RDNT", "JOE",
+    ]
+    for idx in range(total):
+        if idx < len(priority_bases):
+            base = priority_bases[idx]
+        else:
+            base = f"KQC{idx}"
+        quote_turnover = 250_000_000 - (idx * 1_000_000) if idx < liquid else 1_000
+        rows.append({
+            "symbol": f"{base}-USDT",
+            "last": "1",
+            "vol": "999999999",
+            "volValue": str(max(quote_turnover, 1)),
+        })
+    rows.extend([
+        {"symbol": "USDC-USDT", "last": "1", "vol": "999999999", "volValue": "999999999"},
+        {"symbol": "BTCDOWN-USDT", "last": "1", "vol": "999999999", "volValue": "999999999"},
+        {"symbol": "1000MOG-USDT", "last": "1", "vol": "999999999", "volValue": "999999999"},
+    ])
+    return {"data": {"ticker": rows}}
+
+
 def fake_binance_down_kucoin_ok(url, timeout=12):
     if "kucoin.com" in url:
         return build_kucoin_tickers(), 200
+    return None, 451
+
+
+def fake_production_like_kucoin_fallback(url, timeout=12):
+    if "api.binance.us/api/v3/exchangeInfo" in url:
+        rows = []
+        for idx in range(186):
+            rows.append({"symbol": f"BUS{idx}USDT", "status": "TRADING", "permissions": ["SPOT"]})
+        return {"symbols": rows}, 200
+    if "api.binance.us/api/v3/ticker/24hr" in url:
+        return [{"symbol": f"BUS{idx}USDT", "quoteVolume": str(20_000_000 - idx)} for idx in range(13)], 200
+    if "kucoin.com" in url:
+        return build_large_kucoin_tickers(), 200
     return None, 451
 
 
@@ -210,10 +256,27 @@ def main():
         "alternative_exchange_universe" in str(ma.SYMBOL_UNIVERSE_FILTER_STATS.get("fallback_reason")),
         "fallback_reason did not expose the alternative exchange universe",
     )
+
+    try:
+        ma.DYNAMIC_SYMBOL_CACHE.clear()
+        ma.DYNAMIC_SYMBOL_CACHE.update({"time": 0, "symbols": None})
+        ma._safe_market_json = fake_production_like_kucoin_fallback
+        production_like_selected = ma.get_scan_symbols(force_refresh=True)
+    finally:
+        ma._safe_market_json = original
+    assert_true(len(production_like_selected) > 30, f"production-like KuCoin fallback stayed too small: {len(production_like_selected)}")
+    assert_true(ma.SYMBOL_UNIVERSE_FILTER_STATS.get("authoritative_universe_source") == "KUCOIN", "KuCoin was not authoritative in production-like fallback")
+    assert_true(ma.SYMBOL_UNIVERSE_FILTER_STATS.get("kucoin_symbols_with_ticker", 0) > 800, "KuCoin parsed ticker universe was not used")
+    assert_true(ma.SYMBOL_UNIVERSE_FILTER_STATS.get("kucoin_symbols_above_volume", 0) > 30, "KuCoin volume-filtered universe did not exceed 30")
+    assert_true(
+        ma.SYMBOL_UNIVERSE_FILTER_STATS.get("symbols_dropped_due_to_cross_exchange_requirement", -1) == 0,
+        "KuCoin fallback incorrectly required Binance cross-exchange membership",
+    )
     print(
         "DYNAMIC_SYMBOL_UNIVERSE_OK "
         f"selected={len(selected)} outside_old={len(outside_old)} "
         f"alternative_fallback={len(fallback_selected)} "
+        f"production_like_kucoin={len(production_like_selected)} "
         f"sample_outside={outside_old[:5]}"
     )
 

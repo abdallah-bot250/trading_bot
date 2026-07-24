@@ -568,6 +568,11 @@ def _reset_symbol_universe_stats():
         "below_min_quote_volume": 0,
         "symbol_match_failed": 0,
         "schema_warnings": [],
+        "authoritative_universe_source": "none",
+        "authoritative_universe_count": 0,
+        "kucoin_symbols_with_ticker": 0,
+        "kucoin_symbols_above_volume": 0,
+        "symbols_dropped_due_to_cross_exchange_requirement": 0,
     })
 
 
@@ -789,7 +794,7 @@ def _alternative_exchange_universe():
     """Filtered non-Binance universe used only when Binance universe sources fail."""
     data, status = _safe_market_json("https://api.kucoin.com/api/v1/market/allTickers")
     ranked = []
-    meta = {"raw_count": 0, "parsed_count": 0}
+    meta = {"raw_count": 0, "parsed_count": 0, "above_volume_count": 0}
     if not isinstance(data, dict):
         SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
         return [], f"KUCOIN={status}", meta
@@ -815,6 +820,7 @@ def _alternative_exchange_universe():
                 continue
             meta["parsed_count"] += 1
             if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
+                meta["above_volume_count"] += 1
                 ranked.append((symbol, quote_volume))
             else:
                 _symbol_filter_stat("below_min_quote_volume")
@@ -829,6 +835,11 @@ def _alternative_exchange_universe():
         int(SYMBOL_UNIVERSE_FILTER_STATS.get("liquid_symbols_count", 0) or 0),
         len(ranked),
     )
+    SYMBOL_UNIVERSE_FILTER_STATS["authoritative_universe_source"] = "KUCOIN"
+    SYMBOL_UNIVERSE_FILTER_STATS["authoritative_universe_count"] = int(meta.get("parsed_count", 0) or 0)
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_symbols_with_ticker"] = int(meta.get("parsed_count", 0) or 0)
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_symbols_above_volume"] = int(meta.get("above_volume_count", 0) or 0)
+    SYMBOL_UNIVERSE_FILTER_STATS["symbols_dropped_due_to_cross_exchange_requirement"] = 0
     pinned = [symbol for symbol in SYMBOLS if symbol in {item[0] for item in ranked}]
     selected = []
     seen = set()
@@ -890,6 +901,7 @@ def get_scan_symbols(force_refresh=False):
     source_counts = {}
     source_raw_counts = {}
     ticker_meta = {}
+    source_statuses = {}
     exchange_info_count = 0
     ticker_count = 0
 
@@ -899,6 +911,7 @@ def get_scan_symbols(force_refresh=False):
         ("https://fapi.binance.com/fapi/v1/exchangeInfo", "futures", "BINANCE_FUTURES"),
     ]:
         symbols, status, raw_count = _exchange_symbols(url, market_type)
+        source_statuses[label] = status
         source_raw_counts[label] = raw_count
         source_counts[label] = len(symbols or [])
         exchange_info_count += len(symbols or [])
@@ -914,6 +927,7 @@ def get_scan_symbols(force_refresh=False):
         ("https://fapi.binance.com/fapi/v1/ticker/24hr", "BINANCE_FUTURES_TICKER"),
     ]:
         volume_map, status, meta = _ticker_volume_map(url, label)
+        source_statuses[label] = status
         ticker_meta[label] = meta
         source_raw_counts[label] = int((meta or {}).get("raw_count", 0) or 0)
         source_counts[label] = len(volume_map or {})
@@ -924,9 +938,31 @@ def get_scan_symbols(force_refresh=False):
         else:
             failures.append(f"{label}={status}")
 
-    if all_symbols:
+    binance_global_unavailable = any(str(source_statuses.get(label)) == "451" for label in (
+        "BINANCE_SPOT",
+        "BINANCE_FUTURES",
+        "BINANCE_SPOT_TICKER",
+        "BINANCE_FUTURES_TICKER",
+    ))
+    selected = None
+    if binance_global_unavailable:
+        alt_selected, alt_status, alt_meta = _alternative_exchange_universe()
+        source_raw_counts["KUCOIN"] = int((alt_meta or {}).get("raw_count", 0) or 0)
+        source_counts["KUCOIN_TICKER"] = int((alt_meta or {}).get("parsed_count", 0) or 0)
+        ticker_meta["KUCOIN_TICKER"] = alt_meta
+        ticker_count += int((alt_meta or {}).get("parsed_count", 0) or 0)
+        if alt_selected:
+            selected = alt_selected
+            failures.append(f"fallback=alternative_exchange_universe:{alt_status}")
+            SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"alternative_exchange_universe:{alt_status}; global_binance_unavailable"
+        else:
+            failures.append(f"alternative_exchange_universe={alt_status}")
+
+    if selected is None and all_symbols:
+        SYMBOL_UNIVERSE_FILTER_STATS["authoritative_universe_source"] = "BINANCE_COMBINED"
+        SYMBOL_UNIVERSE_FILTER_STATS["authoritative_universe_count"] = len(all_symbols)
         selected = _rank_symbol_universe(all_symbols, volume_maps)
-    else:
+    elif selected is None:
         selected, alt_status, alt_meta = _alternative_exchange_universe()
         source_raw_counts["KUCOIN"] = int((alt_meta or {}).get("raw_count", 0) or 0)
         source_counts["KUCOIN_TICKER"] = int((alt_meta or {}).get("parsed_count", 0) or 0)
@@ -955,6 +991,8 @@ def get_scan_symbols(force_refresh=False):
             SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"ranked_empty; alternative={alt_status}"
 
     matched_count = len([symbol for symbol in selected if any(symbol in volume_map for volume_map in volume_maps)])
+    if str(SYMBOL_UNIVERSE_FILTER_STATS.get("authoritative_universe_source", "")).upper() == "KUCOIN":
+        matched_count = min(len(selected), int(SYMBOL_UNIVERSE_FILTER_STATS.get("kucoin_symbols_with_ticker", 0) or 0))
     fallback_added_count = 0
     if selected and selected != list(SYMBOLS):
         selected = selected[:MAX_DYNAMIC_SYMBOLS] if MAX_DYNAMIC_SYMBOLS > 0 else selected
@@ -985,6 +1023,11 @@ def get_scan_symbols(force_refresh=False):
         f"raw_binance_futures={source_raw_counts.get('BINANCE_FUTURES', 0)} "
         f"raw_binance_us={source_raw_counts.get('BINANCE_US_SPOT', 0)} "
         f"raw_kucoin={source_raw_counts.get('KUCOIN', 0)} "
+        f"authoritative_universe_source={SYMBOL_UNIVERSE_FILTER_STATS.get('authoritative_universe_source', 'none')} "
+        f"authoritative_universe_count={SYMBOL_UNIVERSE_FILTER_STATS.get('authoritative_universe_count', 0)} "
+        f"kucoin_symbols_with_ticker={SYMBOL_UNIVERSE_FILTER_STATS.get('kucoin_symbols_with_ticker', 0)} "
+        f"kucoin_symbols_above_volume={SYMBOL_UNIVERSE_FILTER_STATS.get('kucoin_symbols_above_volume', 0)} "
+        f"symbols_dropped_due_to_cross_exchange_requirement={SYMBOL_UNIVERSE_FILTER_STATS.get('symbols_dropped_due_to_cross_exchange_requirement', 0)} "
         f"total_exchange_symbols={SYMBOL_UNIVERSE_FILTER_STATS.get('total_exchange_symbols', 0)} "
         f"eligible_before_volume_filter={SYMBOL_UNIVERSE_FILTER_STATS.get('eligible_before_volume_filter', 0)} "
         f"excluded_stablecoin={filter_reasons.get('stable_or_fiat_base', 0)} "
