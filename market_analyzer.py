@@ -558,6 +558,7 @@ def _reset_symbol_universe_stats():
     SYMBOL_UNIVERSE_FILTER_STATS.clear()
     SYMBOL_UNIVERSE_FILTER_STATS.update({
         "total_exchange_symbols": 0,
+        "eligible_before_volume_filter": 0,
         "filtered_by_reason": {},
         "liquid_symbols_count": 0,
         "selected_final_count": 0,
@@ -686,6 +687,7 @@ def _exchange_symbols(url, market_type):
                 if row.get("contractType") not in (None, "PERPETUAL"):
                     _symbol_filter_stat("non_perpetual_futures")
                     continue
+            SYMBOL_UNIVERSE_FILTER_STATS["eligible_before_volume_filter"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("eligible_before_volume_filter", 0) or 0) + 1
             symbols.add(symbol)
         except Exception:
             continue
@@ -732,6 +734,7 @@ def _alternative_exchange_universe():
             SYMBOL_UNIVERSE_FILTER_STATS["total_exchange_symbols"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("total_exchange_symbols", 0) or 0) + 1
             if not _is_tradeable_usdt_symbol(symbol):
                 continue
+            SYMBOL_UNIVERSE_FILTER_STATS["eligible_before_volume_filter"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("eligible_before_volume_filter", 0) or 0) + 1
             quote_volume = _safe_float(row.get("volValue") or row.get("quoteVolume"), 0)
             if quote_volume <= 0:
                 last_price = _safe_float(row.get("last"), 0)
@@ -875,16 +878,32 @@ def get_scan_symbols(force_refresh=False):
     fallback_reason = SYMBOL_UNIVERSE_FILTER_STATS.get("fallback_reason", "none")
     if fallback_reason == "none" and failures:
         fallback_reason = "; ".join(failures)
+    filter_reasons = SYMBOL_UNIVERSE_FILTER_STATS.get("filtered_by_reason", {})
+    source_used = "legacy_fallback"
+    if str(fallback_reason).startswith("alternative_exchange_universe"):
+        source_used = "kucoin_fallback"
+    elif selected != list(SYMBOLS):
+        active_sources = [label for label, count in source_counts.items() if int(count or 0) > 0]
+        source_used = "+".join(active_sources) if active_sources else "ranked_exchange_universe"
     print(
         "DYNAMIC_SYMBOLS_SELECTED "
-        f"count={len(selected)} max={symbol_limit} "
+        f"count={len(selected)} max={symbol_limit} configured_max={MAX_DYNAMIC_SYMBOLS} "
+        f"min_quote_volume={MIN_DYNAMIC_QUOTE_VOLUME} source_used={source_used} "
         f"sources={json.dumps(source_counts, sort_keys=True)} "
         f"total_exchange_symbols={SYMBOL_UNIVERSE_FILTER_STATS.get('total_exchange_symbols', 0)} "
+        f"eligible_before_volume_filter={SYMBOL_UNIVERSE_FILTER_STATS.get('eligible_before_volume_filter', 0)} "
+        f"excluded_stablecoin={filter_reasons.get('stable_or_fiat_base', 0)} "
+        f"excluded_leveraged={filter_reasons.get('leveraged_token_suffix', 0) + sum(int(v or 0) for k, v in filter_reasons.items() if str(k).startswith('excluded_keyword_UP') or str(k).startswith('excluded_keyword_DOWN') or str(k).startswith('excluded_keyword_BULL') or str(k).startswith('excluded_keyword_BEAR'))} "
+        f"excluded_inactive_non_perpetual={filter_reasons.get('inactive_or_non_trading', 0) + filter_reasons.get('non_perpetual_futures', 0)} "
+        f"excluded_blocklist_problematic={filter_reasons.get('known_problematic_base', 0) + filter_reasons.get('starts_with_1000', 0)} "
+        f"excluded_low_volume={filter_reasons.get('below_min_quote_volume', 0)} "
         f"filtered_by_reason={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('filtered_by_reason', {}), sort_keys=True)} "
         f"liquid_symbols_count={SYMBOL_UNIVERSE_FILTER_STATS.get('liquid_symbols_count', 0)} "
         f"exchange_info_count={exchange_info_count} ticker_count={ticker_count} "
         f"matched_count={matched_count} fallback_added_count={fallback_added_count} final_count={len(selected)} "
-        f"fallback_reason={fallback_reason}"
+        f"fetch_failures={json.dumps(failures, sort_keys=True)} "
+        f"fallback_reason={fallback_reason} "
+        f"first20={json.dumps(selected[:20])}"
     )
     return list(selected)
 
