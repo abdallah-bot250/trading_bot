@@ -573,6 +573,11 @@ def _reset_symbol_universe_stats():
         "kucoin_symbols_with_ticker": 0,
         "kucoin_symbols_above_volume": 0,
         "symbols_dropped_due_to_cross_exchange_requirement": 0,
+        "kucoin_volume_distribution": {},
+        "kucoin_top_quote_turnover": [],
+        "kucoin_invalid_volume_examples": [],
+        "kucoin_below_min_quote_volume_examples": [],
+        "kucoin_missing_ticker_data_examples": [],
     })
 
 
@@ -626,6 +631,53 @@ def _record_symbol_universe_schema_warning(label, status, raw_count, sample):
             "DYNAMIC_SYMBOLS_SCHEMA_WARNING "
             f"label={label} status={status} raw_count={raw_count} "
             f"sample_keys={json.dumps(sample_keys)}"
+        )
+    except Exception:
+        pass
+
+
+def _append_symbol_universe_example(key, example, limit=10):
+    try:
+        items = SYMBOL_UNIVERSE_FILTER_STATS.setdefault(key, [])
+        if len(items) < limit:
+            items.append(example)
+    except Exception:
+        pass
+
+
+def _kucoin_volume_diagnostics(candidates, invalid_examples=None, missing_examples=None):
+    """Record KuCoin volume diagnostics without changing universe selection."""
+    thresholds = [100_000, 500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000]
+    distribution = {str(level): 0 for level in thresholds}
+    sorted_candidates = sorted(candidates or [], key=lambda item: item.get("quote_turnover", 0), reverse=True)
+    for item in sorted_candidates:
+        quote_turnover = _safe_float(item.get("quote_turnover"), 0)
+        for level in thresholds:
+            if quote_turnover >= level:
+                distribution[str(level)] += 1
+    top30 = [
+        {
+            "symbol": item.get("symbol"),
+            "original_symbol": item.get("original_symbol"),
+            "volValue": item.get("volValue"),
+            "last_price": item.get("last_price"),
+            "quote_turnover": item.get("quote_turnover"),
+        }
+        for item in sorted_candidates[:30]
+    ]
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_volume_distribution"] = distribution
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_top_quote_turnover"] = top30
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_invalid_volume_examples"] = list((invalid_examples or [])[:10])
+    SYMBOL_UNIVERSE_FILTER_STATS["kucoin_missing_ticker_data_examples"] = list((missing_examples or [])[:10])
+    try:
+        print(
+            "KUCOIN_VOLUME_DISTRIBUTION "
+            f"counts={json.dumps(distribution, sort_keys=True)} "
+            f"top30={json.dumps(top30, sort_keys=True)} "
+            f"invalid_volume_examples={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('kucoin_invalid_volume_examples', []), sort_keys=True)} "
+            f"below_min_quote_volume_examples={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('kucoin_below_min_quote_volume_examples', []), sort_keys=True)} "
+            f"missing_ticker_data_examples={json.dumps(SYMBOL_UNIVERSE_FILTER_STATS.get('kucoin_missing_ticker_data_examples', []), sort_keys=True)} "
+            "quote_currency_filter=USDT quote_turnover_source=volValue no_conversion=true"
         )
     except Exception:
         pass
@@ -800,8 +852,12 @@ def _alternative_exchange_universe():
         return [], f"KUCOIN={status}", meta
     rows = ((data.get("data") or {}).get("ticker") or [])
     meta["raw_count"] = len(rows)
+    diagnostic_candidates = []
+    invalid_examples = []
+    missing_examples = []
     if not rows:
         SYMBOL_UNIVERSE_FILTER_STATS["missing_ticker_data"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("missing_ticker_data", 0) or 0) + 1
+        _append_symbol_universe_example("kucoin_missing_ticker_data_examples", {"reason": "empty_ticker_list", "status": status})
         return [], f"KUCOIN={status}", meta
     for row in rows:
         try:
@@ -814,22 +870,37 @@ def _alternative_exchange_universe():
                 continue
             SYMBOL_UNIVERSE_FILTER_STATS["eligible_before_volume_filter"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("eligible_before_volume_filter", 0) or 0) + 1
             quote_volume, _volume_key = _quote_turnover_from_row(row, "KUCOIN_TICKER")
+            diagnostic_item = {
+                "symbol": symbol,
+                "original_symbol": raw_symbol,
+                "volValue": row.get("volValue"),
+                "last_price": row.get("last"),
+                "quote_turnover": quote_volume,
+            }
             if quote_volume <= 0:
                 _symbol_filter_stat("invalid_volume")
                 SYMBOL_UNIVERSE_FILTER_STATS["invalid_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("invalid_volume", 0) or 0) + 1
+                if len(invalid_examples) < 10:
+                    invalid_examples.append(diagnostic_item)
                 continue
             meta["parsed_count"] += 1
+            diagnostic_candidates.append(diagnostic_item)
             if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
                 meta["above_volume_count"] += 1
                 ranked.append((symbol, quote_volume))
             else:
                 _symbol_filter_stat("below_min_quote_volume")
                 SYMBOL_UNIVERSE_FILTER_STATS["below_min_quote_volume"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("below_min_quote_volume", 0) or 0) + 1
+                _append_symbol_universe_example("kucoin_below_min_quote_volume_examples", diagnostic_item)
         except Exception:
             _symbol_filter_stat("invalid_volume")
+            if len(invalid_examples) < 10:
+                invalid_examples.append({"original_symbol": row.get("symbol") if isinstance(row, dict) else None, "reason": "exception"})
             continue
     if status == 200 and meta["raw_count"] > 0 and meta["parsed_count"] == 0:
         _record_symbol_universe_schema_warning("KUCOIN_TICKER", status, meta["raw_count"], rows[0] if rows else {})
+        missing_examples.append({"reason": "parsed_zero_from_non_empty_response", "sample_keys": sorted(list((rows[0] or {}).keys()))[:20] if rows and isinstance(rows[0], dict) else []})
+    _kucoin_volume_diagnostics(diagnostic_candidates, invalid_examples, missing_examples)
     ranked.sort(key=lambda item: item[1], reverse=True)
     SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = max(
         int(SYMBOL_UNIVERSE_FILTER_STATS.get("liquid_symbols_count", 0) or 0),
