@@ -1,4 +1,5 @@
 import numpy as np
+from signal_quality_shared import safe_b_plus_eligibility
 
 # ================= AI DECISION ENGINE =================
 def predict_trade(signal):
@@ -208,6 +209,7 @@ def explain_predict_trade(signal):
         trend_power = signal.get("trend_power")
         structure = signal.get("structure")
         tf = signal.get("timeframe")
+        safe_bplus_ok, safe_bplus_reason = safe_b_plus_eligibility(signal, allow_borderline_score=True)
 
         if entry <= 0 or tp <= 0 or sl <= 0:
             return False, "invalid entry/tp/sl"
@@ -219,7 +221,7 @@ def explain_predict_trade(signal):
             return False, "invalid direction"
         if rr and rr < 1.5:
             return False, f"RR {round(rr, 2)} below 1.5"
-        if confidence < 70:
+        if confidence < 70 and not safe_bplus_ok:
             return False, f"display confidence {round(confidence, 2)} below 70"
         if risk_level == "HIGH" and confidence < 82:
             return False, "high risk requires stronger confidence"
@@ -231,6 +233,8 @@ def explain_predict_trade(signal):
             return False, "LONG against strong bear trend"
         if structure == "MID_RANGE" and tf == "5m" and confidence < 82:
             return False, "5m mid-range setup lacks edge"
+        if confidence < 70 and safe_bplus_ok:
+            return True, f"approved safe calibrated B+ ({safe_bplus_reason})"
 
         allowed = predict_trade({**signal, "confidence": confidence})
         return (True, "approved") if allowed else (False, "legacy score below threshold")

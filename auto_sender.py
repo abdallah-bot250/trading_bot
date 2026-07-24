@@ -15,6 +15,7 @@ from market_analyzer import (
 )
 from ai_model import predict_trade
 from spot_futures_engine import record_trade_type, type_allowed_for_user
+from signal_quality_shared import safe_b_plus_eligibility
 import ccxt
 import os
 import psycopg2
@@ -177,11 +178,21 @@ def _safe_float(value, default=None):
 def qualified_opportunity_tier(signal):
     try:
         tier = str(signal.get("quality_tier") or signal.get("opportunity_tier") or "").upper()
-        if tier in {"A_PLUS", "A", "B_PLUS", "WATCHLIST", "REJECTED"}:
-            return tier
         display_conf = signal_display_confidence(signal)
         final_score = float(signal.get("final_score", display_conf) or 0)
         rr = float(signal.get("risk_reward", 0) or 0)
+        safe_bplus_ok, _ = safe_b_plus_eligibility(signal, allow_borderline_score=True)
+        soft_mtf = signal.get("b_plus_mtf_path") is True or signal.get("mtf_path") == "soft_alignment" or signal.get("mtf_soft_conflict") is True
+        if soft_mtf:
+            if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
+                return "B_PLUS"
+            return "B_PLUS" if safe_bplus_ok else ("WATCHLIST" if display_conf >= 64 and rr >= 1.3 else "REJECTED")
+        if tier in {"A_PLUS", "A", "WATCHLIST", "REJECTED"}:
+            return tier
+        if tier == "B_PLUS":
+            if display_conf < 70 or final_score < 78:
+                return "B_PLUS" if safe_bplus_ok else ("WATCHLIST" if display_conf >= 64 and rr >= 1.3 else "REJECTED")
+            return "B_PLUS"
         checklist = float(signal.get("quality_checklist_score", final_score) or 0)
         if display_conf >= 88 and final_score >= 92 and rr >= 1.8 and checklist >= 90:
             return "A_PLUS"
@@ -1519,6 +1530,8 @@ def delivery_product_for_signal(user_info, signal):
 # ================= VALIDATION =================
 def valid_signal(signal):
     try:
+        display_conf = signal_display_confidence(signal)
+        safe_bplus_ok, _ = safe_b_plus_eligibility(signal, allow_borderline_score=True)
         return (
             signal
             and signal.get("pair")
@@ -1527,8 +1540,8 @@ def valid_signal(signal):
             and signal.get("tp") is not None
             and signal.get("sl") is not None
             and (
-                float(signal.get("confidence", 0)) >= MIN_CONFIDENCE
-                or str(signal.get("quality_tier") or signal.get("opportunity_tier") or "").upper() == "B_PLUS"
+                display_conf >= MIN_CONFIDENCE
+                or safe_bplus_ok
             )
         )
     except:

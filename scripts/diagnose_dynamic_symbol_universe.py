@@ -73,6 +73,38 @@ def fake_market_json(url, timeout=12):
     return None, 404
 
 
+def build_kucoin_tickers():
+    rows = []
+    volume = 300_000_000
+    bases = [
+        "GALA", "SEI", "WLD", "TIA", "JUP", "ONDO", "PENDLE", "RENDER",
+        "LDO", "WIF", "PYTH", "ENA", "MANTA", "STRK", "MAV", "BLUR",
+        "SAGA", "ARKM", "EIGEN", "ALT", "ACE", "MAGIC", "ROSE", "KSM",
+        "MKR", "COMP", "SNX", "CRV", "DYDX", "GMX", "GMT", "AXS",
+        "SAND", "MANA", "APE", "CHZ", "IMX", "FLOW", "MINA", "CELO",
+        "ZEC", "DASH", "IOTA", "KAVA", "QTUM", "ZIL", "BAT", "ANKR",
+        "HOT", "SKL", "IOST", "STORJ", "YFI", "ZRX", "ENS", "MASK",
+        "LRC", "ONE", "ONT", "ZEN", "SFP", "CKB", "DENT", "ACH",
+        "API3", "TRB", "SSV", "LPT", "GLM", "ID", "RDNT", "JOE",
+    ]
+    bases += ["USDC", "BTCDOWN", "PEPE", "1000MOG"]
+    for base in bases:
+        rows.append({
+            "symbol": f"{base}-USDT",
+            "last": "1",
+            "vol": str(volume),
+            "volValue": str(volume),
+        })
+        volume -= 1_000_000
+    return {"data": {"ticker": rows}}
+
+
+def fake_binance_down_kucoin_ok(url, timeout=12):
+    if "kucoin.com" in url:
+        return build_kucoin_tickers(), 200
+    return None, 451
+
+
 def main():
     original = ma._safe_market_json
     try:
@@ -92,9 +124,27 @@ def main():
     assert_true(not blocked.intersection(selected), f"blocked assets leaked into selection: {blocked.intersection(selected)}")
     assert_true("OLDCONTRACTUSDT" not in selected, "non-perpetual futures leaked into selection")
     assert_true("DEADUSDT" not in selected, "inactive symbol leaked into selection")
+
+    try:
+        ma.DYNAMIC_SYMBOL_CACHE.clear()
+        ma.DYNAMIC_SYMBOL_CACHE.update({"time": 0, "symbols": None})
+        ma._safe_market_json = fake_binance_down_kucoin_ok
+        fallback_selected = ma.get_scan_symbols(force_refresh=True)
+    finally:
+        ma._safe_market_json = original
+
+    fallback_outside_old = [s for s in fallback_selected if s[:-4] not in OLD_ALLOWED]
+    assert_true(len(fallback_selected) > 30, f"alternative fallback did not return more than 30 symbols: {len(fallback_selected)}")
+    assert_true(fallback_outside_old, "alternative fallback returned only the old fixed universe")
+    assert_true(not blocked.intersection(fallback_selected), f"blocked assets leaked into alternative fallback: {blocked.intersection(fallback_selected)}")
+    assert_true(
+        "alternative_exchange_universe" in str(ma.SYMBOL_UNIVERSE_FILTER_STATS.get("fallback_reason")),
+        "fallback_reason did not expose the alternative exchange universe",
+    )
     print(
         "DYNAMIC_SYMBOL_UNIVERSE_OK "
         f"selected={len(selected)} outside_old={len(outside_old)} "
+        f"alternative_fallback={len(fallback_selected)} "
         f"sample_outside={outside_old[:5]}"
     )
 

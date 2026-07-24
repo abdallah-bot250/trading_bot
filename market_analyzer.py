@@ -9,6 +9,12 @@ from datetime import datetime
 from ai_model import predict_trade
 from ai_engine import build_ai_engine_report
 from spot_futures_engine import choose_trade_type, evaluate_trade_types, record_trade_type
+from signal_quality_shared import (
+    B_PLUS_CONFIRMED_SETUPS as SHARED_B_PLUS_CONFIRMED_SETUPS,
+    B_PLUS_HARD_REJECT_MARKERS as SHARED_B_PLUS_HARD_REJECT_MARKERS,
+    b_plus_setup_name as shared_b_plus_setup_name,
+    safe_b_plus_eligibility,
+)
 
 # ================= SETTINGS =================
 SYMBOLS = [
@@ -301,17 +307,21 @@ def _large_cap_symbol(symbol):
 
 def classify_opportunity_tier(signal):
     try:
-        if signal.get("b_plus_mtf_path") is True or signal.get("mtf_path") == "soft_alignment" or signal.get("mtf_soft_conflict") is True:
-            return "B_PLUS"
         display_conf = _safe_float(signal.get("display_confidence", signal.get("confidence", 0)), 0)
         final_score = _safe_float(signal.get("final_score", display_conf), 0)
         rr = _safe_float(signal.get("risk_reward", 0), 0)
         checklist = _safe_float(signal.get("quality_checklist_score", final_score), final_score)
+        soft_mtf = signal.get("b_plus_mtf_path") is True or signal.get("mtf_path") == "soft_alignment" or signal.get("mtf_soft_conflict") is True
+        safe_bplus_ok, _ = safe_b_plus_eligibility(signal, allow_borderline_score=True)
+        if soft_mtf:
+            if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
+                return "B_PLUS"
+            return "B_PLUS" if safe_bplus_ok else ("WATCHLIST" if display_conf >= 64 and rr >= 1.3 else "REJECTED")
         if display_conf >= 88 and final_score >= 92 and rr >= 1.8 and checklist >= 90:
             return "A_PLUS"
         if display_conf >= 80 and final_score >= 86 and rr >= 1.6:
             return "A"
-        if signal.get("b_plus_calibrated") is True:
+        if signal.get("b_plus_calibrated") is True and safe_bplus_ok:
             return "B_PLUS"
         if display_conf >= 70 and final_score >= 78 and rr >= 1.5:
             return "B_PLUS"
@@ -339,37 +349,12 @@ def mark_opportunity_tier(signal):
     return tier
 
 
-B_PLUS_CONFIRMED_SETUPS = {
-    "range_edge_bounce",
-    "trend_pullback_continuation",
-    "trend_following_confirmed",
-    "accumulation_reclaim",
-    "distribution_rejection",
-    "break_and_retest",
-}
-B_PLUS_HARD_REJECT_MARKERS = (
-    "LOW_LIQUIDITY",
-    "LOW_VOLUME_CHOP",
-    "FAKE_BREAKOUT",
-    "HARD MTF CONFLICT",
-    "STALE",
-    "INVALID RR",
-    "INVALID ENTRY",
-    "MID-RANGE",
-    "MID_RANGE",
-    "NO RETEST",
-    "NO ENTRY",
-    "NOT ENOUGH ROOM",
-)
+B_PLUS_CONFIRMED_SETUPS = SHARED_B_PLUS_CONFIRMED_SETUPS
+B_PLUS_HARD_REJECT_MARKERS = SHARED_B_PLUS_HARD_REJECT_MARKERS
 
 
 def _b_plus_setup_name(signal):
-    return str(
-        signal.get("setup_type")
-        or signal.get("strategy_name")
-        or signal.get("adaptive_playbook")
-        or ""
-    ).strip().lower().replace(" ", "_").replace("-", "_")
+    return shared_b_plus_setup_name(signal)
 
 
 def b_plus_calibration_eligible(signal):
@@ -422,11 +407,25 @@ def apply_b_plus_calibration(signal):
             print(f"B_PLUS_CALIBRATION_REJECTED symbol={symbol} reason={reason}")
         return False, reason
 
-    signal["quality_tier"] = "B_PLUS"
-    signal["opportunity_tier"] = "B_PLUS"
-    signal["b_plus_calibrated"] = True
-    signal["confidence_cap_reason"] = "b_plus_confirmed_setup_cap"
-    signal["risk_warning"] = "B+ opportunity: confirmed setup with acceptable RR, but lower confidence. Manage risk carefully."
+    candidate = dict(signal)
+    candidate["quality_tier"] = "B_PLUS"
+    candidate["opportunity_tier"] = "B_PLUS"
+    candidate["b_plus_calibrated"] = True
+    safe_ok, safe_reason = safe_b_plus_eligibility(candidate, allow_borderline_score=True)
+    if not safe_ok:
+        if 62 <= confidence <= 69:
+            print(f"B_PLUS_CALIBRATION_REJECTED symbol={symbol} reason={safe_reason}")
+        return False, safe_reason
+
+    signal.update({
+        "quality_tier": "B_PLUS",
+        "opportunity_tier": "B_PLUS",
+        "b_plus_calibrated": True,
+        "confidence_cap_reason": "b_plus_confirmed_setup_cap",
+        "risk_warning": "B+ opportunity: confirmed setup with acceptable RR, but lower confidence. Manage risk carefully.",
+    })
+    if candidate.get("b_plus_borderline_score_rule"):
+        signal["b_plus_borderline_score_rule"] = True
     if _safe_float(signal.get("risk_score"), 50) >= 70:
         signal["auto_trade_allowed"] = False
         signal["auto_trade_block_reason"] = "b_plus_risk_score_too_high"
@@ -717,6 +716,51 @@ def _rank_symbol_universe(symbols, volume_maps):
     return ordered
 
 
+def _alternative_exchange_universe():
+    """Filtered non-Binance universe used only when Binance universe sources fail."""
+    data, status = _safe_market_json("https://api.kucoin.com/api/v1/market/allTickers")
+    ranked = []
+    if not isinstance(data, dict):
+        return [], f"KUCOIN={status}"
+    rows = ((data.get("data") or {}).get("ticker") or [])
+    for row in rows:
+        try:
+            raw_symbol = str(row.get("symbol") or "").upper()
+            symbol = raw_symbol.replace("-", "")
+            if not symbol.endswith("USDT"):
+                continue
+            SYMBOL_UNIVERSE_FILTER_STATS["total_exchange_symbols"] = int(SYMBOL_UNIVERSE_FILTER_STATS.get("total_exchange_symbols", 0) or 0) + 1
+            if not _is_tradeable_usdt_symbol(symbol):
+                continue
+            quote_volume = _safe_float(row.get("volValue") or row.get("quoteVolume"), 0)
+            if quote_volume <= 0:
+                last_price = _safe_float(row.get("last"), 0)
+                base_volume = _safe_float(row.get("vol"), 0)
+                quote_volume = last_price * base_volume
+            if quote_volume >= MIN_DYNAMIC_QUOTE_VOLUME:
+                ranked.append((symbol, quote_volume))
+            else:
+                _symbol_filter_stat("below_min_quote_volume")
+        except Exception:
+            continue
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    SYMBOL_UNIVERSE_FILTER_STATS["liquid_symbols_count"] = max(
+        int(SYMBOL_UNIVERSE_FILTER_STATS.get("liquid_symbols_count", 0) or 0),
+        len(ranked),
+    )
+    pinned = [symbol for symbol in SYMBOLS if symbol in {item[0] for item in ranked}]
+    selected = []
+    seen = set()
+    for symbol in pinned + [item[0] for item in ranked]:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        selected.append(symbol)
+        if MAX_DYNAMIC_SYMBOLS > 0 and len(selected) >= MAX_DYNAMIC_SYMBOLS:
+            break
+    return selected, "KUCOIN"
+
+
 def _merge_min_dynamic_symbols(selected, supported_symbols):
     """Keep a conservative minimum universe when ticker data is incomplete."""
     selected = [s for s in selected if _is_tradeable_usdt_symbol(s)]
@@ -797,14 +841,24 @@ def get_scan_symbols(force_refresh=False):
     if all_symbols:
         selected = _rank_symbol_universe(all_symbols, volume_maps)
     else:
-        selected = list(SYMBOLS)
-        failures.append("fallback=all_sources_empty")
-        SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = "all_sources_empty"
+        selected, alt_status = _alternative_exchange_universe()
+        if selected:
+            failures.append(f"fallback=alternative_exchange_universe:{alt_status}")
+            SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"alternative_exchange_universe:{alt_status}"
+        else:
+            selected = list(SYMBOLS)
+            failures.append(f"fallback=all_sources_empty; alternative={alt_status}")
+            SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"all_sources_empty; alternative={alt_status}"
 
     if not selected:
-        selected = list(SYMBOLS)
-        failures.append("fallback=ranked_empty")
-        SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = "ranked_empty"
+        selected, alt_status = _alternative_exchange_universe()
+        if selected:
+            failures.append(f"fallback=alternative_exchange_universe:{alt_status}")
+            SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"alternative_exchange_universe:{alt_status}"
+        else:
+            selected = list(SYMBOLS)
+            failures.append(f"fallback=ranked_empty; alternative={alt_status}")
+            SYMBOL_UNIVERSE_FILTER_STATS["fallback_reason"] = f"ranked_empty; alternative={alt_status}"
 
     matched_count = len([symbol for symbol in selected if any(symbol in volume_map for volume_map in volume_maps)])
     fallback_added_count = 0
@@ -818,6 +872,9 @@ def get_scan_symbols(force_refresh=False):
     DYNAMIC_SYMBOL_CACHE["symbols"] = selected
     SYMBOL_UNIVERSE_FILTER_STATS["selected_final_count"] = len(selected)
     symbol_limit = MAX_DYNAMIC_SYMBOLS if MAX_DYNAMIC_SYMBOLS > 0 else "ALL"
+    fallback_reason = SYMBOL_UNIVERSE_FILTER_STATS.get("fallback_reason", "none")
+    if fallback_reason == "none" and failures:
+        fallback_reason = "; ".join(failures)
     print(
         "DYNAMIC_SYMBOLS_SELECTED "
         f"count={len(selected)} max={symbol_limit} "
@@ -827,7 +884,7 @@ def get_scan_symbols(force_refresh=False):
         f"liquid_symbols_count={SYMBOL_UNIVERSE_FILTER_STATS.get('liquid_symbols_count', 0)} "
         f"exchange_info_count={exchange_info_count} ticker_count={ticker_count} "
         f"matched_count={matched_count} fallback_added_count={fallback_added_count} final_count={len(selected)} "
-        f"fallback_reason={'; '.join(failures[:4]) or SYMBOL_UNIVERSE_FILTER_STATS.get('fallback_reason', 'none')}"
+        f"fallback_reason={fallback_reason}"
     )
     return list(selected)
 
