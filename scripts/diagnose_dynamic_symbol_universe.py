@@ -4,7 +4,7 @@ import types
 import importlib.util
 
 os.environ["MAX_DYNAMIC_SYMBOLS"] = "120"
-os.environ["MIN_DYNAMIC_QUOTE_VOLUME"] = "5000000"
+os.environ["MIN_DYNAMIC_QUOTE_VOLUME"] = "2000000"
 os.environ["DYNAMIC_SYMBOLS_TTL_SECONDS"] = "0"
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))

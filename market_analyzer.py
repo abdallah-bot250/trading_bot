@@ -83,7 +83,7 @@ def _env_int(name, default, minimum=None, maximum=None):
 
 MAX_DYNAMIC_SYMBOLS = _env_int("MAX_DYNAMIC_SYMBOLS", 120, minimum=0, maximum=500)
 MIN_DYNAMIC_SYMBOLS = _env_int("MIN_DYNAMIC_SYMBOLS", 20, minimum=1, maximum=500)
-MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "5000000"))
+MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "2000000"))
 DYNAMIC_SYMBOLS_TTL_SECONDS = int(os.environ.get("DYNAMIC_SYMBOLS_TTL_SECONDS", "1800"))
 DYNAMIC_SYMBOL_CACHE = {"time": 0, "symbols": None}
 SINGLE_SYMBOL_MODE = os.environ.get("SINGLE_SYMBOL_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -601,6 +601,104 @@ def _safe_market_json(url, timeout=REQUEST_TIMEOUT):
         return None, str(e)
 
 
+def _fetch_market_json_with_diagnostics(url, timeout=REQUEST_TIMEOUT):
+    try:
+        response = requests.get(url, timeout=timeout)
+        body_snippet = str(response.text or "")[:300].replace("\n", " ").replace("\r", " ")
+        if response.status_code != 200:
+            return None, response.status_code, body_snippet, None
+        try:
+            return response.json(), response.status_code, body_snippet, None
+        except Exception as e:
+            return None, response.status_code, body_snippet, type(e).__name__
+    except Exception as e:
+        return None, "exception", str(e)[:300].replace("\n", " ").replace("\r", " "), type(e).__name__
+
+
+def _binance_futures_connectivity_diagnostics(sample_symbol="BTCUSDT"):
+    diagnostics = {
+        "exchangeInfo_status": None,
+        "ticker24hr_status": None,
+        "klines_status": None,
+        "exchangeInfo_body": "",
+        "ticker24hr_body": "",
+        "klines_body": "",
+        "exchangeInfo_exception": None,
+        "ticker24hr_exception": None,
+        "klines_exception": None,
+        "parsed_futures_symbols_count": 0,
+        "parsed_usdt_futures_symbols_count": 0,
+        "parsed_futures_ticker_count": 0,
+        "sample_first_20_futures_symbols": [],
+        "futures_available": False,
+        "GLOBAL_BINANCE_BLOCKED": False,
+    }
+    exchange_data, status, body, exc = _fetch_market_json_with_diagnostics("https://fapi.binance.com/fapi/v1/exchangeInfo")
+    diagnostics["exchangeInfo_status"] = status
+    diagnostics["exchangeInfo_body"] = body
+    diagnostics["exchangeInfo_exception"] = exc
+    futures_symbols = []
+    if isinstance(exchange_data, dict):
+        for row in exchange_data.get("symbols", []) or []:
+            symbol = _normalize_exchange_symbol(row.get("symbol"))
+            if not symbol:
+                continue
+            diagnostics["parsed_futures_symbols_count"] += 1
+            if symbol.endswith("USDT") and row.get("status") == "TRADING" and row.get("contractType") in (None, "PERPETUAL"):
+                futures_symbols.append(symbol)
+    diagnostics["parsed_usdt_futures_symbols_count"] = len(futures_symbols)
+    diagnostics["sample_first_20_futures_symbols"] = futures_symbols[:20]
+
+    ticker_data, status, body, exc = _fetch_market_json_with_diagnostics("https://fapi.binance.com/fapi/v1/ticker/24hr")
+    diagnostics["ticker24hr_status"] = status
+    diagnostics["ticker24hr_body"] = body
+    diagnostics["ticker24hr_exception"] = exc
+    if isinstance(ticker_data, list):
+        diagnostics["parsed_futures_ticker_count"] = len([
+            row for row in ticker_data
+            if isinstance(row, dict) and _normalize_exchange_symbol(row.get("symbol")).endswith("USDT")
+        ])
+
+    klines_url = f"https://fapi.binance.com/fapi/v1/klines?symbol={sample_symbol}&interval=15m&limit=2"
+    klines_data, status, body, exc = _fetch_market_json_with_diagnostics(klines_url)
+    diagnostics["klines_status"] = status
+    diagnostics["klines_body"] = body
+    diagnostics["klines_exception"] = exc
+
+    statuses = [diagnostics["exchangeInfo_status"], diagnostics["ticker24hr_status"], diagnostics["klines_status"]]
+    diagnostics["GLOBAL_BINANCE_BLOCKED"] = bool(statuses and all(str(item) == "451" for item in statuses))
+    diagnostics["futures_available"] = (
+        str(diagnostics["exchangeInfo_status"]) == "200"
+        and str(diagnostics["ticker24hr_status"]) == "200"
+        and str(diagnostics["klines_status"]) == "200"
+        and diagnostics["parsed_usdt_futures_symbols_count"] > 0
+        and diagnostics["parsed_futures_ticker_count"] > 0
+        and isinstance(klines_data, list)
+    )
+    try:
+        print(
+            "BINANCE_FUTURES_CONNECTIVITY "
+            f"exchangeInfo_status={diagnostics['exchangeInfo_status']} "
+            f"ticker24hr_status={diagnostics['ticker24hr_status']} "
+            f"klines_status={diagnostics['klines_status']} "
+            f"parsed_futures_symbols_count={diagnostics['parsed_futures_symbols_count']} "
+            f"parsed_usdt_futures_symbols_count={diagnostics['parsed_usdt_futures_symbols_count']} "
+            f"parsed_futures_ticker_count={diagnostics['parsed_futures_ticker_count']} "
+            f"sample_first_20_futures_symbols={json.dumps(diagnostics['sample_first_20_futures_symbols'])} "
+            f"futures_available={str(diagnostics['futures_available']).lower()} "
+            f"GLOBAL_BINANCE_BLOCKED={str(diagnostics['GLOBAL_BINANCE_BLOCKED']).lower()} "
+            f"exchangeInfo_exception={diagnostics['exchangeInfo_exception']} "
+            f"ticker24hr_exception={diagnostics['ticker24hr_exception']} "
+            f"klines_exception={diagnostics['klines_exception']} "
+            f"exchangeInfo_body={json.dumps(diagnostics['exchangeInfo_body'])} "
+            f"ticker24hr_body={json.dumps(diagnostics['ticker24hr_body'])} "
+            f"klines_body={json.dumps(diagnostics['klines_body'])}"
+        )
+    except Exception:
+        pass
+    return diagnostics
+
+
 def _normalize_exchange_symbol(symbol):
     """Normalize exchange symbols for matching while preserving raw symbols for API calls."""
     return str(symbol or "").upper().strip().replace("-", "").replace("_", "").replace("/", "")
@@ -975,6 +1073,7 @@ def get_scan_symbols(force_refresh=False):
     source_statuses = {}
     exchange_info_count = 0
     ticker_count = 0
+    futures_diagnostics = _binance_futures_connectivity_diagnostics()
 
     for url, market_type, label in [
         ("https://api.binance.com/api/v3/exchangeInfo", "spot", "BINANCE_SPOT"),
@@ -1088,7 +1187,9 @@ def get_scan_symbols(force_refresh=False):
     print(
         "DYNAMIC_SYMBOLS_SELECTED "
         f"count={len(selected)} max={symbol_limit} configured_max={MAX_DYNAMIC_SYMBOLS} "
+        f"MIN_DYNAMIC_QUOTE_VOLUME={int(MIN_DYNAMIC_QUOTE_VOLUME) if float(MIN_DYNAMIC_QUOTE_VOLUME).is_integer() else MIN_DYNAMIC_QUOTE_VOLUME} "
         f"min_quote_volume={MIN_DYNAMIC_QUOTE_VOLUME} source_used={source_used} "
+        f"futures_available={str((futures_diagnostics or {}).get('futures_available', False)).lower()} "
         f"sources={json.dumps(source_counts, sort_keys=True)} "
         f"raw_binance_spot={source_raw_counts.get('BINANCE_SPOT', 0)} "
         f"raw_binance_futures={source_raw_counts.get('BINANCE_FUTURES', 0)} "
