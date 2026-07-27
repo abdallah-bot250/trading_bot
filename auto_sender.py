@@ -1821,6 +1821,7 @@ def log_signal_scan_summary(final_count):
         adaptive_build = summary.get("adaptive_build") or {}
         log(
             "ADAPTIVE_BUILD_REJECTION_SUMMARY "
+            f"scan_cycle_id={adaptive_build.get('scan_cycle_id', summary.get('scan_cycle_id', 'unknown'))} "
             f"total_pipeline_entries={adaptive_build.get('total_pipeline_entries', 0)} "
             f"candidates_built={adaptive_build.get('candidates_built', 0)} "
             f"candidates_rejected={adaptive_build.get('candidates_rejected', 0)} "

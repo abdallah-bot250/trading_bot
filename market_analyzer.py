@@ -117,6 +117,7 @@ def reset_signal_scan_diagnostics():
     SIGNAL_SCAN_DIAGNOSTICS.clear()
     SIGNAL_SCAN_UNIQUE_SYMBOLS.clear()
     SIGNAL_SCAN_DIAGNOSTICS.update({
+        "scan_cycle_id": f"{int(time.time() * 1000)}",
         "scanned": 0,
         "scan_attempts": 0,
         "unique_symbols_scanned": 0,
@@ -3486,7 +3487,10 @@ def expert_volatility_state(df):
         relative = atr_val / atr_avg if atr_avg > 0 else 0
         if atr_ratio < 0.0018 or relative < 0.55:
             return {"state": "LOW_VOLATILITY", "ok": False, "reason": f"ATR too low ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
-        if atr_ratio > 0.045 or relative > 2.25:
+        extreme_absolute_high = atr_ratio > 0.06
+        extreme_relative_high = relative > 3.0
+        confirmed_high = atr_ratio > 0.045 and relative > 2.25
+        if extreme_absolute_high or extreme_relative_high or confirmed_high:
             return {"state": "HIGH_VOLATILITY", "ok": False, "reason": f"ATR too high ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
         return {"state": "NORMAL_VOLATILITY", "ok": True, "reason": f"ATR tradable ratio={round(atr_ratio, 5)} relative={round(relative, 2)}"}
     except Exception as e:
@@ -3503,7 +3507,7 @@ def trend_exhaustion_filter(df, direction):
             return False, "invalid exhaustion baseline"
         recent_move = abs(close - _safe_float(df["close"].iloc[-6])) / close
         expected_move = avg_candle_move * 6
-        if expected_move > 0 and recent_move > expected_move * 0.80:
+        if expected_move > 0 and recent_move > expected_move * 1.0:
             return True, f"trend exhaustion: recent move used {round((recent_move / expected_move) * 100, 1)}% of average move"
         last = df.iloc[-1]
         candle_range = max(_safe_float(last["high"]) - _safe_float(last["low"]), close * 0.0001)
@@ -3516,6 +3520,148 @@ def trend_exhaustion_filter(df, direction):
         return False, "not exhausted"
     except Exception as e:
         return True, f"exhaustion filter error: {e}"
+
+
+ADAPTIVE_MEDIUM_REJECT_MIN = 2
+ADAPTIVE_MEDIUM_CONFIDENCE_PENALTY = 6
+
+
+def _adaptive_medium_issue_code(reason):
+    text = str(reason or "").upper()
+    if "BREAKOUT CHASE BLOCKED" in text:
+        return "BREAKOUT_CHASE"
+    if "MID-RANGE NO TRADE" in text:
+        return "MID_RANGE"
+    if "TREND EXHAUSTION" in text or "EXHAUSTION" in text:
+        return "TREND_EXHAUSTION"
+    if "NO RETEST" in text or "NO RETEST, PULLBACK" in text or "NO RETEST/PULLBACK" in text:
+        return "ENTRY_CONFIRMATION_MISSING"
+    if "RANGE SETUP REQUIRES" in text:
+        return "RANGE_CONTEXT_SOFT"
+    if "RANGE EDGE LACKS" in text:
+        return "RANGE_EDGE_TRIGGER_PENDING"
+    if "WAITING FOR SWEEP" in text or "WAITING FOR RESISTANCE" in text:
+        return "SETUP_TRIGGER_PENDING"
+    return None
+
+
+def _adaptive_hard_rejection_reason(reason):
+    text = str(reason or "").upper()
+    hard_markers = [
+        "FAKE_BREAKOUT",
+        "INVALID LONG/SHORT LEVEL GEOMETRY",
+        "MTF DATA UNAVAILABLE",
+        "4H/1H DATA UNAVAILABLE",
+        "HARD_CONFLICT",
+        "HARD MTF",
+        "LOW_LIQUIDITY",
+        "EXTREME LOW LIQUIDITY",
+        "HIGH_NEWS_RISK",
+        "INSUFFICIENT CANDLES",
+    ]
+    if any(marker in text for marker in hard_markers):
+        return True
+    if ("4H BULL" in text and "1H BEAR" in text) or ("4H BEAR" in text and "1H BULL" in text):
+        return True
+    return False
+
+
+def _add_adaptive_medium_issue(issues, reason):
+    code = _adaptive_medium_issue_code(reason)
+    if not code:
+        return issues
+    if all(item.get("code") != code for item in issues):
+        issues.append({"code": code, "reason": str(reason or code)})
+    return issues
+
+
+def _adaptive_medium_reject_reason(issues):
+    if len(issues) < ADAPTIVE_MEDIUM_REJECT_MIN:
+        return None
+    codes = ",".join(item.get("code", "MEDIUM") for item in issues)
+    return f"medium risk stack: {codes}"
+
+
+def _playbook_direction_from_context(regime, mtf, range_pos):
+    major = str((mtf or {}).get("major") or "").upper()
+    confirm = str((mtf or {}).get("confirm") or "").upper()
+    if regime in ["STRONG_BULL", "WEAK_BULL", "BULL_TREND", "ACCUMULATION"]:
+        return "LONG"
+    if regime in ["STRONG_BEAR", "WEAK_BEAR", "BEAR_TREND", "DISTRIBUTION"]:
+        return "SHORT"
+    if major == "BULL" and confirm != "BEAR":
+        return "LONG"
+    if major == "BEAR" and confirm != "BULL":
+        return "SHORT"
+    if confirm == "BULL" and major != "BEAR":
+        return "LONG"
+    if confirm == "BEAR" and major != "BULL":
+        return "SHORT"
+    if range_pos <= 0.24:
+        return "LONG"
+    if range_pos >= 0.76:
+        return "SHORT"
+    return None
+
+
+def _medium_playbook_candidate(direction, strategy_name, playbook_name, reasons, mtf, rr_min=1.5, confidence_cap=74, medium_reason=None):
+    medium_issues = []
+    if medium_reason:
+        _add_adaptive_medium_issue(medium_issues, medium_reason)
+    return {
+        "ok": True,
+        "direction": direction,
+        "strategy_name": strategy_name,
+        "reasons": [r for r in reasons if r],
+        "rr_min": rr_min,
+        "confidence_cap": confidence_cap,
+        "mtf": mtf,
+        "playbook": playbook_name,
+        "medium_issues": medium_issues,
+        "medium_penalty": bool(medium_issues),
+    }
+
+
+def _soft_playbook_from_medium_rejection(reason, regime_info, liquidity_info, mtf):
+    if _adaptive_hard_rejection_reason(reason):
+        return None
+    if not _adaptive_medium_issue_code(reason):
+        return None
+    regime = str(regime_info.get("regime") or "")
+    range_pos = _safe_float(regime_info.get("close_position"), 0.5)
+    direction = _playbook_direction_from_context(regime, mtf, range_pos)
+    if not direction:
+        return None
+    if "MID-RANGE NO TRADE" in str(reason or "").upper() and 0.32 <= range_pos <= 0.68:
+        return None
+    if direction == "LONG" and str((mtf or {}).get("major") or "").upper() == "BEAR":
+        return None
+    if direction == "SHORT" and str((mtf or {}).get("major") or "").upper() == "BULL":
+        return None
+    setup = "trend_pullback_continuation" if direction == "LONG" else "trend_following_confirmed"
+    playbook_name = "SOFT_ADAPTIVE"
+    if regime in ["RANGE", "CONSOLIDATION"]:
+        setup = "range_edge_bounce" if range_pos <= 0.24 or range_pos >= 0.76 else "range_context_continuation"
+        playbook_name = "RANGE"
+    elif regime in ["BREAKOUT", "EXPANSION"]:
+        setup = "break_and_retest"
+        playbook_name = "BREAKOUT_EXPANSION"
+    elif regime == "ACCUMULATION":
+        setup = "accumulation_reclaim"
+        playbook_name = "ACCUMULATION"
+    elif regime == "DISTRIBUTION":
+        setup = "distribution_rejection"
+        playbook_name = "DISTRIBUTION"
+    return _medium_playbook_candidate(
+        direction,
+        setup,
+        playbook_name,
+        [reason, regime_info.get("reason"), liquidity_info.get("liquidity_reason")],
+        mtf,
+        rr_min=1.6 if playbook_name in {"RANGE", "BREAKOUT_EXPANSION"} else 1.5,
+        confidence_cap=72,
+        medium_reason=reason,
+    )
 
 
 def smart_money_entry_zone(df, direction, regime_info):
@@ -4628,7 +4774,20 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
         if mtf_decision.get("classification") == "HARD_CONFLICT":
             return rejected(mtf_decision.get("reason"), "INVALIDATED")
         if not mtf_decision.get("ok"):
-            return rejected(mtf_decision.get("reason"), "ARMED")
+            if _adaptive_hard_rejection_reason(mtf_decision.get("reason")):
+                return rejected(mtf_decision.get("reason"), "INVALIDATED")
+            if not _adaptive_medium_issue_code(mtf_decision.get("reason")):
+                return rejected(mtf_decision.get("reason"), "ARMED")
+            return _medium_playbook_candidate(
+                "LONG",
+                "trend_pullback_continuation",
+                "STRONG_TREND",
+                [mtf_decision.get("reason"), regime_info.get("reason")],
+                mtf,
+                rr_min=1.5,
+                confidence_cap=74,
+                medium_reason=mtf_decision.get("reason"),
+            )
         setup = "trend_pullback_continuation"
         if mtf_decision.get("classification") == "STRICT_ALIGNMENT":
             reason = "4H and 1H bull trend continuation"
@@ -4653,7 +4812,20 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
         if mtf_decision.get("classification") == "HARD_CONFLICT":
             return rejected(mtf_decision.get("reason"), "INVALIDATED")
         if not mtf_decision.get("ok"):
-            return rejected(mtf_decision.get("reason"), "ARMED")
+            if _adaptive_hard_rejection_reason(mtf_decision.get("reason")):
+                return rejected(mtf_decision.get("reason"), "INVALIDATED")
+            if not _adaptive_medium_issue_code(mtf_decision.get("reason")):
+                return rejected(mtf_decision.get("reason"), "ARMED")
+            return _medium_playbook_candidate(
+                "SHORT",
+                "trend_following_confirmed",
+                "STRONG_TREND",
+                [mtf_decision.get("reason"), regime_info.get("reason")],
+                mtf,
+                rr_min=1.5,
+                confidence_cap=74,
+                medium_reason=mtf_decision.get("reason"),
+            )
         setup = "trend_following_confirmed"
         if mtf_decision.get("classification") == "STRICT_ALIGNMENT":
             reason = "4H and 1H bear trend continuation"
@@ -4675,7 +4847,20 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
 
     if regime in ["RANGE", "CONSOLIDATION"]:
         if mtf.get("state") not in ["RANGE_CONFIRMED", "RANGE_WITH_LOWER_TF_TREND"]:
-            return rejected(f"range setup requires 4H/1H range context: {mtf.get('reason')}", "WATCHING")
+            reason = f"range setup requires 4H/1H range context: {mtf.get('reason')}"
+            direction = _playbook_direction_from_context(regime, mtf, range_pos)
+            if direction and not _adaptive_hard_rejection_reason(reason):
+                return _medium_playbook_candidate(
+                    direction,
+                    "range_edge_bounce" if range_pos <= 0.24 or range_pos >= 0.76 else "range_context_continuation",
+                    "RANGE",
+                    [reason, regime_info.get("reason")],
+                    mtf,
+                    rr_min=1.6,
+                    confidence_cap=72,
+                    medium_reason=reason,
+                )
+            return rejected(reason, "WATCHING")
         if support and close and range_pos <= 0.18 and (rsi_now <= 48 or liquidity_info.get("rejection_wick")):
             return {
                 "ok": True,
@@ -4698,7 +4883,33 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
                 "mtf": mtf,
                 "playbook": "RANGE",
             }
-        return rejected(f"mid-range no trade position={round(range_pos, 2)}", "WATCHING")
+        if range_pos <= 0.24 and support and close:
+            reason = f"range edge lacks trigger confirmation position={round(range_pos, 2)}"
+            return _medium_playbook_candidate(
+                "LONG",
+                "range_edge_bounce",
+                "RANGE",
+                [reason, regime_info.get("reason")],
+                mtf,
+                rr_min=1.6,
+                confidence_cap=72,
+                medium_reason=reason,
+            )
+        if range_pos >= 0.76 and resistance and close:
+            reason = f"range edge lacks trigger confirmation position={round(range_pos, 2)}"
+            return _medium_playbook_candidate(
+                "SHORT",
+                "range_edge_bounce",
+                "RANGE",
+                [reason, regime_info.get("reason")],
+                mtf,
+                rr_min=1.6,
+                confidence_cap=72,
+                medium_reason=reason,
+            )
+        if 0.32 <= range_pos <= 0.68:
+            return rejected(f"mid-range no trade position={round(range_pos, 2)}", "WATCHING")
+        return rejected(f"range edge not confirmed position={round(range_pos, 2)}", "WATCHING")
 
     if regime == "ACCUMULATION":
         if volume_score < 45:
@@ -4738,7 +4949,17 @@ def adaptive_market_playbook(symbol, interval, df, regime_info, liquidity_info=N
         direction = regime_info.get("breakout_direction") or ("LONG" if range_pos >= 0.55 else "SHORT")
         smart = smart_money_entry_zone(df, direction, regime_info)
         if not smart.get("ok") or "Retest" not in str(smart.get("setup", "")):
-            return rejected("breakout chase blocked; waiting for break and retest", "ARMED")
+            reason = "breakout chase blocked; waiting for break and retest"
+            return _medium_playbook_candidate(
+                direction,
+                "break_and_retest",
+                "BREAKOUT_EXPANSION",
+                [reason, regime_info.get("reason")],
+                mtf,
+                rr_min=1.6,
+                confidence_cap=72,
+                medium_reason=reason,
+            )
         return {
             "ok": True,
             "direction": direction,
@@ -4931,6 +5152,7 @@ def _adaptive_score(regime_info, direction, strategy_name, levels, symbol, timef
 
 def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
     try:
+        medium_issues = []
         regime_info = detect_symbol_market_regime(symbol, interval, df)
         regime = regime_info.get("regime", "LOW_LIQUIDITY")
         relaxed_low_volatility = (
@@ -4970,13 +5192,38 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         adaptive_market_memory_update(symbol, regime, playbook.get("stage", "EVALUATED"), playbook.get("reason"))
         if not playbook.get("ok"):
             reason = playbook.get("reason", "adaptive playbook rejected")
+            if not _adaptive_hard_rejection_reason(reason):
+                soft_playbook = _soft_playbook_from_medium_rejection(reason, regime_info, liquidity_info, playbook.get("mtf"))
+                if soft_playbook:
+                    playbook = soft_playbook
+                    _add_adaptive_medium_issue(medium_issues, reason)
+                    stacked_reason = _adaptive_medium_reject_reason(medium_issues)
+                    if stacked_reason:
+                        _no_trade_reason(symbol, interval, stacked_reason)
+                        return None, stacked_reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_medium_issues": medium_issues}
+                else:
+                    _no_trade_reason(symbol, interval, reason)
+                    return None, reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook}
+            else:
+                _no_trade_reason(symbol, interval, reason)
+                return None, reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook}
+        if not playbook.get("ok"):
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook}
+        for issue in playbook.get("medium_issues") or []:
+            if isinstance(issue, dict):
+                _add_adaptive_medium_issue(medium_issues, issue.get("reason") or issue.get("code"))
+            else:
+                _add_adaptive_medium_issue(medium_issues, issue)
+        stacked_reason = _adaptive_medium_reject_reason(medium_issues)
+        if stacked_reason:
+            _no_trade_reason(symbol, interval, stacked_reason)
+            return None, stacked_reason, {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_medium_issues": medium_issues}
         _scan_diag_inc("playbooks_selected")
         _adaptive_log("PLAYBOOK_SELECTED", symbol=symbol, regime=regime, playbook=playbook.get("playbook"))
         adaptive_setup_lifecycle(symbol, "CONFIRMED", "playbook confirmed", playbook.get("strategy_name"))
         _scan_diag_inc("setups_confirmed")
-        regime_info = {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_mtf_playbook": playbook.get("mtf")}
+        regime_info = {**regime_info, **liquidity_info, **btc_info, "adaptive_playbook": playbook, "adaptive_mtf_playbook": playbook.get("mtf"), "adaptive_medium_issues": medium_issues}
 
         risk_brain = adaptive_dynamic_risk_brain(regime_info, btc_info, liquidity_info, playbook.get("mtf", {}))
         regime_info.update(risk_brain)
@@ -5015,6 +5262,23 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         smart_entry = smart_money_entry_zone(df, direction, regime_info)
         if not smart_entry.get("ok"):
             reason = f"Entry rejected: {smart_entry.get('reason')}"
+            if not _adaptive_hard_rejection_reason(reason):
+                _add_adaptive_medium_issue(medium_issues, reason)
+                stacked_reason = _adaptive_medium_reject_reason(medium_issues)
+                if stacked_reason:
+                    _no_trade_reason(symbol, interval, stacked_reason)
+                    return None, stacked_reason, {**regime_info, "smart_money": smart_entry, "adaptive_medium_issues": medium_issues}
+                smart_entry = {
+                    "ok": True,
+                    "setup": "Structure Penalty",
+                    "reason": smart_entry.get("reason"),
+                    "entry_confirmation_age_candles": 0,
+                    "medium_penalty": True,
+                }
+            else:
+                _no_trade_reason(symbol, interval, reason)
+                return None, reason, {**regime_info, "smart_money": smart_entry}
+        if not smart_entry.get("ok"):
             _no_trade_reason(symbol, interval, reason)
             return None, reason, {**regime_info, "smart_money": smart_entry}
         entry_timing_ok, entry_timing_reason = late_entry_after_confirmation_guard(df, direction, regime_info, smart_entry)
@@ -5025,8 +5289,11 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 
         exhausted, exhaustion_reason = trend_exhaustion_filter(df, direction)
         if exhausted:
-            _no_trade_reason(symbol, interval, exhaustion_reason)
-            return None, exhaustion_reason, {**regime_info, "exhaustion": exhaustion_reason}
+            _add_adaptive_medium_issue(medium_issues, exhaustion_reason)
+            stacked_reason = _adaptive_medium_reject_reason(medium_issues)
+            if stacked_reason:
+                _no_trade_reason(symbol, interval, stacked_reason)
+                return None, stacked_reason, {**regime_info, "exhaustion": exhaustion_reason, "adaptive_medium_issues": medium_issues}
 
         entry = _safe_float(regime_info.get("close"))
         atr_val = _safe_float(regime_info.get("atr"))
@@ -5039,6 +5306,8 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             return None, "invalid LONG/SHORT level geometry", regime_info
 
         confidence = _adaptive_score(regime_info, direction, strategy_name, levels, symbol, interval, reasons)
+        if medium_issues:
+            confidence = int(_bounded(confidence - (len(medium_issues) * ADAPTIVE_MEDIUM_CONFIDENCE_PENALTY), 0, 100))
         min_conf = 75 if paid else 70
         b_plus_pending = False
         if confidence < min_conf:
@@ -5116,9 +5385,18 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "risk_mode": risk_brain.get("risk_mode"),
             "risk_mode_reason": risk_brain.get("risk_mode_reason"),
             "volatility_filter_relaxed": bool(regime_info.get("volatility_filter_relaxed")),
+            "adaptive_medium_issues": medium_issues,
+            "adaptive_medium_penalty": len(medium_issues) * ADAPTIVE_MEDIUM_CONFIDENCE_PENALTY,
             "entry_location_grade": 86 if smart_entry.get("ok") else 45,
             "setup_validity_score": confidence,
         }
+        if medium_issues:
+            signal["confidence_cap_reason"] = "adaptive_medium_penalty"
+            signal["signal_quality_reason"] = (
+                signal.get("signal_quality_reason", "")
+                + "; medium penalties="
+                + ",".join(issue.get("code", "MEDIUM") for issue in medium_issues)
+            )
         if signal.get("b_plus_mtf_path"):
             signal["b_plus_calibration_pending"] = True
             signal["b_plus_calibrated"] = True
