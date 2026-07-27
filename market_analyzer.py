@@ -92,6 +92,15 @@ SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
 SIGNAL_SCAN_DIAGNOSTICS = {}
 SIGNAL_SCAN_UNIQUE_SYMBOLS = set()
+FINALIZER_DIAGNOSTICS = {
+    "accepted_from_playbook": 0,
+    "rejected_by_risk_score": 0,
+    "rejected_by_missing_mtf": 0,
+    "rejected_by_other_finalizer_reason": 0,
+    "finalized_spot": 0,
+    "finalized_futures": 0,
+    "sent_to_sender": 0,
+}
 SIGNAL_SUPPLY_24H = {
     "started_at": time.time(),
     "scans": 0,
@@ -213,6 +222,41 @@ def _adaptive_build_diag_reject(symbol, timeframe, reason):
         by_symbol[sym_key] = int(by_symbol.get(sym_key, 0) or 0) + 1
     except Exception:
         pass
+
+
+def _finalizer_diag_inc(key):
+    try:
+        FINALIZER_DIAGNOSTICS[key] = int(FINALIZER_DIAGNOSTICS.get(key, 0) or 0) + 1
+    except Exception:
+        pass
+
+
+def _log_finalizer_diagnostic_summary():
+    try:
+        print(
+            "FINALIZER_DIAGNOSTIC_SUMMARY "
+            f"accepted_from_playbook={FINALIZER_DIAGNOSTICS.get('accepted_from_playbook', 0)} "
+            f"rejected_by_risk_score={FINALIZER_DIAGNOSTICS.get('rejected_by_risk_score', 0)} "
+            f"rejected_by_missing_mtf={FINALIZER_DIAGNOSTICS.get('rejected_by_missing_mtf', 0)} "
+            f"rejected_by_other_finalizer_reason={FINALIZER_DIAGNOSTICS.get('rejected_by_other_finalizer_reason', 0)} "
+            f"finalized_spot={FINALIZER_DIAGNOSTICS.get('finalized_spot', 0)} "
+            f"finalized_futures={FINALIZER_DIAGNOSTICS.get('finalized_futures', 0)} "
+            f"sent_to_sender={FINALIZER_DIAGNOSTICS.get('sent_to_sender', 0)}"
+        )
+    except Exception:
+        pass
+
+
+def _finalizer_reject(reason):
+    text = str(reason or "")
+    if "risk score" in text.lower():
+        _finalizer_diag_inc("rejected_by_risk_score")
+    elif "4H/1H data unavailable" in text or "MTF data unavailable" in text:
+        _finalizer_diag_inc("rejected_by_missing_mtf")
+    else:
+        _finalizer_diag_inc("rejected_by_other_finalizer_reason")
+    _log_finalizer_diagnostic_summary()
+    return None, reason
 
 
 def _scan_diag_attempt(symbol=None):
@@ -1983,6 +2027,116 @@ def cached_market_data(symbol, interval="5m", limit=250, ttl=MARKET_CONTEXT_TTL_
     except Exception as e:
         print(f"cached_market_data error {symbol} {interval}: {e}")
         return None
+
+
+def _diagnose_futures_mtf_data_source(symbol, interval, limit=260):
+    kucoin_tf_map = {
+        "1m": "1min",
+        "3m": "3min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1hour",
+        "4h": "4hour",
+        "1d": "1day",
+    }
+    result = {
+        "symbol": symbol,
+        "timeframe": interval,
+        "requested_limit": limit,
+        "binance_status": None,
+        "binance_futures_status": None,
+        "binance_us_status": None,
+        "kucoin_status": None,
+        "binance_empty": None,
+        "binance_futures_empty": None,
+        "binance_us_empty": None,
+        "kucoin_empty": None,
+        "symbol_mapping": {
+            "normalized": symbol,
+            "kucoin": symbol.replace("USDT", "-USDT"),
+        },
+        "fallback_used": False,
+        "timeout_or_exception": None,
+        "source_used": None,
+        "failure_type": None,
+    }
+    endpoints = [
+        ("binance", "binance_status", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
+        ("binance_futures", "binance_futures_status", f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"),
+        ("binance_us", "binance_us_status", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
+    ]
+    try:
+        for label, status_key, url in endpoints:
+            try:
+                response = requests.get(url, timeout=REQUEST_TIMEOUT)
+                result[status_key] = response.status_code
+                empty_key = f"{label}_empty"
+                parsed = None
+                if response.status_code == 200:
+                    try:
+                        parsed = response.json()
+                    except Exception as json_error:
+                        result["failure_type"] = f"{label}_invalid_json:{type(json_error).__name__}"
+                    if isinstance(parsed, list):
+                        result[empty_key] = len(parsed) == 0
+                        if parsed:
+                            result["source_used"] = label.upper()
+                            return result
+                    else:
+                        result[empty_key] = True
+                elif response.status_code == 451:
+                    result["failure_type"] = "GLOBAL_BINANCE_BLOCKED"
+            except requests.exceptions.Timeout as timeout_error:
+                result["timeout_or_exception"] = f"{label}_timeout:{type(timeout_error).__name__}"
+            except Exception as endpoint_error:
+                result["timeout_or_exception"] = f"{label}_exception:{type(endpoint_error).__name__}"
+
+        result["fallback_used"] = True
+        kucoin_interval = kucoin_tf_map.get(interval, interval)
+        kucoin_symbol = result["symbol_mapping"]["kucoin"]
+        kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
+        try:
+            response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
+            result["kucoin_status"] = response.status_code
+            if response.status_code == 200:
+                payload = response.json()
+                rows = payload.get("data") if isinstance(payload, dict) else None
+                result["kucoin_empty"] = not bool(rows)
+                if rows:
+                    result["source_used"] = "KUCOIN"
+                    return result
+                result["failure_type"] = "KUCOIN_EMPTY"
+            else:
+                result["failure_type"] = f"KUCOIN_STATUS_{response.status_code}"
+        except requests.exceptions.Timeout as timeout_error:
+            result["timeout_or_exception"] = f"kucoin_timeout:{type(timeout_error).__name__}"
+        except Exception as kucoin_error:
+            result["timeout_or_exception"] = f"kucoin_exception:{type(kucoin_error).__name__}"
+    except Exception as e:
+        result["timeout_or_exception"] = f"diagnostic_error:{type(e).__name__}"
+    if not result.get("failure_type"):
+        result["failure_type"] = "NO_VALID_MTF_SOURCE"
+    return result
+
+
+def _log_futures_mtf_unavailable_diagnostic(symbol, frames):
+    try:
+        diagnostics = []
+        for interval, df in frames.items():
+            available = df is not None and len(df) >= 100
+            item = {
+                "symbol": symbol,
+                "timeframe": interval,
+                "cached_rows": 0 if df is None else len(df),
+                "cache_available": bool(available),
+            }
+            if not available:
+                item.update(_diagnose_futures_mtf_data_source(symbol, interval))
+            diagnostics.append(item)
+        print(f"FUTURES_MTF_DATA_DIAGNOSTIC {json.dumps(diagnostics, sort_keys=True)}")
+    except Exception as e:
+        print(f"FUTURES_MTF_DATA_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
 
 
 def _safe_ema_value(df, period):
@@ -4361,6 +4515,7 @@ def futures_bias_context(symbol):
         df_4h = cached_market_data(symbol, "4h", 260)
         df_1h = cached_market_data(symbol, "1h", 260)
         if df_4h is None or len(df_4h) < 100 or df_1h is None or len(df_1h) < 100:
+            _log_futures_mtf_unavailable_diagnostic(symbol, {"4h": df_4h, "1h": df_1h})
             return {"ok": False, "reason": "futures 4H/1H data unavailable", "macro": "UNKNOWN", "bias": "UNKNOWN"}
         macro = _expert_tf_direction(df_4h)
         bias = _expert_tf_direction(df_1h)
@@ -5150,6 +5305,105 @@ def _adaptive_score(regime_info, direction, strategy_name, levels, symbol, timef
     return int(_bounded(score, 0, 100))
 
 
+def _finalizer_risk_score_breakdown(signal_context, ai_engine_report):
+    try:
+        entry = _safe_float(signal_context.get("entry"))
+        tp = _safe_float(signal_context.get("tp"))
+        sl = _safe_float(signal_context.get("sl"))
+        direction = str(signal_context.get("direction") or "").upper()
+        components = []
+        raw = 50
+        components.append({"name": "base", "value": 50, "weight_or_delta": 50, "running_total": raw})
+
+        if entry <= 0 or tp <= 0 or sl <= 0:
+            return {
+                "components": components + [{"name": "invalid_levels", "value": {"entry": entry, "tp": tp, "sl": sl}, "weight_or_delta": "+50", "running_total": 100}],
+                "raw_before_cap": 100,
+                "final_score": 100,
+                "why_100": "entry/tp/sl invalid or non-positive",
+            }
+
+        if direction == "LONG":
+            reward_distance = abs(tp - entry) / entry
+            risk_distance = abs(entry - sl) / entry
+        else:
+            reward_distance = abs(entry - tp) / entry
+            risk_distance = abs(sl - entry) / entry
+        rr = reward_distance / risk_distance if risk_distance > 0 else 0
+        if rr >= 2.4:
+            delta = -18
+            rule = "rr>=2.4"
+        elif rr >= 1.9:
+            delta = -10
+            rule = "rr>=1.9"
+        else:
+            delta = 18
+            rule = "rr<1.9"
+        raw += delta
+        components.append({"name": "risk_reward", "value": round(rr, 4), "rule": rule, "weight_or_delta": delta, "running_total": raw})
+
+        volatility_state = ai_engine_report.get("volatility_state")
+        if volatility_state == "TRADEABLE":
+            delta = -10
+        elif volatility_state == "HIGH":
+            delta = 7
+        elif volatility_state in ["EXTREME", "TOO_QUIET"]:
+            delta = 18
+        else:
+            delta = 0
+        raw += delta
+        components.append({"name": "volatility", "value": volatility_state, "weight_or_delta": delta, "running_total": raw})
+
+        volume_state = ai_engine_report.get("volume_state")
+        if volume_state in ["STRONG", "EXPANSION"]:
+            delta = -8
+        elif volume_state == "THIN":
+            delta = 12
+        else:
+            delta = 0
+        raw += delta
+        components.append({"name": "volume", "value": volume_state, "weight_or_delta": delta, "running_total": raw})
+
+        market_structure = ai_engine_report.get("market_structure")
+        if market_structure == "MID_RANGE":
+            delta = 8
+        elif market_structure in ["BULLISH_STRUCTURE", "BEARISH_STRUCTURE", "NEAR_BREAKOUT_HIGH", "NEAR_BREAKOUT_LOW"]:
+            delta = -6
+        else:
+            delta = 0
+        raw += delta
+        components.append({"name": "market_structure", "value": market_structure, "weight_or_delta": delta, "running_total": raw})
+
+        final_score = int(_bounded(raw, 0, 100))
+        why_100 = ""
+        if final_score >= 100:
+            positives = [item for item in components if _safe_float(item.get("weight_or_delta"), 0) > 0]
+            why_100 = "positive risk components reached cap: " + ",".join(str(item.get("name")) for item in positives)
+        return {
+            "components": components,
+            "raw_before_cap": raw,
+            "final_score": final_score,
+            "reported_final_score": ai_engine_report.get("risk_score"),
+            "why_100": why_100,
+        }
+    except Exception as e:
+        return {"error": type(e).__name__, "message": str(e)}
+
+
+def _log_finalizer_risk_score_diagnostic(symbol, signal_context, ai_engine_report, max_risk):
+    try:
+        breakdown = _finalizer_risk_score_breakdown(signal_context, ai_engine_report)
+        print(
+            "FINALIZER_RISK_SCORE_DIAGNOSTIC "
+            f"symbol={symbol} "
+            f"max_risk={max_risk} "
+            f"risk_score={ai_engine_report.get('risk_score')} "
+            f"breakdown={json.dumps(breakdown, sort_keys=True)}"
+        )
+    except Exception as e:
+        print(f"FINALIZER_RISK_SCORE_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
+
+
 def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
     try:
         medium_issues = []
@@ -5417,28 +5671,31 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 
 def finalize_adaptive_signal(signal, df, paid=True):
     try:
+        _finalizer_diag_inc("accepted_from_playbook")
         direction = signal["direction"]
         interval = signal.get("timeframe", "5m")
         entry = _safe_float(signal["entry"])
         tp = _safe_float(signal["tp"])
         sl = _safe_float(signal["sl"])
         htf_ok = higher_timeframe_confirmation(signal["pair"], direction, interval)
+        signal_context = {
+            "timeframe": interval,
+            "direction": direction,
+            "entry": entry,
+            "tp": tp,
+            "sl": sl,
+            "confidence": signal.get("confidence"),
+        }
 
         ai_engine_report = build_ai_engine_report(
             df,
-            {
-                "timeframe": interval,
-                "direction": direction,
-                "entry": entry,
-                "tp": tp,
-                "sl": sl,
-                "confidence": signal.get("confidence"),
-            },
+            signal_context,
             higher_tf_ok=htf_ok,
         )
         max_risk = 80 if paid else 84
         if ai_engine_report["risk_score"] >= max_risk:
-            return None, f"risk score {ai_engine_report['risk_score']} too high"
+            _log_finalizer_risk_score_diagnostic(signal.get("pair"), signal_context, ai_engine_report, max_risk)
+            return _finalizer_reject(f"risk score {ai_engine_report['risk_score']} too high")
 
         type_scores = evaluate_trade_types(
             direction=direction,
@@ -5457,7 +5714,10 @@ def finalize_adaptive_signal(signal, df, paid=True):
         if trade_type == "FUTURES":
             signal, futures_reason = futures_apply_execution_frames(signal)
             if not signal:
-                return None, futures_reason or "futures 15m/30m validation rejected"
+                return _finalizer_reject(futures_reason or "futures 15m/30m validation rejected")
+            _finalizer_diag_inc("finalized_futures")
+        else:
+            _finalizer_diag_inc("finalized_spot")
         signal.update({
             "type_scores": adjusted_type_scores,
             "spot_score": adjusted_type_scores.get("SPOT", 0),
@@ -5482,11 +5742,11 @@ def finalize_adaptive_signal(signal, df, paid=True):
         })
         quality_ok, quality_reason = apply_signal_quality_report(signal)
         if not quality_ok:
-            return None, quality_reason
+            return _finalizer_reject(quality_reason)
         if _safe_float(signal.get("display_confidence"), 0) < 70:
             calibrated, calibration_reason = apply_b_plus_calibration(signal)
             if not calibrated:
-                return None, f"display confidence {signal.get('display_confidence')} below 70"
+                return _finalizer_reject(f"display confidence {signal.get('display_confidence')} below 70")
         expert_context = {
             "mtf": signal.get("expert_mtf") or {},
             "volatility": signal.get("expert_volatility") or {},
@@ -5512,31 +5772,33 @@ def finalize_adaptive_signal(signal, df, paid=True):
             else:
                 failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
                 _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
-                return None, f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}"
+                return _finalizer_reject(f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}")
         self_ok, self_reason = expert_self_review(signal, checklist)
         signal["self_review"] = self_reason
         if not self_ok:
             _no_trade_reason(signal.get("pair"), interval, self_reason)
-            return None, self_reason
+            return _finalizer_reject(self_reason)
         try:
             from ai_model import explain_predict_trade
             ai_ok, ai_reason = explain_predict_trade(signal)
         except Exception:
             ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
         if not ai_ok:
-            return None, f"AI model rejected adaptive signal: {ai_reason}"
+            return _finalizer_reject(f"AI model rejected adaptive signal: {ai_reason}")
         managed_signal, entry_reason = professional_entry_manager(signal, df)
         if not managed_signal:
-            return None, entry_reason
+            return _finalizer_reject(entry_reason)
         final_ok, final_reason = final_fund_manager_review(managed_signal)
         if not final_ok:
             _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
-            return None, final_reason
+            return _finalizer_reject(final_reason)
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
         _scan_diag_inc("finalized_candidates")
+        _finalizer_diag_inc("sent_to_sender")
+        _log_finalizer_diagnostic_summary()
         return managed_signal, None
     except Exception as e:
-        return None, f"adaptive finalize error: {e}"
+        return _finalizer_reject(f"adaptive finalize error: {e}")
 
 
 def no_trade_summary(symbol, interval, market_summary, best_candidate, rejection_reason):
