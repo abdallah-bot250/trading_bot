@@ -1818,6 +1818,16 @@ def log_signal_scan_summary(final_count):
             f"rejection_total={rejection_total} "
             f"final_signals={summary.get('final_signals', final_count)}"
         )
+        adaptive_build = summary.get("adaptive_build") or {}
+        log(
+            "ADAPTIVE_BUILD_REJECTION_SUMMARY "
+            f"total_pipeline_entries={adaptive_build.get('total_pipeline_entries', 0)} "
+            f"candidates_built={adaptive_build.get('candidates_built', 0)} "
+            f"candidates_rejected={adaptive_build.get('candidates_rejected', 0)} "
+            f"rejection_breakdown={json.dumps(adaptive_build.get('rejection_breakdown', {}), sort_keys=True)} "
+            f"rejections_by_timeframe={json.dumps(adaptive_build.get('rejections_by_timeframe', {}), sort_keys=True)} "
+            f"rejections_by_symbol={json.dumps(adaptive_build.get('rejections_by_symbol', {}), sort_keys=True)}"
+        )
         if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
             log(f"SIGNAL_SUPPLY_LOW target={MIN_DAILY_SIGNAL_TARGET} actual={int(final_count or 0)}")
         return summary

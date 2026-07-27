@@ -146,6 +146,14 @@ def reset_signal_scan_diagnostics():
         "qualified_a_plus": 0,
         "rejected_opportunity": 0,
         "final_signals": 0,
+        "adaptive_build": {
+            "total_pipeline_entries": 0,
+            "candidates_built": 0,
+            "candidates_rejected": 0,
+            "rejection_breakdown": {},
+            "rejections_by_timeframe": {},
+            "rejections_by_symbol": {},
+        },
     })
 
 
@@ -160,6 +168,48 @@ def _scan_diag_inc(key, amount=1):
             SIGNAL_SUPPLY_24H["setups_confirmed"] = int(SIGNAL_SUPPLY_24H.get("setups_confirmed", 0) or 0) + amount
         elif key == "candidates_built":
             SIGNAL_SUPPLY_24H["candidates"] = int(SIGNAL_SUPPLY_24H.get("candidates", 0) or 0) + amount
+    except Exception:
+        pass
+
+
+def _adaptive_build_diag_entry():
+    try:
+        if not SIGNAL_SCAN_DIAGNOSTICS:
+            reset_signal_scan_diagnostics()
+        bucket = SIGNAL_SCAN_DIAGNOSTICS.setdefault("adaptive_build", {})
+        bucket["total_pipeline_entries"] = int(bucket.get("total_pipeline_entries", 0) or 0) + 1
+    except Exception:
+        pass
+
+
+def _adaptive_build_diag_accept():
+    try:
+        if not SIGNAL_SCAN_DIAGNOSTICS:
+            reset_signal_scan_diagnostics()
+        bucket = SIGNAL_SCAN_DIAGNOSTICS.setdefault("adaptive_build", {})
+        bucket["candidates_built"] = int(bucket.get("candidates_built", 0) or 0) + 1
+    except Exception:
+        pass
+
+
+def _adaptive_build_diag_reject(symbol, timeframe, reason):
+    try:
+        if not SIGNAL_SCAN_DIAGNOSTICS:
+            reset_signal_scan_diagnostics()
+        bucket = SIGNAL_SCAN_DIAGNOSTICS.setdefault("adaptive_build", {})
+        bucket["candidates_rejected"] = int(bucket.get("candidates_rejected", 0) or 0) + 1
+
+        exact_reason = " ".join(str(reason or "unknown").split())[:220]
+        breakdown = bucket.setdefault("rejection_breakdown", {})
+        breakdown[exact_reason] = int(breakdown.get(exact_reason, 0) or 0) + 1
+
+        tf_key = str(timeframe or "unknown")
+        by_tf = bucket.setdefault("rejections_by_timeframe", {})
+        by_tf[tf_key] = int(by_tf.get(tf_key, 0) or 0) + 1
+
+        sym_key = str(symbol or "unknown").upper()
+        by_symbol = bucket.setdefault("rejections_by_symbol", {})
+        by_symbol[sym_key] = int(by_symbol.get(sym_key, 0) or 0) + 1
     except Exception:
         pass
 
@@ -5326,8 +5376,10 @@ def generate_signal(symbol, interval="5m"):
         return None
 
     candidate_pipeline_log("CANDIDATE_PIPELINE_ENTER", symbol, interval, stage="adaptive_build_paid")
+    _adaptive_build_diag_entry()
     adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=True)
     if adaptive_signal:
+        _adaptive_build_diag_accept()
         candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="playbook_signal_built", signal=adaptive_signal)
         finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=True)
         if finalized_signal:
@@ -5345,6 +5397,7 @@ def generate_signal(symbol, interval="5m"):
         return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
 
     candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="adaptive_build", reason=adaptive_reason)
+    _adaptive_build_diag_reject(symbol, interval, adaptive_reason)
     no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
     return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
 
@@ -5592,8 +5645,10 @@ def generate_free_signal(symbol, interval="5m"):
     )
 
     candidate_pipeline_log("CANDIDATE_PIPELINE_ENTER", symbol, interval, stage="adaptive_build_free")
+    _adaptive_build_diag_entry()
     adaptive_signal, adaptive_reason, adaptive_regime = build_adaptive_signal_candidate(symbol, interval, df, paid=False)
     if adaptive_signal:
+        _adaptive_build_diag_accept()
         candidate_pipeline_log("CANDIDATE_PIPELINE_ACCEPT", symbol, interval, stage="playbook_signal_built", signal=adaptive_signal)
         finalized_signal, finalize_reason = finalize_adaptive_signal(adaptive_signal, df, paid=False)
         if finalized_signal:
@@ -5611,6 +5666,7 @@ def generate_free_signal(symbol, interval="5m"):
         return skip_signal(symbol, interval, finalize_reason or "adaptive signal rejected")
 
     candidate_pipeline_log("CANDIDATE_PIPELINE_REJECT", symbol, interval, stage="adaptive_build", reason=adaptive_reason)
+    _adaptive_build_diag_reject(symbol, interval, adaptive_reason)
     no_trade_summary(symbol, interval, adaptive_regime, None, adaptive_reason)
     return skip_signal(symbol, interval, adaptive_reason or "adaptive strategy rejected")
 
