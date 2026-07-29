@@ -128,6 +128,14 @@ FINALIZER_DIAGNOSTICS = {
         "PROFESSIONAL_ENTRY_MANAGER": 0,
         "FUND_MANAGER_REVIEW": 0,
         "INVALID_SIGNAL_OBJECT": 0,
+        "MID_RANGE_POSITION": 0,
+        "INSUFFICIENT_HISTORY": 0,
+        "RANGE_CONTEXT_UNAVAILABLE": 0,
+        "INVALID_GEOMETRY": 0,
+        "NO_ROOM_FOR_RR": 0,
+        "MARKET_REGIME_FILTER": 0,
+        "ENTRY_CONFIRMATION_MISSING": 0,
+        "MISSING_REJECTION_REASON": 0,
         "OTHER_UNKNOWN": 0,
     },
 }
@@ -445,44 +453,112 @@ FINALIZER_REJECTION_CATEGORIES = [
     "PROFESSIONAL_ENTRY_MANAGER",
     "FUND_MANAGER_REVIEW",
     "INVALID_SIGNAL_OBJECT",
+    "MID_RANGE_POSITION",
+    "INSUFFICIENT_HISTORY",
+    "RANGE_CONTEXT_UNAVAILABLE",
+    "INVALID_GEOMETRY",
+    "NO_ROOM_FOR_RR",
+    "MARKET_REGIME_FILTER",
+    "ENTRY_CONFIRMATION_MISSING",
+    "MISSING_REJECTION_REASON",
     "OTHER_UNKNOWN",
 ]
 
 
-def _finalizer_rejection_bucket(reason, stage=None):
-    text = str(reason or "").upper()
+FINALIZER_REJECTION_RULES = [
+    ("MID_RANGE_POSITION", "mid_range_position", (
+        "PRICE IN MIDDLE OF 30M RANGE",
+        "PRICE IN MIDDLE OF RANGE",
+        "MID-RANGE NO TRADE",
+        "MID RANGE POSITION",
+        "RANGE MIDPOINT UNSAFE",
+        "POSITION INSIDE RANGE MIDPOINT",
+        "POSITION داخل منتصف الرينج",
+    )),
+    ("INSUFFICIENT_HISTORY", "insufficient_history", (
+        "FINAL_CLOSED_ROWS",
+        "NOT ENOUGH CANDLES",
+        "INSUFFICIENT CANDLE HISTORY",
+        "INSUFFICIENT HISTORICAL DATA",
+        "REQUIRED ROWS NOT MET",
+        "RAW ROWS BELOW REQUIRED",
+        "RAW ROWS أقل من الحد المطلوب",
+        "INSUFFICIENT_CANDLES",
+    )),
+    ("RANGE_CONTEXT_UNAVAILABLE", "range_context_unavailable", (
+        "RANGE SETUP REQUIRES 4H/1H RANGE CONTEXT",
+        "4H/1H DATA UNAVAILABLE",
+        "RANGE CONTEXT UNAVAILABLE",
+    )),
+    ("INVALID_GEOMETRY", "invalid_geometry", (
+        "INVALID LONG/SHORT LEVEL GEOMETRY",
+        "INVALID ENTRY GEOMETRY",
+        "INVALID SIGNAL GEOMETRY",
+    )),
+    ("NO_ROOM_FOR_RR", "no_room_for_rr", (
+        "NOT ENOUGH ROOM TO NEAREST SUPPORT/RESISTANCE FOR SAFE RR",
+        "INSUFFICIENT ROOM FOR SAFE RR",
+    )),
+    ("MARKET_REGIME_FILTER", "market_regime_filter", (
+        "HIGH_VOLATILITY",
+        "LOW_VOLATILITY",
+        "MIXED STRUCTURE WITHOUT CLEAN TREND",
+        "NO ADAPTIVE PLAYBOOK FOR REVERSAL",
+    )),
+    ("ENTRY_CONFIRMATION_MISSING", "entry_confirmation_missing", (
+        "ENTRY_CONFIRMATION_MISSING",
+        "TRIGGER NOT CONFIRMED",
+        "RETEST NOT CONFIRMED",
+        "CONFIRMATION PENDING",
+    )),
+]
+
+
+def _finalizer_rejection_classification(reason, stage=None):
+    raw_reason = "" if reason is None else str(reason)
+    text = raw_reason.upper()
     stage_key = str(stage or "").strip().lower()
+    if not raw_reason.strip():
+        return "MISSING_REJECTION_REASON", "missing_rejection_reason", False
+    for category, matched_rule, patterns in FINALIZER_REJECTION_RULES:
+        if any(pattern.upper() in text for pattern in patterns):
+            return category, matched_rule, False
     if "ENTRY_MOVED" in text or "LATE_ENTRY" in text or "ENTRY MANAGER REJECTED" in text:
-        return "ENTRY_MOVED"
+        return "ENTRY_MOVED", "entry_moved", False
     if "SETUP_ARMED" in text:
-        return "SETUP_ARMED"
+        return "SETUP_ARMED", "setup_armed", False
     if "RISK SCORE" in text:
-        return "RISK_SCORE"
+        return "RISK_SCORE", "risk_score", False
     if "4H/1H DATA UNAVAILABLE" in text or "MTF DATA" in text or "FUTURES MTF DATA" in text:
-        return "MISSING_MTF"
+        return "MISSING_MTF", "missing_mtf", False
     if "UNCLEAR 4H" in text or "UNCLEAR FUTURES BIAS" in text or "MACRO TREND" in text:
-        return "UNCLEAR_MACRO_TREND"
+        return "UNCLEAR_MACRO_TREND", "unclear_macro_trend", False
     if "LOW_LIQUIDITY" in text or "LIQUIDITY TOO WEAK" in text:
-        return "LOW_LIQUIDITY"
+        return "LOW_LIQUIDITY", "low_liquidity", False
     if "LOW_VOLUME" in text or "VOLUME TOO WEAK" in text or "30M VOLUME/LIQUIDITY" in text:
-        return "LOW_VOLUME"
+        return "LOW_VOLUME", "low_volume", False
     if "RR " in text or "RISK/REWARD" in text or "NO SAFE 15M/30M RR ROOM" in text or "MINIMUM RR" in text:
-        return "RR_FILTER"
+        return "RR_FILTER", "rr_filter", False
     if stage_key in {"quality_report", "quality_checklist"}:
-        return "QUALITY_REPORT"
+        return "QUALITY_REPORT", "stage_quality_report", False
     if stage_key == "b_plus_calibration":
-        return "B_PLUS_CALIBRATION"
+        return "B_PLUS_CALIBRATION", "stage_b_plus_calibration", False
     if stage_key == "self_review":
-        return "SELF_REVIEW"
+        return "SELF_REVIEW", "stage_self_review", False
     if stage_key == "ai_model":
-        return "AI_MODEL_REJECT"
+        return "AI_MODEL_REJECT", "stage_ai_model", False
     if stage_key == "professional_entry_manager":
-        return "PROFESSIONAL_ENTRY_MANAGER"
+        return "PROFESSIONAL_ENTRY_MANAGER", "stage_professional_entry_manager", False
     if stage_key == "fund_manager_review":
-        return "FUND_MANAGER_REVIEW"
+        return "FUND_MANAGER_REVIEW", "stage_fund_manager_review", False
     if stage_key in {"invalid_signal_object", "exception"}:
-        return "INVALID_SIGNAL_OBJECT"
-    return "OTHER_UNKNOWN"
+        return "INVALID_SIGNAL_OBJECT", "stage_invalid_signal_object", False
+    return "OTHER_UNKNOWN", "unmapped_reason", True
+
+
+def _finalizer_rejection_bucket(reason, stage=None):
+    category, _matched_rule, _was_unknown = _finalizer_rejection_classification(reason, stage)
+    return category
 
 
 def _finalizer_diag_rejection_breakdown(reason, stage=None):
@@ -526,8 +602,15 @@ def _log_finalizer_rejection_report():
             f"PROFESSIONAL_ENTRY_MANAGER={int(breakdown.get('PROFESSIONAL_ENTRY_MANAGER', 0) or 0)} "
             f"FUND_MANAGER_REVIEW={int(breakdown.get('FUND_MANAGER_REVIEW', 0) or 0)} "
             f"INVALID_SIGNAL_OBJECT={int(breakdown.get('INVALID_SIGNAL_OBJECT', 0) or 0)} "
+            f"MID_RANGE_POSITION={int(breakdown.get('MID_RANGE_POSITION', 0) or 0)} "
+            f"INSUFFICIENT_HISTORY={int(breakdown.get('INSUFFICIENT_HISTORY', 0) or 0)} "
+            f"RANGE_CONTEXT_UNAVAILABLE={int(breakdown.get('RANGE_CONTEXT_UNAVAILABLE', 0) or 0)} "
+            f"INVALID_GEOMETRY={int(breakdown.get('INVALID_GEOMETRY', 0) or 0)} "
+            f"NO_ROOM_FOR_RR={int(breakdown.get('NO_ROOM_FOR_RR', 0) or 0)} "
+            f"MARKET_REGIME_FILTER={int(breakdown.get('MARKET_REGIME_FILTER', 0) or 0)} "
+            f"ENTRY_CONFIRMATION_MISSING={int(breakdown.get('ENTRY_CONFIRMATION_MISSING', 0) or 0)} "
+            f"MISSING_REJECTION_REASON={int(breakdown.get('MISSING_REJECTION_REASON', 0) or 0)} "
             f"OTHER_UNKNOWN={int(breakdown.get('OTHER_UNKNOWN', 0) or 0)} "
-            f"OTHER={int(breakdown.get('OTHER_UNKNOWN', 0) or 0)} "
             f"total_candidates={total_candidates} "
             f"accepted_from_playbook={total_candidates} "
             f"finalized={finalized} "
@@ -580,14 +663,25 @@ def _finalizer_append_trace(signal, final_candidates_count=None, final_signals_c
 def _log_finalizer_stage_reject(signal, stage, reason, category):
     try:
         reason_clean = " ".join(str(reason or "unknown").split())[:260]
+        normalized_category, matched_rule, was_unknown = _finalizer_rejection_classification(reason, stage)
         print(
             "FINALIZER_STAGE_REJECT "
             f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
             f"symbol={(signal or {}).get('pair') or (signal or {}).get('symbol') or 'unknown'} "
             f"timeframe={(signal or {}).get('timeframe') or 'unknown'} "
             f"stage={stage or 'unknown'} "
-            f"reason={reason_clean} "
-            f"category={category or 'OTHER_UNKNOWN'}"
+            f"raw_rejection_reason={reason_clean} "
+            f"normalized_rejection_category={category or normalized_category or 'OTHER_UNKNOWN'}"
+        )
+        print(
+            "REJECTION_CLASSIFICATION_TRACE "
+            f"symbol={(signal or {}).get('pair') or (signal or {}).get('symbol') or 'unknown'} "
+            f"timeframe={(signal or {}).get('timeframe') or 'unknown'} "
+            f"stage={stage or 'unknown'} "
+            f"raw_reason={reason_clean} "
+            f"normalized_category={category or normalized_category or 'OTHER_UNKNOWN'} "
+            f"matched_rule={matched_rule} "
+            f"was_unknown={bool(was_unknown)}"
         )
     except Exception:
         pass

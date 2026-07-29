@@ -7,7 +7,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ai_model import explain_predict_trade
-from market_analyzer import _select_final_delivery_candidates, _soft_armed_futures_approval
+from market_analyzer import _finalizer_rejection_bucket, _select_final_delivery_candidates, _soft_armed_futures_approval
 
 
 def base_signal(**overrides):
@@ -79,6 +79,23 @@ def bearish_frame(rows=90):
 
 
 def main():
+    rejection_cases = [
+        ("price in middle of 30m range position=0.42", "MID_RANGE_POSITION"),
+        ("mid-range no trade position=0.48", "MID_RANGE_POSITION"),
+        ("final_closed_rows=93 required_rows=100", "INSUFFICIENT_HISTORY"),
+        ("not enough candles required_rows=100", "INSUFFICIENT_HISTORY"),
+        ("range setup requires 4H/1H range context: 4H/1H data unavailable", "RANGE_CONTEXT_UNAVAILABLE"),
+        ("invalid LONG/SHORT level geometry", "INVALID_GEOMETRY"),
+        ("not enough room to nearest support/resistance for safe RR", "NO_ROOM_FOR_RR"),
+        ("HIGH_VOLATILITY: mixed structure without clean trend", "MARKET_REGIME_FILTER"),
+        ("medium risk stack: BREAKOUT_CHASE,ENTRY_CONFIRMATION_MISSING", "ENTRY_CONFIRMATION_MISSING"),
+        ("completely_new_unmapped_reason", "OTHER_UNKNOWN"),
+        ("", "MISSING_REJECTION_REASON"),
+        (None, "MISSING_REJECTION_REASON"),
+    ]
+    for reason, expected in rejection_cases:
+        assert_true(f"rejection classification {expected}", _finalizer_rejection_bucket(reason) == expected)
+
     sig = base_signal(confidence_cap_reason="high_risk_cap")
     ok, reason = explain_predict_trade(sig)
     assert_true("duplicate high-risk penalty becomes reduced approval", ok and sig.get("approval_type") == "REDUCED_SIZE_APPROVAL")
