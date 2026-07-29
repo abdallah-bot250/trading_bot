@@ -1624,6 +1624,108 @@ def parse_binance_klines_to_df(data):
         return None
 
 
+def _kucoin_interval_seconds(interval):
+    mapping = {
+        "1m": 60,
+        "3m": 180,
+        "5m": 300,
+        "15m": 900,
+        "30m": 1800,
+        "1h": 3600,
+        "2h": 7200,
+        "4h": 14400,
+        "6h": 21600,
+        "8h": 28800,
+        "12h": 43200,
+        "1d": 86400,
+    }
+    return mapping.get(str(interval or "").strip().lower(), 300)
+
+
+def _fetch_kucoin_candles_with_margin(kucoin_symbol, kucoin_interval, interval, requested_limit):
+    rows = []
+    status_codes = []
+    try:
+        interval_seconds = _kucoin_interval_seconds(interval)
+        target_rows = max(int(requested_limit or 250) + 2, 120)
+        end_at = int(time.time())
+        pages = 0
+        seen = set()
+        while len(rows) < target_rows and pages < 4:
+            pages += 1
+            span = interval_seconds * (target_rows + 8)
+            start_at = max(0, end_at - span)
+            kucoin_url = (
+                "https://api.kucoin.com/api/v1/market/candles"
+                f"?type={kucoin_interval}&symbol={kucoin_symbol}&startAt={start_at}&endAt={end_at}"
+            )
+            response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
+            status_codes.append(response.status_code)
+            if response.status_code != 200:
+                return rows, status_codes, f"status_{response.status_code}"
+            payload = response.json()
+            batch = payload.get("data") if isinstance(payload, dict) else None
+            if not batch:
+                break
+            min_ts = None
+            added = 0
+            for row in batch:
+                if not isinstance(row, list) or not row:
+                    continue
+                try:
+                    ts = int(row[0])
+                except Exception:
+                    continue
+                if ts in seen:
+                    continue
+                seen.add(ts)
+                rows.append(row)
+                added += 1
+                min_ts = ts if min_ts is None else min(min_ts, ts)
+            if added == 0 or min_ts is None:
+                break
+            end_at = min_ts - 1
+        return rows, status_codes, ""
+    except Exception as e:
+        return rows, status_codes, f"exception:{type(e).__name__}"
+
+
+def _kucoin_indicator_row_count(df):
+    try:
+        if df is None or df.empty:
+            return 0
+        temp = df.copy()
+        temp["_ema20"] = temp["close"].ewm(span=20, adjust=False).mean()
+        high_low = temp["high"] - temp["low"]
+        high_close = (temp["high"] - temp["close"].shift()).abs()
+        low_close = (temp["low"] - temp["close"].shift()).abs()
+        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        temp["_atr14"] = true_range.rolling(14).mean()
+        return int(temp[["_ema20", "_atr14"]].dropna().shape[0])
+    except Exception:
+        return 0
+
+
+def _log_kucoin_candle_pipeline(symbol, interval, requested_limit, raw_rows, after_dataframe, after_dedup, after_open_drop, after_dropna, after_indicators, final_rows, required_rows):
+    try:
+        print(
+            "KUCOIN_CANDLE_PIPELINE_DIAGNOSTIC "
+            f"symbol={symbol} "
+            f"timeframe={interval} "
+            f"requested_limit={requested_limit} "
+            f"raw_rows={raw_rows} "
+            f"after_dataframe={after_dataframe} "
+            f"after_dedup={after_dedup} "
+            f"after_open_candle_drop={after_open_drop} "
+            f"after_numeric_dropna={after_dropna} "
+            f"after_indicators={after_indicators} "
+            f"final_closed_rows={final_rows} "
+            f"required_rows={required_rows}"
+        )
+    except Exception:
+        pass
+
+
 # ================= MARKET DATA =================
 def get_market_data(symbol, interval="5m", limit=250):
     """
@@ -1699,49 +1801,72 @@ def get_market_data(symbol, interval="5m", limit=250):
         kucoin_interval = KUCOIN_TF_MAP.get(interval, interval)
         kucoin_symbol = symbol.replace("USDT", "-USDT")
 
-        kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
-        response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
+        candles, kucoin_statuses, kucoin_fetch_error = _fetch_kucoin_candles_with_margin(
+            kucoin_symbol,
+            kucoin_interval,
+            interval,
+            limit,
+        )
 
-        if response.status_code != 200:
-            failures.append(f"KUCOIN={response.status_code}")
+        if kucoin_fetch_error:
+            failures.append(f"KUCOIN={kucoin_fetch_error}")
             print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
             return None
-
-        data = response.json()
-
-        if not isinstance(data, dict) or "data" not in data:
-            failures.append("KUCOIN=invalid_response")
-            print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
-            return None
-
-        candles = data["data"]
 
         if not candles:
             failures.append("KUCOIN=empty")
             print(f"WARNING MARKET_DATA_FAILED symbol={symbol} timeframe={interval} failures={'; '.join(failures)}")
             return None
 
-        candles = candles[::-1]
+        raw_rows = len(candles)
 
         import pandas as pd
 
         df = pd.DataFrame(candles, columns=[
             "time", "open", "close", "high", "low", "volume", "turnover"
         ])
+        after_dataframe = len(df)
 
         df["time"] = pd.to_datetime(df["time"].astype(int), unit="s")
+        df = df.sort_values("time").drop_duplicates(subset=["time"], keep="last").reset_index(drop=True)
+        after_dedup = len(df)
+
+        # KuCoin returns the current candle when the latest bucket is still open.
+        # Keep the 100-candle MTF requirement intact by requesting a margin above
+        # the required count, then remove only a genuinely open last candle.
+        interval_seconds = _kucoin_interval_seconds(interval)
+        if len(df) > 2:
+            try:
+                last_start = int(df["time"].iloc[-1].timestamp())
+                if int(time.time()) < last_start + interval_seconds:
+                    df = df.iloc[:-1].reset_index(drop=True)
+            except Exception:
+                df = df.iloc[:-1].reset_index(drop=True)
+        after_open_drop = len(df)
+
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
         df = df[["time", "open", "high", "low", "close", "volume"]]
         df.dropna(inplace=True)
-
-        # KuCoin can also return the currently-forming candle first/last after
-        # normalization. Keep signal generation on closed candles only.
-        if len(df) > 2:
-            df = df.iloc[:-1].reset_index(drop=True)
+        df = df.reset_index(drop=True)
+        after_dropna = len(df)
+        after_indicators = _kucoin_indicator_row_count(df)
 
         if df is not None and not df.empty:
+            _log_kucoin_candle_pipeline(
+                symbol,
+                interval,
+                limit,
+                raw_rows,
+                after_dataframe,
+                after_dedup,
+                after_open_drop,
+                after_dropna,
+                after_indicators,
+                len(df),
+                100,
+            )
             return df
 
         failures.append("KUCOIN=parsed_empty")
@@ -2343,7 +2468,7 @@ def _futures_mtf_frame_status(df, timeframe, minimum_rows=100):
                 "timeframe": timeframe,
                 "ok": False,
                 "rows": rows,
-                "reason": f"insufficient_candles rows={rows} required={minimum_rows}",
+                "reason": f"insufficient_candles required={minimum_rows}",
             }
         numeric_columns = ["open", "high", "low", "close", "volume"]
         invalid_columns = []
