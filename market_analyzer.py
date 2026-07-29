@@ -296,6 +296,26 @@ def _finalizer_diag_inc(key):
         pass
 
 
+def _mark_hard_armed_rejection(signal=None, reason=None, source="unknown"):
+    try:
+        if isinstance(signal, dict):
+            if signal.get("_hard_armed_rejection_counted"):
+                return
+            signal["_hard_armed_rejection_counted"] = True
+        _finalizer_diag_inc("hard_armed_rejected")
+        print(
+            "SETUP_ARMED_COUNTER_TRACE "
+            f"source={source} "
+            f"symbol={(signal or {}).get('pair') or (signal or {}).get('symbol') or 'unknown'} "
+            f"timeframe={(signal or {}).get('timeframe') or 'unknown'} "
+            f"hard_armed_rejected={FINALIZER_DIAGNOSTICS.get('hard_armed_rejected', 0)} "
+            f"soft_armed_approved={FINALIZER_DIAGNOSTICS.get('soft_armed_approved', 0)} "
+            f"reason={str(reason or 'unknown').replace(' ', '_')}"
+        )
+    except Exception:
+        pass
+
+
 def _log_finalizer_diagnostic_summary():
     try:
         print(
@@ -520,6 +540,50 @@ def _finalizer_rejection_classification(reason, stage=None):
     stage_key = str(stage or "").strip().lower()
     if not raw_reason.strip():
         return "MISSING_REJECTION_REASON", "missing_rejection_reason", False
+    if any(marker in text for marker in (
+        "TRIGGER_DATA_MISSING",
+        "TRIGGER DATA MISSING",
+        "15M TRIGGER DATA UNAVAILABLE",
+        "INVALID 15M CLOSE",
+    )):
+        return "INSUFFICIENT_HISTORY", "trigger_history_missing", False
+    if any(marker in text for marker in (
+        "15M_DIRECTION_OPPOSITE",
+        "15M DIRECTION OPPOSITE",
+        "30M_SETUP_NOT_CONFIRMED",
+        "30M SETUP NOT CONFIRMED",
+        "ENTRY_ZONE_NOT_TOUCHED_OR_NEAR",
+        "ENTRY ZONE NOT TOUCHED OR NEAR",
+        "NO_SOFT_TRIGGER_EVIDENCE",
+        "NO SOFT TRIGGER EVIDENCE",
+        "TRIGGER_MISSING",
+        "15M CANDLE CLOSE NOT DECISIVE",
+        "15M TRIGGER STILL ARMED",
+    )):
+        return "ENTRY_CONFIRMATION_MISSING", "armed_entry_confirmation_missing", False
+    if any(marker in text for marker in (
+        "HIGHER_TIMEFRAME_NOT_CONFIRMED",
+        "HIGHER TIMEFRAME NOT CONFIRMED",
+    )) or ("4H " in text and " BLOCKS " in text) or ("1H BIAS" in text and "CONFLICTS" in text):
+        return "UNCLEAR_MACRO_TREND", "futures_bias_conflict", False
+    if any(marker in text for marker in (
+        "TP1 TOO CLOSE",
+        "TOO CLOSE TO RESISTANCE",
+        "TOO CLOSE TO SUPPORT",
+        "NO SAFE 15M/30M RR ROOM",
+    )):
+        return "NO_ROOM_FOR_RR", "futures_no_room_for_rr", False
+    if any(marker in text for marker in (
+        "ABNORMAL 15M CANDLE EXPANSION",
+        "FAKE_BREAKOUT",
+    )):
+        return "MARKET_REGIME_FILTER", "market_regime_or_impulse_filter", False
+    if any(marker in text for marker in (
+        "CONFIDENCE_BELOW",
+        "CONFIDENCE BELOW",
+        "DISPLAY CONFIDENCE",
+    )):
+        return "QUALITY_REPORT", "confidence_below_quality_gate", False
     for category, matched_rule, patterns in FINALIZER_REJECTION_RULES:
         if any(pattern.upper() in text for pattern in patterns):
             return category, matched_rule, False
@@ -5549,13 +5613,14 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
         trigger_stage = str(trigger.get("stage") or "UNKNOWN").upper()
         trigger_missing = trigger_stage == "ARMED" and ("UNAVAILABLE" in str(trigger.get("reason", "")).upper() or "INVALID 15M" in str(trigger.get("reason", "")).upper())
         lower_tf_trigger_confirmed = bool(trigger.get("ok"))
+        confirmed_trigger_flow = bool(lower_tf_trigger_confirmed or trigger_stage == "CONFIRMED")
         reason = trigger.get("reason") or "15m trigger still armed"
         allowed = (
             higher_tf_confirmed
             and lower_tf_data_available
             and lower_tf_direction_aligned
             and lower_tf_soft_trigger
-            and not lower_tf_trigger_confirmed
+            and not confirmed_trigger_flow
             and setup.get("stage") == "CONFIRMED"
             and not hard_conflict
             and (entry_zone_touched or entry_zone_near)
@@ -5567,7 +5632,7 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
             and trigger_stage in {"ARMED", "SOFT_CONFIRMATION"}
             and not trigger_missing
         )
-        decision = "SOFT_ARMED_EARLY_APPROVAL" if allowed else "HARD_ARMED_REJECT"
+        decision = "SOFT_ARMED_EARLY_APPROVAL" if allowed else "CONFIRMED_TRIGGER_NORMAL_FLOW" if confirmed_trigger_flow else "HARD_ARMED_REJECT"
         reject_reason = "soft_15m_trigger_with_confirmed_30m_setup" if allowed else reason
         if not higher_tf_confirmed:
             reject_reason = "higher_timeframe_not_confirmed"
@@ -5617,7 +5682,10 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
             reject_reason,
         )
         if not allowed:
-            _finalizer_diag_inc("hard_armed_rejected")
+            if confirmed_trigger_flow:
+                _finalizer_diag_inc("confirmed_trigger_normal_flow")
+                return None
+            _mark_hard_armed_rejection(signal, reject_reason, source="soft_armed_evaluation")
             return None
         _finalizer_diag_inc("soft_armed_approved")
         return {
@@ -5636,7 +5704,7 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
             "size_multiplier": AI_REDUCED_SIZE_MULTIPLIER,
         }
     except Exception as e:
-        _finalizer_diag_inc("hard_armed_rejected")
+        _mark_hard_armed_rejection(signal if isinstance(signal, dict) else None, f"soft armed error: {e}", source="soft_armed_exception")
         _log_setup_armed_evaluation_trace(
             symbol, FUTURES_TRIGGER_TIMEFRAME, direction,
             setup.get("stage") if isinstance(setup, dict) else "UNKNOWN",
@@ -5676,6 +5744,7 @@ def futures_apply_execution_frames(signal):
         setup = futures_setup_context(symbol, direction, one_h, setup_df)
         if not setup.get("ok"):
             if setup.get("stage") == "ARMED":
+                _mark_hard_armed_rejection(signal, setup.get("reason"), source="30m_setup_armed")
                 adaptive_setup_lifecycle(symbol, "ARMED", setup.get("reason"))
                 return None, f"SETUP_ARMED: {setup.get('reason')}"
             return None, setup.get("reason")
@@ -5692,6 +5761,7 @@ def futures_apply_execution_frames(signal):
                 return None, trigger.get("reason")
         if not trigger.get("ok"):
             if trigger.get("stage") == "ARMED":
+                _mark_hard_armed_rejection(signal, trigger.get("reason"), source="15m_trigger_armed")
                 adaptive_setup_lifecycle(symbol, "ARMED", trigger.get("reason"))
                 return None, f"SETUP_ARMED: {trigger.get('reason')}"
             return None, trigger.get("reason")

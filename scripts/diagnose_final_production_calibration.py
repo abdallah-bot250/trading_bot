@@ -92,6 +92,13 @@ def main():
         ("completely_new_unmapped_reason", "OTHER_UNKNOWN"),
         ("", "MISSING_REJECTION_REASON"),
         (None, "MISSING_REJECTION_REASON"),
+        ("entry_zone_not_touched_or_near", "ENTRY_CONFIRMATION_MISSING"),
+        ("15m_direction_opposite", "ENTRY_CONFIRMATION_MISSING"),
+        ("trigger_data_missing", "INSUFFICIENT_HISTORY"),
+        ("4H BULL blocks SHORT futures", "UNCLEAR_MACRO_TREND"),
+        ("LONG TP1 too close to/through resistance", "NO_ROOM_FOR_RR"),
+        ("abnormal 15m candle expansion before entry", "MARKET_REGIME_FILTER"),
+        ("confidence_below_80", "QUALITY_REPORT"),
     ]
     for reason, expected in rejection_cases:
         assert_true(f"rejection classification {expected}", _finalizer_rejection_bucket(reason) == expected)
