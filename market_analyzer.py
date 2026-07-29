@@ -109,6 +109,9 @@ FINALIZER_DIAGNOSTICS = {
     "approved_reduced_size": 0,
     "approved_early_confirmation": 0,
     "approved_range_macro": 0,
+    "hard_armed_rejected": 0,
+    "soft_armed_approved": 0,
+    "confirmed_trigger_normal_flow": 0,
     "rejection_breakdown": {
         "ENTRY_MOVED": 0,
         "SETUP_ARMED": 0,
@@ -168,6 +171,9 @@ def reset_signal_scan_diagnostics():
         "approved_reduced_size": 0,
         "approved_early_confirmation": 0,
         "approved_range_macro": 0,
+        "hard_armed_rejected": 0,
+        "soft_armed_approved": 0,
+        "confirmed_trigger_normal_flow": 0,
         "rejection_breakdown": {key: 0 for key in FINALIZER_REJECTION_CATEGORIES},
     })
     SIGNAL_SCAN_DIAGNOSTICS.update({
@@ -297,7 +303,10 @@ def _log_finalizer_diagnostic_summary():
             f"approved_normal={FINALIZER_DIAGNOSTICS.get('approved_normal', 0)} "
             f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
             f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
-            f"approved_range_macro={FINALIZER_DIAGNOSTICS.get('approved_range_macro', 0)}"
+            f"approved_range_macro={FINALIZER_DIAGNOSTICS.get('approved_range_macro', 0)} "
+            f"hard_armed_rejected={FINALIZER_DIAGNOSTICS.get('hard_armed_rejected', 0)} "
+            f"soft_armed_approved={FINALIZER_DIAGNOSTICS.get('soft_armed_approved', 0)} "
+            f"confirmed_trigger_normal_flow={FINALIZER_DIAGNOSTICS.get('confirmed_trigger_normal_flow', 0)}"
         )
     except Exception:
         pass
@@ -407,6 +416,9 @@ def _log_final_production_calibration_summary(selected_for_delivery=0, signals_s
             f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
             f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
             f"approved_range_macro={FINALIZER_DIAGNOSTICS.get('approved_range_macro', 0)} "
+            f"hard_armed_rejected={FINALIZER_DIAGNOSTICS.get('hard_armed_rejected', 0)} "
+            f"soft_armed_approved={FINALIZER_DIAGNOSTICS.get('soft_armed_approved', 0)} "
+            f"confirmed_trigger_normal_flow={FINALIZER_DIAGNOSTICS.get('confirmed_trigger_normal_flow', 0)} "
             f"finalized_total={finalized_total} "
             f"selected_for_delivery={selected} "
             f"signals_sent={sent} "
@@ -5351,19 +5363,47 @@ def futures_trigger_context(symbol, direction, trigger_df, setup_info):
         return {"ok": False, "stage": "ARMED", "reason": f"futures trigger error: {e}"}
 
 
-def _log_setup_armed_decision_trace(symbol, timeframe, armed_type, higher_tf_confirmed, lower_tf_confirmed, state_30m, hard_conflict, entry_zone_touched, confidence, decision, reason):
+def _log_setup_armed_evaluation_trace(
+    symbol,
+    timeframe,
+    direction,
+    setup_stage_30m,
+    higher_tf_confirmed,
+    lower_tf_data_available,
+    lower_tf_direction_aligned,
+    lower_tf_soft_trigger,
+    lower_tf_trigger_confirmed,
+    trigger_stage,
+    entry_zone_touched,
+    entry_zone_near,
+    entry_distance_pct,
+    entry_tolerance_pct,
+    hard_conflict,
+    confidence,
+    rr,
+    decision,
+    reason,
+):
     try:
         print(
-            "SETUP_ARMED_DECISION_TRACE "
+            "SETUP_ARMED_EVALUATION_TRACE "
             f"symbol={symbol} "
             f"timeframe={timeframe} "
-            f"armed_type={armed_type} "
+            f"direction={direction} "
+            f"setup_stage_30m={setup_stage_30m} "
             f"higher_tf_confirmed={bool(higher_tf_confirmed)} "
-            f"lower_tf_confirmed={bool(lower_tf_confirmed)} "
-            f"30m_state={state_30m} "
-            f"hard_conflict={bool(hard_conflict)} "
+            f"lower_tf_data_available={bool(lower_tf_data_available)} "
+            f"lower_tf_direction_aligned={bool(lower_tf_direction_aligned)} "
+            f"lower_tf_soft_trigger={bool(lower_tf_soft_trigger)} "
+            f"lower_tf_trigger_confirmed={bool(lower_tf_trigger_confirmed)} "
+            f"trigger_stage={trigger_stage} "
             f"entry_zone_touched={bool(entry_zone_touched)} "
+            f"entry_zone_near={bool(entry_zone_near)} "
+            f"entry_distance_pct={round(_safe_float(entry_distance_pct), 5)} "
+            f"entry_tolerance_pct={round(_safe_float(entry_tolerance_pct), 5)} "
+            f"hard_conflict={bool(hard_conflict)} "
             f"confidence={confidence} "
+            f"rr={rr} "
             f"decision={decision} "
             f"reason={str(reason).replace(' ', '_')}"
         )
@@ -5374,41 +5414,118 @@ def _log_setup_armed_decision_trace(symbol, timeframe, armed_type, higher_tf_con
 def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger, trigger_df):
     try:
         confidence = _safe_float(signal.get("playbook_confidence", signal.get("confidence")), 0)
-        hard_conflict = bool(bias.get("hard_conflict"))
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        hard_conflict = bool(bias.get("hard_conflict")) or str((signal.get("expert_mtf") or {}).get("state") or "").upper() == "HARD_CONFLICT"
         higher_tf_confirmed = bool(bias.get("ok")) and not hard_conflict
-        lower_tf_direction = _expert_tf_direction(trigger_df) if trigger_df is not None and len(trigger_df) >= 80 else "UNKNOWN"
-        lower_tf_confirmed = (direction == "LONG" and lower_tf_direction == "BULL") or (direction == "SHORT" and lower_tf_direction == "BEAR")
-        atr_val = _futures_atr(trigger_df) if trigger_df is not None else 0.0
-        close = _safe_float(trigger_df["close"].iloc[-1]) if trigger_df is not None and len(trigger_df) else 0.0
+        lower_tf_data_available = trigger_df is not None and len(trigger_df) >= 80
+        lower_tf_direction = _expert_tf_direction(trigger_df) if lower_tf_data_available else "UNKNOWN"
+        lower_tf_direction_aligned = (direction == "LONG" and lower_tf_direction == "BULL") or (direction == "SHORT" and lower_tf_direction == "BEAR")
+        atr_val = _futures_atr(trigger_df) if lower_tf_data_available else 0.0
+        close = _safe_float(trigger_df["close"].iloc[-1]) if lower_tf_data_available else 0.0
+        last = trigger_df.iloc[-1] if lower_tf_data_available else {}
+        prev = trigger_df.iloc[-2] if lower_tf_data_available else {}
         reference = _safe_float(setup.get("support") if direction == "LONG" else setup.get("resistance"), 0.0)
         if reference <= 0:
             reference = _safe_float(setup.get("recent_low") if direction == "LONG" else setup.get("recent_high"), 0.0)
-        entry_zone_touched = bool(reference and atr_val and abs(close - reference) <= max(atr_val * 1.0, close * 0.006))
+        candle_high = _safe_float(last.get("high") if hasattr(last, "get") else 0)
+        candle_low = _safe_float(last.get("low") if hasattr(last, "get") else 0)
+        candle_open = _safe_float(last.get("open") if hasattr(last, "get") else 0)
+        prev_close = _safe_float(prev.get("close") if hasattr(prev, "get") else close)
+        entry_distance = abs(close - reference) if reference and close else 0.0
+        entry_tolerance = max(atr_val * 1.0, close * 0.006) if close else 0.0
+        entry_distance_pct = (entry_distance / close) * 100 if close else 0.0
+        entry_tolerance_pct = (entry_tolerance / close) * 100 if close else 0.0
+        entry_zone_touched = bool(reference and candle_low and candle_high and candle_low <= reference <= candle_high)
+        entry_zone_near = bool(reference and entry_tolerance and entry_distance <= entry_tolerance)
+        candle_direction_aligned = (
+            (direction == "LONG" and (close >= candle_open or close >= prev_close))
+            or (direction == "SHORT" and (close <= candle_open or close <= prev_close))
+        )
+        try:
+            rsi_now = _safe_float(rsi(trigger_df).iloc[-1], 50) if lower_tf_data_available else 50
+            ema20v = _safe_float(ema(trigger_df, 20).iloc[-1], 0) if lower_tf_data_available else 0
+            ema50v = _safe_float(ema(trigger_df, 50).iloc[-1], 0) if lower_tf_data_available else 0
+        except Exception:
+            rsi_now, ema20v, ema50v = 50, 0, 0
+        momentum_turn = (
+            (direction == "LONG" and ema20v >= ema50v * 0.99 and 42 <= rsi_now <= 72)
+            or (direction == "SHORT" and ema20v <= ema50v * 1.01 and 28 <= rsi_now <= 58)
+        )
+        lower_tf_soft_trigger = bool(candle_direction_aligned or momentum_turn or entry_zone_near)
+        trigger_stage = str(trigger.get("stage") or "UNKNOWN").upper()
+        trigger_missing = trigger_stage == "ARMED" and ("UNAVAILABLE" in str(trigger.get("reason", "")).upper() or "INVALID 15M" in str(trigger.get("reason", "")).upper())
+        lower_tf_trigger_confirmed = bool(trigger.get("ok"))
         reason = trigger.get("reason") or "15m trigger still armed"
         allowed = (
             higher_tf_confirmed
-            and lower_tf_confirmed
+            and lower_tf_data_available
+            and lower_tf_direction_aligned
+            and lower_tf_soft_trigger
+            and not lower_tf_trigger_confirmed
             and setup.get("stage") == "CONFIRMED"
             and not hard_conflict
-            and entry_zone_touched
+            and (entry_zone_touched or entry_zone_near)
             and confidence >= 80
-            and trigger.get("stage") == "ARMED"
+            and rr >= FUTURES_MIN_RR
+            and not bool(signal.get("stale_entry"))
+            and not bool(signal.get("fake_breakout"))
+            and not bool(signal.get("liquidity_hard_reject"))
+            and trigger_stage in {"ARMED", "SOFT_CONFIRMATION"}
+            and not trigger_missing
         )
-        _log_setup_armed_decision_trace(
+        decision = "SOFT_ARMED_EARLY_APPROVAL" if allowed else "HARD_ARMED_REJECT"
+        reject_reason = "soft_15m_trigger_with_confirmed_30m_setup" if allowed else reason
+        if not higher_tf_confirmed:
+            reject_reason = "higher_timeframe_not_confirmed"
+        elif not lower_tf_data_available:
+            reject_reason = "trigger_data_missing"
+        elif not lower_tf_direction_aligned:
+            reject_reason = "15m_direction_opposite"
+        elif setup.get("stage") != "CONFIRMED":
+            reject_reason = "30m_setup_not_confirmed"
+        elif hard_conflict:
+            reject_reason = "hard_mtf_conflict"
+        elif confidence < 80:
+            reject_reason = "confidence_below_80"
+        elif rr < FUTURES_MIN_RR:
+            reject_reason = "rr_below_minimum"
+        elif not (entry_zone_touched or entry_zone_near):
+            reject_reason = "entry_zone_not_touched_or_near"
+        elif trigger_missing:
+            reject_reason = "trigger_missing"
+        elif not lower_tf_soft_trigger:
+            reject_reason = "no_soft_trigger_evidence"
+        elif bool(signal.get("stale_entry")):
+            reject_reason = "stale_entry"
+        elif bool(signal.get("liquidity_hard_reject")):
+            reject_reason = "liquidity_hard_reject"
+        elif bool(signal.get("fake_breakout")):
+            reject_reason = "fake_breakout"
+        _log_setup_armed_evaluation_trace(
             symbol,
             FUTURES_TRIGGER_TIMEFRAME,
-            "SOFT_ARMED" if allowed else "HARD_ARMED",
-            higher_tf_confirmed,
-            lower_tf_confirmed,
+            direction,
             setup.get("stage"),
-            hard_conflict,
+            higher_tf_confirmed,
+            lower_tf_data_available,
+            lower_tf_direction_aligned,
+            lower_tf_soft_trigger,
+            lower_tf_trigger_confirmed,
+            trigger_stage,
             entry_zone_touched,
+            entry_zone_near,
+            entry_distance_pct,
+            entry_tolerance_pct,
+            hard_conflict,
             confidence,
-            "PASS" if allowed else "REJECT",
-            "early confirmation approval" if allowed else reason,
+            rr,
+            decision,
+            reject_reason,
         )
         if not allowed:
+            _finalizer_diag_inc("hard_armed_rejected")
             return None
+        _finalizer_diag_inc("soft_armed_approved")
         return {
             "ok": True,
             "trigger": "15m soft confirmation",
@@ -5420,9 +5537,18 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
             "volume_score": _safe_float(setup.get("volume_score"), 45),
             "rsi": _safe_float(rsi(trigger_df).iloc[-1], 50) if trigger_df is not None else 50,
             "approval_type": "EARLY_CONFIRMATION_APPROVAL",
+            "approval_reason": "soft_15m_trigger_with_confirmed_30m_setup",
+            "risk_tier": "ELEVATED",
+            "size_multiplier": AI_REDUCED_SIZE_MULTIPLIER,
         }
     except Exception as e:
-        _log_setup_armed_decision_trace(symbol, FUTURES_TRIGGER_TIMEFRAME, "HARD_ARMED", False, False, setup.get("stage") if isinstance(setup, dict) else "UNKNOWN", True, False, signal.get("confidence"), "REJECT", f"soft armed error: {e}")
+        _finalizer_diag_inc("hard_armed_rejected")
+        _log_setup_armed_evaluation_trace(
+            symbol, FUTURES_TRIGGER_TIMEFRAME, direction,
+            setup.get("stage") if isinstance(setup, dict) else "UNKNOWN",
+            False, False, False, False, False, "ERROR", False, False, 0, 0, True,
+            signal.get("confidence"), signal.get("risk_reward"), "HARD_ARMED_REJECT", f"soft armed error: {e}"
+        )
         return None
 
 
@@ -5475,6 +5601,8 @@ def futures_apply_execution_frames(signal):
                 adaptive_setup_lifecycle(symbol, "ARMED", trigger.get("reason"))
                 return None, f"SETUP_ARMED: {trigger.get('reason')}"
             return None, trigger.get("reason")
+        if trigger.get("ok") and trigger.get("approval_type") != "EARLY_CONFIRMATION_APPROVAL":
+            _finalizer_diag_inc("confirmed_trigger_normal_flow")
 
         entry = _safe_float(trigger.get("entry"))
         atr_val = max(_safe_float(trigger.get("atr")), _safe_float(setup.get("atr")), entry * 0.004)

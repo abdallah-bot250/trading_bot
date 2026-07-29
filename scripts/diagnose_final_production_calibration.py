@@ -63,6 +63,21 @@ def bullish_frame(rows=90):
     return pd.DataFrame(data)
 
 
+def bearish_frame(rows=90):
+    data = []
+    price = 110.0
+    for i in range(rows):
+        price -= 0.08
+        data.append({
+            "open": price + 0.05,
+            "high": price + 0.12,
+            "low": price - 0.12,
+            "close": price,
+            "volume": 100000 + i,
+        })
+    return pd.DataFrame(data)
+
+
 def main():
     sig = base_signal(confidence_cap_reason="high_risk_cap")
     ok, reason = explain_predict_trade(sig)
@@ -149,6 +164,111 @@ def main():
         None,
     )
     assert_true("missing trigger data remains armed reject", early is None)
+
+    gram_df = bearish_frame()
+    gram_close = float(gram_df["close"].iloc[-1])
+    gram_setup = {"stage": "CONFIRMED", "resistance": gram_close + 0.5, "recent_high": gram_close + 0.5, "volume_score": 55}
+    armed_trigger = {"stage": "ARMED", "reason": "15m trigger not confirmed yet"}
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True},
+        gram_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("GRAM-like soft armed valid becomes early confirmation", bool(early and early.get("approval_type") == "EARLY_CONFIRMATION_APPROVAL" and early.get("size_multiplier") == 0.5))
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True},
+        gram_setup,
+        armed_trigger,
+        bullish_frame(),
+    )
+    assert_true("soft armed opposite 15m direction rejects", early is None)
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=79, playbook_confidence=79, risk_reward=1.8),
+        {"ok": True},
+        gram_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft armed confidence 79 rejects", early is None)
+
+    far_setup = {"stage": "CONFIRMED", "resistance": gram_close + 5.0, "recent_high": gram_close + 5.0, "volume_score": 55}
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True},
+        far_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft armed far from entry zone rejects", early is None)
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True, "hard_conflict": True},
+        gram_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft armed hard MTF conflict rejects", early is None)
+
+    confirmed_trigger = {"ok": True, "stage": "CONFIRMED", "reason": "full trigger confirmed"}
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True},
+        gram_setup,
+        confirmed_trigger,
+        gram_df,
+    )
+    assert_true("fully confirmed trigger does not use early approval", early is None)
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8, stale_entry=True),
+        {"ok": True},
+        gram_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft armed stale entry rejects", early is None)
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8, liquidity_hard_reject=True),
+        {"ok": True},
+        gram_setup,
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft armed hard liquidity reject blocks", early is None)
+
+    early = _soft_armed_futures_approval(
+        "GRAMUSDT",
+        "SHORT",
+        base_signal(direction="SHORT", entry=100, tp=96, tp1=98, sl=102, confidence=86, playbook_confidence=86, risk_reward=1.8),
+        {"ok": True},
+        {**gram_setup, "stage": "WATCHING"},
+        armed_trigger,
+        gram_df,
+    )
+    assert_true("soft trigger without confirmed 30m setup rejects", early is None)
 
     candidates = []
     for i, score in enumerate([99, 96, 94, 91, 88], start=1):
