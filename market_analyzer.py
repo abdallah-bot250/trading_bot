@@ -100,6 +100,16 @@ FINALIZER_DIAGNOSTICS = {
     "finalized_spot": 0,
     "finalized_futures": 0,
     "sent_to_sender": 0,
+    "rejection_breakdown": {
+        "ENTRY_MOVED": 0,
+        "SETUP_ARMED": 0,
+        "RISK_SCORE": 0,
+        "MISSING_MTF": 0,
+        "LOW_VOLUME": 0,
+        "LOW_LIQUIDITY": 0,
+        "RR_FILTER": 0,
+        "OTHER": 0,
+    },
 }
 SIGNAL_SUPPLY_24H = {
     "started_at": time.time(),
@@ -247,15 +257,78 @@ def _log_finalizer_diagnostic_summary():
         pass
 
 
+def _finalizer_rejection_bucket(reason):
+    text = str(reason or "").upper()
+    if "ENTRY_MOVED" in text or "LATE_ENTRY" in text or "ENTRY MANAGER REJECTED" in text:
+        return "ENTRY_MOVED"
+    if "SETUP_ARMED" in text:
+        return "SETUP_ARMED"
+    if "RISK SCORE" in text:
+        return "RISK_SCORE"
+    if "4H/1H DATA UNAVAILABLE" in text or "MTF DATA" in text or "FUTURES MTF DATA" in text:
+        return "MISSING_MTF"
+    if "LOW_LIQUIDITY" in text or "LIQUIDITY TOO WEAK" in text:
+        return "LOW_LIQUIDITY"
+    if "LOW_VOLUME" in text or "VOLUME TOO WEAK" in text or "30M VOLUME/LIQUIDITY" in text:
+        return "LOW_VOLUME"
+    if "RR " in text or "RISK/REWARD" in text or "NO SAFE 15M/30M RR ROOM" in text or "MINIMUM RR" in text:
+        return "RR_FILTER"
+    return "OTHER"
+
+
+def _finalizer_diag_rejection_breakdown(reason):
+    try:
+        bucket = _finalizer_rejection_bucket(reason)
+        breakdown = FINALIZER_DIAGNOSTICS.setdefault("rejection_breakdown", {})
+        for key in ["ENTRY_MOVED", "SETUP_ARMED", "RISK_SCORE", "MISSING_MTF", "LOW_VOLUME", "LOW_LIQUIDITY", "RR_FILTER", "OTHER"]:
+            breakdown.setdefault(key, 0)
+        breakdown[bucket] = int(breakdown.get(bucket, 0) or 0) + 1
+    except Exception:
+        pass
+
+
+def _log_finalizer_rejection_report():
+    try:
+        breakdown = FINALIZER_DIAGNOSTICS.get("rejection_breakdown", {}) or {}
+        total_candidates = int(FINALIZER_DIAGNOSTICS.get("accepted_from_playbook", 0) or 0)
+        finalized = int(FINALIZER_DIAGNOSTICS.get("finalized_spot", 0) or 0) + int(FINALIZER_DIAGNOSTICS.get("finalized_futures", 0) or 0)
+        sent = int(FINALIZER_DIAGNOSTICS.get("sent_to_sender", 0) or 0)
+        acceptance_rate = round((sent / total_candidates) * 100, 2) if total_candidates else 0.0
+        top_reason = "NONE"
+        if breakdown:
+            top_reason = max(breakdown.items(), key=lambda item: int(item[1] or 0))[0]
+        print(
+            "FINALIZER_REJECTION_REPORT "
+            f"ENTRY_MOVED={int(breakdown.get('ENTRY_MOVED', 0) or 0)} "
+            f"SETUP_ARMED={int(breakdown.get('SETUP_ARMED', 0) or 0)} "
+            f"RISK_SCORE={int(breakdown.get('RISK_SCORE', 0) or 0)} "
+            f"MISSING_MTF={int(breakdown.get('MISSING_MTF', 0) or 0)} "
+            f"LOW_VOLUME={int(breakdown.get('LOW_VOLUME', 0) or 0)} "
+            f"LOW_LIQUIDITY={int(breakdown.get('LOW_LIQUIDITY', 0) or 0)} "
+            f"RR_FILTER={int(breakdown.get('RR_FILTER', 0) or 0)} "
+            f"OTHER={int(breakdown.get('OTHER', 0) or 0)} "
+            f"total_candidates={total_candidates} "
+            f"accepted_from_playbook={total_candidates} "
+            f"finalized={finalized} "
+            f"sent={sent} "
+            f"acceptance_rate={acceptance_rate}% "
+            f"top_reason={top_reason}"
+        )
+    except Exception:
+        pass
+
+
 def _finalizer_reject(reason):
     text = str(reason or "")
     if "risk score" in text.lower():
         _finalizer_diag_inc("rejected_by_risk_score")
-    elif "4H/1H data unavailable" in text or "MTF data unavailable" in text:
+    elif "4H/1H data unavailable" in text or "MTF data unavailable" in text or "futures MTF data" in text:
         _finalizer_diag_inc("rejected_by_missing_mtf")
     else:
         _finalizer_diag_inc("rejected_by_other_finalizer_reason")
+    _finalizer_diag_rejection_breakdown(reason)
     _log_finalizer_diagnostic_summary()
+    _log_finalizer_rejection_report()
     return None, reason
 
 
@@ -2137,6 +2210,49 @@ def _log_futures_mtf_unavailable_diagnostic(symbol, frames):
         print(f"FUTURES_MTF_DATA_DIAGNOSTIC {json.dumps(diagnostics, sort_keys=True)}")
     except Exception as e:
         print(f"FUTURES_MTF_DATA_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
+
+
+def _futures_mtf_frame_status(df, timeframe, minimum_rows=100):
+    try:
+        rows = 0 if df is None else len(df)
+        if df is None:
+            return {"timeframe": timeframe, "ok": False, "rows": 0, "reason": "dataframe_none"}
+        if rows <= 0:
+            return {"timeframe": timeframe, "ok": False, "rows": rows, "reason": "dataframe_empty"}
+        expected_columns = {"time", "open", "high", "low", "close", "volume"}
+        missing_columns = sorted(expected_columns.difference(set(getattr(df, "columns", []))))
+        if missing_columns:
+            return {
+                "timeframe": timeframe,
+                "ok": False,
+                "rows": rows,
+                "reason": "schema_missing_" + ",".join(missing_columns),
+            }
+        if rows < minimum_rows:
+            return {
+                "timeframe": timeframe,
+                "ok": False,
+                "rows": rows,
+                "reason": f"insufficient_candles rows={rows} required={minimum_rows}",
+            }
+        numeric_columns = ["open", "high", "low", "close", "volume"]
+        invalid_columns = []
+        for column in numeric_columns:
+            try:
+                if df[column].tail(minimum_rows).isna().any():
+                    invalid_columns.append(column)
+            except Exception:
+                invalid_columns.append(column)
+        if invalid_columns:
+            return {
+                "timeframe": timeframe,
+                "ok": False,
+                "rows": rows,
+                "reason": "invalid_numeric_columns_" + ",".join(sorted(set(invalid_columns))),
+            }
+        return {"timeframe": timeframe, "ok": True, "rows": rows, "reason": "ok"}
+    except Exception as e:
+        return {"timeframe": timeframe, "ok": False, "rows": 0, "reason": f"status_error:{type(e).__name__}"}
 
 
 def _safe_ema_value(df, period):
@@ -4514,9 +4630,22 @@ def futures_bias_context(symbol):
     try:
         df_4h = cached_market_data(symbol, "4h", 260)
         df_1h = cached_market_data(symbol, "1h", 260)
-        if df_4h is None or len(df_4h) < 100 or df_1h is None or len(df_1h) < 100:
+        status_4h = _futures_mtf_frame_status(df_4h, "4h", minimum_rows=100)
+        status_1h = _futures_mtf_frame_status(df_1h, "1h", minimum_rows=100)
+        if not status_4h.get("ok") or not status_1h.get("ok"):
             _log_futures_mtf_unavailable_diagnostic(symbol, {"4h": df_4h, "1h": df_1h})
-            return {"ok": False, "reason": "futures 4H/1H data unavailable", "macro": "UNKNOWN", "bias": "UNKNOWN"}
+            invalid_reasons = []
+            if not status_4h.get("ok"):
+                invalid_reasons.append(f"4H {status_4h.get('reason')} rows={status_4h.get('rows')}")
+            if not status_1h.get("ok"):
+                invalid_reasons.append(f"1H {status_1h.get('reason')} rows={status_1h.get('rows')}")
+            return {
+                "ok": False,
+                "reason": "futures MTF data invalid: " + "; ".join(invalid_reasons),
+                "macro": "UNKNOWN",
+                "bias": "UNKNOWN",
+                "mtf_data_status": {"4h": status_4h, "1h": status_1h},
+            }
         macro = _expert_tf_direction(df_4h)
         bias = _expert_tf_direction(df_1h)
         if macro == "UNKNOWN" or bias == "UNKNOWN":
@@ -4556,6 +4685,55 @@ def _futures_level_context(df):
         }
     except Exception:
         return {"close": 0, "support": None, "resistance": None, "recent_high": None, "recent_low": None, "levels": {}}
+
+
+def _log_futures_30m_volume_liquidity_rejection(symbol, direction, setup_df, volume_profile, volume_score, minimum_required=40):
+    try:
+        closed_df = closed_candle_frame(setup_df)
+        current_closed_volume = volume_profile.get("current_closed_volume")
+        average_volume_20 = volume_profile.get("average_volume_20")
+        volume_ratio = volume_profile.get("volume_ratio")
+        liquidity_components = {}
+        try:
+            if closed_df is not None and len(closed_df) >= 30:
+                context = _futures_level_context(closed_df)
+                regime_stub = {
+                    "close": context.get("close"),
+                    "support": context.get("support"),
+                    "resistance": context.get("resistance"),
+                    "recent_high": context.get("recent_high"),
+                    "recent_low": context.get("recent_low"),
+                    "atr": _futures_atr(closed_df),
+                }
+                liquidity_components = adaptive_liquidity_map(closed_df, regime_stub)
+        except Exception as liquidity_error:
+            liquidity_components = {"liquidity_error": type(liquidity_error).__name__}
+        factors = []
+        if _safe_float(volume_score) < minimum_required:
+            factors.append("volume_score_below_threshold")
+        if _safe_float(liquidity_components.get("liquidity_score"), minimum_required) < minimum_required:
+            factors.append("liquidity_score_below_threshold")
+        print(
+            "FUTURES_30M_VOLUME_LIQUIDITY_REJECTION "
+            f"symbol={symbol} "
+            f"direction={direction} "
+            f"timeframe={FUTURES_SETUP_TIMEFRAME} "
+            f"volume_score={round(_safe_float(volume_score), 2)} "
+            f"minimum_required={minimum_required} "
+            f"volume_ratio={volume_ratio} "
+            f"volume_state={volume_profile.get('volume_state')} "
+            f"current_closed_volume={current_closed_volume} "
+            f"average_volume_20={average_volume_20} "
+            f"data_source={volume_profile.get('data_source')} "
+            f"liquidity_score={liquidity_components.get('liquidity_score')} "
+            f"liquidity_context={liquidity_components.get('liquidity_context')} "
+            f"liquidity_reason={liquidity_components.get('liquidity_reason')} "
+            f"rejection_factor_count={len(factors)} "
+            f"rejection_type={'single_condition' if len(factors) <= 1 else 'multiple_factors'} "
+            f"rejection_factors={','.join(factors) if factors else 'none'}"
+        )
+    except Exception as e:
+        print(f"FUTURES_30M_VOLUME_LIQUIDITY_REJECTION_ERROR symbol={symbol} error={type(e).__name__}")
 
 
 def futures_setup_context(symbol, direction, bias, setup_df):
@@ -4630,6 +4808,7 @@ def futures_setup_context(symbol, direction, bias, setup_df):
             adaptive_setup_lifecycle(symbol, "ARMED", "30m setup exists only as watchlist; no confirmed retest/pullback/rejection")
             return {"ok": False, "stage": "ARMED", "reason": "30m setup without confirmed retest/pullback/rejection"}
         if volume_score < 40:
+            _log_futures_30m_volume_liquidity_rejection(symbol, direction, setup_df, volume_profile, volume_score, minimum_required=40)
             return {"ok": False, "stage": "WATCHING", "reason": f"30m volume/liquidity too weak score={round(volume_score, 1)}"}
         return {
             "ok": True,
