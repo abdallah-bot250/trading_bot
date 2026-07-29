@@ -69,6 +69,7 @@ FUTURES_MAX_ENTRY_ATR_DISTANCE = float(os.environ.get("FUTURES_MAX_ENTRY_ATR_DIS
 FUTURES_MAX_IMPULSE_ATR = float(os.environ.get("FUTURES_MAX_IMPULSE_ATR", "1.85"))
 FUTURES_MIN_TP1_ATR_ROOM = float(os.environ.get("FUTURES_MIN_TP1_ATR_ROOM", "0.65"))
 FUTURES_SIGNAL_EXPIRY_MINUTES = int(os.environ.get("FUTURES_SIGNAL_EXPIRY_MINUTES", "45"))
+AI_REDUCED_SIZE_MULTIPLIER = 0.5
 def _env_int(name, default, minimum=None, maximum=None):
     try:
         value = int(str(os.environ.get(name, default)).strip())
@@ -81,6 +82,7 @@ def _env_int(name, default, minimum=None, maximum=None):
     return value
 
 
+MAX_FINAL_SIGNALS_PER_SCAN = _env_int("MAX_FINAL_SIGNALS_PER_SCAN", 3, minimum=1, maximum=10)
 MAX_DYNAMIC_SYMBOLS = _env_int("MAX_DYNAMIC_SYMBOLS", 120, minimum=0, maximum=500)
 MIN_DYNAMIC_SYMBOLS = _env_int("MIN_DYNAMIC_SYMBOLS", 20, minimum=1, maximum=500)
 MIN_DYNAMIC_QUOTE_VOLUME = float(os.environ.get("MIN_DYNAMIC_QUOTE_VOLUME", "2000000"))
@@ -100,6 +102,12 @@ FINALIZER_DIAGNOSTICS = {
     "finalized_spot": 0,
     "finalized_futures": 0,
     "sent_to_sender": 0,
+    "rejected_hard_safety": 0,
+    "rejected_duplicate_penalty": 0,
+    "approved_normal": 0,
+    "approved_reduced_size": 0,
+    "approved_early_confirmation": 0,
+    "approved_range_macro": 0,
     "rejection_breakdown": {
         "ENTRY_MOVED": 0,
         "SETUP_ARMED": 0,
@@ -143,6 +151,23 @@ KNOWN_PROBLEMATIC_BASE_ASSETS = {
 def reset_signal_scan_diagnostics():
     SIGNAL_SCAN_DIAGNOSTICS.clear()
     SIGNAL_SCAN_UNIQUE_SYMBOLS.clear()
+    FINALIZER_DIAGNOSTICS.clear()
+    FINALIZER_DIAGNOSTICS.update({
+        "accepted_from_playbook": 0,
+        "rejected_by_risk_score": 0,
+        "rejected_by_missing_mtf": 0,
+        "rejected_by_other_finalizer_reason": 0,
+        "finalized_spot": 0,
+        "finalized_futures": 0,
+        "sent_to_sender": 0,
+        "rejected_hard_safety": 0,
+        "rejected_duplicate_penalty": 0,
+        "approved_normal": 0,
+        "approved_reduced_size": 0,
+        "approved_early_confirmation": 0,
+        "approved_range_macro": 0,
+        "rejection_breakdown": {key: 0 for key in FINALIZER_REJECTION_CATEGORIES},
+    })
     SIGNAL_SCAN_DIAGNOSTICS.update({
         "scan_cycle_id": f"{int(time.time() * 1000)}",
         "scanned": 0,
@@ -152,7 +177,11 @@ def reset_signal_scan_diagnostics():
         "setups_confirmed": 0,
         "entry_confirmations_passed": 0,
         "candidates_built": 0,
+        "playbook_candidates_built": 0,
+        "finalizer_candidates_received": 0,
         "finalized_candidates": 0,
+        "final_signals_selected": 0,
+        "signals_sent": 0,
         "rejections_by_code": {},
         "mtf_hard_conflict": 0,
         "mtf_soft_conflict": 0,
@@ -259,7 +288,122 @@ def _log_finalizer_diagnostic_summary():
             f"rejected_by_other_finalizer_reason={FINALIZER_DIAGNOSTICS.get('rejected_by_other_finalizer_reason', 0)} "
             f"finalized_spot={FINALIZER_DIAGNOSTICS.get('finalized_spot', 0)} "
             f"finalized_futures={FINALIZER_DIAGNOSTICS.get('finalized_futures', 0)} "
-            f"sent_to_sender={FINALIZER_DIAGNOSTICS.get('sent_to_sender', 0)}"
+            f"sent_to_sender={FINALIZER_DIAGNOSTICS.get('sent_to_sender', 0)} "
+            f"approved_normal={FINALIZER_DIAGNOSTICS.get('approved_normal', 0)} "
+            f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
+            f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
+            f"approved_range_macro={FINALIZER_DIAGNOSTICS.get('approved_range_macro', 0)}"
+        )
+    except Exception:
+        pass
+
+
+def _finalizer_is_hard_safety_bucket(bucket):
+    return bucket in {
+        "ENTRY_MOVED",
+        "RISK_SCORE",
+        "MISSING_MTF",
+        "LOW_VOLUME",
+        "LOW_LIQUIDITY",
+        "RR_FILTER",
+        "INVALID_SIGNAL_OBJECT",
+    }
+
+
+def _signal_penalty_markers(signal):
+    markers = []
+    try:
+        if str(signal.get("risk_level") or "").upper() == "HIGH":
+            markers.append("HIGH_RISK")
+        if str(signal.get("volume_state") or "").upper() == "THIN":
+            markers.append("LOW_LIQUIDITY")
+        cap = str(signal.get("confidence_cap_reason") or "").upper()
+        if cap:
+            markers.append(cap)
+        if signal.get("mtf_soft_conflict"):
+            markers.append("SOFT_MTF")
+        if str(signal.get("market_regime") or "").upper() in {"HIGH_VOLATILITY", "LOW_VOLATILITY"}:
+            markers.append(str(signal.get("market_regime")).upper())
+        if "UNCLEAR" in str(signal.get("signal_quality_reason") or "").upper():
+            markers.append("UNCLEAR_MACRO")
+    except Exception:
+        pass
+    return markers
+
+
+def _duplicate_penalty_markers(signal, ai_reason=""):
+    duplicates = []
+    try:
+        cap = str(signal.get("confidence_cap_reason") or "").upper()
+        reason = str(ai_reason or "").upper()
+        if str(signal.get("risk_level") or "").upper() == "HIGH" and ("HIGH_RISK" in cap or "HIGH RISK" in reason):
+            duplicates.append("HIGH_RISK")
+        if str(signal.get("volume_state") or "").upper() == "THIN" and ("THIN" in reason or "LOW" in cap):
+            duplicates.append("LOW_LIQUIDITY")
+        if signal.get("mtf_soft_conflict") and "MTF" in cap:
+            duplicates.append("SOFT_MTF")
+    except Exception:
+        pass
+    return duplicates
+
+
+def _log_confidence_calibration_trace(signal, ai_reason="", final_decision="UNKNOWN"):
+    try:
+        quality_report = signal.get("quality_report") or {}
+        playbook_conf = signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence")))
+        quality_conf = quality_report.get("display_confidence", signal.get("display_confidence"))
+        b_plus_conf = signal.get("b_plus_confidence", signal.get("display_confidence"))
+        self_review_conf = signal.get("self_review_confidence", signal.get("display_confidence"))
+        ai_input_conf = signal.get("display_confidence", signal.get("confidence"))
+        penalties = _signal_penalty_markers(signal)
+        duplicate_penalties = _duplicate_penalty_markers(signal, ai_reason)
+        print(
+            "CONFIDENCE_CALIBRATION_TRACE "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={signal.get('pair')} "
+            f"timeframe={signal.get('timeframe')} "
+            f"playbook_confidence={playbook_conf} "
+            f"quality_confidence={quality_conf} "
+            f"b_plus_confidence={b_plus_conf} "
+            f"self_review_confidence={self_review_conf} "
+            f"ai_input_confidence={ai_input_conf} "
+            f"final_confidence={signal.get('display_confidence', signal.get('confidence'))} "
+            f"risk_level={signal.get('risk_level')} "
+            f"penalties={','.join([str(p) for p in penalties]) or 'none'} "
+            f"duplicate_penalties={','.join([str(p) for p in duplicate_penalties]) or 'none'} "
+            f"final_decision={final_decision} "
+            f"ai_reason={str(ai_reason).replace(' ', '_')}"
+        )
+    except Exception:
+        pass
+
+
+def _log_final_production_calibration_summary(selected_for_delivery=0, signals_sent=None):
+    try:
+        accepted = int(FINALIZER_DIAGNOSTICS.get("accepted_from_playbook", 0) or 0)
+        finalized_total = int(FINALIZER_DIAGNOSTICS.get("finalized_spot", 0) or 0) + int(FINALIZER_DIAGNOSTICS.get("finalized_futures", 0) or 0)
+        selected = int(selected_for_delivery or 0)
+        sent = int(signals_sent if signals_sent is not None else FINALIZER_DIAGNOSTICS.get("sent_to_sender", 0) or 0)
+        breakdown = FINALIZER_DIAGNOSTICS.get("rejection_breakdown", {}) or {}
+        top_reason = "NONE"
+        if breakdown:
+            top_reason = max(breakdown.items(), key=lambda item: int(item[1] or 0))[0]
+        acceptance_rate = round((finalized_total / accepted) * 100, 2) if accepted else 0.0
+        print(
+            "FINAL_PRODUCTION_CALIBRATION_SUMMARY "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"accepted_from_playbook={accepted} "
+            f"rejected_hard_safety={FINALIZER_DIAGNOSTICS.get('rejected_hard_safety', 0)} "
+            f"rejected_duplicate_penalty={FINALIZER_DIAGNOSTICS.get('rejected_duplicate_penalty', 0)} "
+            f"approved_normal={FINALIZER_DIAGNOSTICS.get('approved_normal', 0)} "
+            f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
+            f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
+            f"approved_range_macro={FINALIZER_DIAGNOSTICS.get('approved_range_macro', 0)} "
+            f"finalized_total={finalized_total} "
+            f"selected_for_delivery={selected} "
+            f"signals_sent={sent} "
+            f"acceptance_rate={acceptance_rate}% "
+            f"top_rejection_reason={top_reason}"
         )
     except Exception:
         pass
@@ -328,6 +472,8 @@ def _finalizer_diag_rejection_breakdown(reason, stage=None):
         for key in FINALIZER_REJECTION_CATEGORIES:
             breakdown.setdefault(key, 0)
         breakdown[bucket] = int(breakdown.get(bucket, 0) or 0) + 1
+        if _finalizer_is_hard_safety_bucket(bucket):
+            _finalizer_diag_inc("rejected_hard_safety")
         return bucket
     except Exception:
         return "OTHER_UNKNOWN"
@@ -460,10 +606,12 @@ def get_signal_scan_diagnostics(final_signals=None):
     data["unique_symbols_scanned"] = len(SIGNAL_SCAN_UNIQUE_SYMBOLS)
     if final_signals is not None:
         data["final_signals"] = int(final_signals or 0)
+        data["final_signals_selected"] = int(final_signals or 0)
         try:
             SIGNAL_SUPPLY_24H["signals"] = int(final_signals or 0)
         except Exception:
             pass
+        _log_final_production_calibration_summary(selected_for_delivery=int(final_signals or 0))
     _maybe_log_supply_safety_guard()
     return data
 
@@ -2835,6 +2983,52 @@ def _selected_signal_summary(signals):
     ]
 
 
+def _is_reduced_size_signal(signal):
+    try:
+        return (
+            str(signal.get("risk_mode") or "").lower() == "reduced size"
+            or str(signal.get("approval_type") or "").upper() in {"REDUCED_SIZE_APPROVAL", "EARLY_CONFIRMATION_APPROVAL", "RANGE_MACRO_TREND_APPROVAL"}
+            or _safe_float(signal.get("size_multiplier"), 1.0) < 1.0
+        )
+    except Exception:
+        return False
+
+
+def _select_final_delivery_candidates(candidates, limit=3, recently_used=None):
+    try:
+        ordered = list(candidates or [])
+        limit = max(1, min(int(limit or 1), MAX_FINAL_SIGNALS_PER_SCAN))
+        if ordered and all(_is_reduced_size_signal(s) for s in ordered):
+            limit = min(limit, 2)
+        recently_used = set(recently_used or [])
+        selected = []
+        used_symbol_direction = set()
+
+        def try_add(signal, respect_recent=True):
+            pair = signal.get("pair")
+            direction = str(signal.get("direction") or "").upper()
+            key = (pair, direction)
+            if not pair or not direction or key in used_symbol_direction:
+                return False
+            if respect_recent and pair in recently_used:
+                return False
+            selected.append(signal)
+            used_symbol_direction.add(key)
+            return True
+
+        for signal in ordered:
+            if len(selected) >= limit:
+                break
+            try_add(signal, respect_recent=True)
+        for signal in ordered:
+            if len(selected) >= limit:
+                break
+            try_add(signal, respect_recent=False)
+        return selected
+    except Exception:
+        return list(candidates or [])[:max(1, min(int(limit or 1), MAX_FINAL_SIGNALS_PER_SCAN))]
+
+
 # ================= NEWS FILTER =================
 def news_filter():
     try:
@@ -4888,6 +5082,16 @@ def futures_bias_context(symbol):
         if not FUTURES_ALLOW_COUNTER_TREND and ((macro == "BULL" and bias == "BEAR") or (macro == "BEAR" and bias == "BULL")):
             return {"ok": False, "reason": f"MTF conflict 4H={macro} 1H={bias}", "macro": macro, "bias": bias}
         if macro not in ["BULL", "BEAR"]:
+            if macro == "RANGE" and bias in ["BULL", "BEAR"]:
+                return {
+                    "ok": True,
+                    "reason": f"4H RANGE with 1H {bias} directional approval candidate",
+                    "macro": macro,
+                    "bias": bias,
+                    "range_macro_candidate": True,
+                    "df_4h": df_4h,
+                    "df_1h": df_1h,
+                }
             return {"ok": False, "reason": f"unclear 4H macro trend: {macro}", "macro": macro, "bias": bias}
         return {"ok": True, "reason": f"4H={macro} 1H={bias}", "macro": macro, "bias": bias, "df_4h": df_4h, "df_1h": df_1h}
     except Exception as e:
@@ -5139,6 +5343,81 @@ def futures_trigger_context(symbol, direction, trigger_df, setup_info):
         return {"ok": False, "stage": "ARMED", "reason": f"futures trigger error: {e}"}
 
 
+def _log_setup_armed_decision_trace(symbol, timeframe, armed_type, higher_tf_confirmed, lower_tf_confirmed, state_30m, hard_conflict, entry_zone_touched, confidence, decision, reason):
+    try:
+        print(
+            "SETUP_ARMED_DECISION_TRACE "
+            f"symbol={symbol} "
+            f"timeframe={timeframe} "
+            f"armed_type={armed_type} "
+            f"higher_tf_confirmed={bool(higher_tf_confirmed)} "
+            f"lower_tf_confirmed={bool(lower_tf_confirmed)} "
+            f"30m_state={state_30m} "
+            f"hard_conflict={bool(hard_conflict)} "
+            f"entry_zone_touched={bool(entry_zone_touched)} "
+            f"confidence={confidence} "
+            f"decision={decision} "
+            f"reason={str(reason).replace(' ', '_')}"
+        )
+    except Exception:
+        pass
+
+
+def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger, trigger_df):
+    try:
+        confidence = _safe_float(signal.get("playbook_confidence", signal.get("confidence")), 0)
+        hard_conflict = bool(bias.get("hard_conflict"))
+        higher_tf_confirmed = bool(bias.get("ok")) and not hard_conflict
+        lower_tf_direction = _expert_tf_direction(trigger_df) if trigger_df is not None and len(trigger_df) >= 80 else "UNKNOWN"
+        lower_tf_confirmed = (direction == "LONG" and lower_tf_direction == "BULL") or (direction == "SHORT" and lower_tf_direction == "BEAR")
+        atr_val = _futures_atr(trigger_df) if trigger_df is not None else 0.0
+        close = _safe_float(trigger_df["close"].iloc[-1]) if trigger_df is not None and len(trigger_df) else 0.0
+        reference = _safe_float(setup.get("support") if direction == "LONG" else setup.get("resistance"), 0.0)
+        if reference <= 0:
+            reference = _safe_float(setup.get("recent_low") if direction == "LONG" else setup.get("recent_high"), 0.0)
+        entry_zone_touched = bool(reference and atr_val and abs(close - reference) <= max(atr_val * 1.0, close * 0.006))
+        reason = trigger.get("reason") or "15m trigger still armed"
+        allowed = (
+            higher_tf_confirmed
+            and lower_tf_confirmed
+            and setup.get("stage") == "CONFIRMED"
+            and not hard_conflict
+            and entry_zone_touched
+            and confidence >= 80
+            and trigger.get("stage") == "ARMED"
+        )
+        _log_setup_armed_decision_trace(
+            symbol,
+            FUTURES_TRIGGER_TIMEFRAME,
+            "SOFT_ARMED" if allowed else "HARD_ARMED",
+            higher_tf_confirmed,
+            lower_tf_confirmed,
+            setup.get("stage"),
+            hard_conflict,
+            entry_zone_touched,
+            confidence,
+            "PASS" if allowed else "REJECT",
+            "early confirmation approval" if allowed else reason,
+        )
+        if not allowed:
+            return None
+        return {
+            "ok": True,
+            "trigger": "15m soft confirmation",
+            "reason": "15m direction confirms setup but trigger candle is still soft",
+            "entry": close,
+            "atr": atr_val,
+            "support": setup.get("support"),
+            "resistance": setup.get("resistance"),
+            "volume_score": _safe_float(setup.get("volume_score"), 45),
+            "rsi": _safe_float(rsi(trigger_df).iloc[-1], 50) if trigger_df is not None else 50,
+            "approval_type": "EARLY_CONFIRMATION_APPROVAL",
+        }
+    except Exception as e:
+        _log_setup_armed_decision_trace(symbol, FUTURES_TRIGGER_TIMEFRAME, "HARD_ARMED", False, False, setup.get("stage") if isinstance(setup, dict) else "UNKNOWN", True, False, signal.get("confidence"), "REJECT", f"soft armed error: {e}")
+        return None
+
+
 def futures_apply_execution_frames(signal):
     """Validate and rebuild final Futures signal on 30m setup + 15m trigger only."""
     try:
@@ -5153,12 +5432,16 @@ def futures_apply_execution_frames(signal):
             return None, bias.get("reason")
         macro = bias.get("macro")
         one_h = bias.get("bias")
-        if direction == "LONG" and macro != "BULL":
+        range_macro_candidate = bool(bias.get("range_macro_candidate"))
+        directional_anchor = one_h if range_macro_candidate else macro
+        if direction == "LONG" and directional_anchor != "BULL":
             return None, f"4H {macro} blocks LONG futures"
-        if direction == "SHORT" and macro != "BEAR":
+        if direction == "SHORT" and directional_anchor != "BEAR":
             return None, f"4H {macro} blocks SHORT futures"
-        if one_h not in ([macro, "RANGE"]):
+        if not range_macro_candidate and one_h not in ([macro, "RANGE"]):
             return None, f"1H bias {one_h} conflicts with 4H {macro}"
+        if range_macro_candidate and _safe_float(signal.get("playbook_confidence", signal.get("confidence")), 0) < 80:
+            return None, f"unclear 4H macro trend requires confidence >=80: {macro}/{one_h}"
 
         setup_df = cached_market_data(symbol, FUTURES_SETUP_TIMEFRAME, 240)
         trigger_df = cached_market_data(symbol, FUTURES_TRIGGER_TIMEFRAME, 240)
@@ -5169,6 +5452,16 @@ def futures_apply_execution_frames(signal):
                 return None, f"SETUP_ARMED: {setup.get('reason')}"
             return None, setup.get("reason")
         trigger = futures_trigger_context(symbol, direction, trigger_df, setup)
+        if not trigger.get("ok"):
+            if trigger.get("stage") == "ARMED":
+                soft_trigger = _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger, trigger_df)
+                if soft_trigger:
+                    trigger = soft_trigger
+                else:
+                    adaptive_setup_lifecycle(symbol, "ARMED", trigger.get("reason"))
+                    return None, f"SETUP_ARMED: {trigger.get('reason')}"
+            else:
+                return None, trigger.get("reason")
         if not trigger.get("ok"):
             if trigger.get("stage") == "ARMED":
                 adaptive_setup_lifecycle(symbol, "ARMED", trigger.get("reason"))
@@ -5227,6 +5520,14 @@ def futures_apply_execution_frames(signal):
                 f"15m trigger {trigger.get('trigger')}; {trigger.get('reason')}"
             ),
         })
+        if range_macro_candidate:
+            signal["approval_type"] = "RANGE_MACRO_TREND_APPROVAL"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+        if trigger.get("approval_type") == "EARLY_CONFIRMATION_APPROVAL":
+            signal["approval_type"] = "EARLY_CONFIRMATION_APPROVAL"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
         return signal, None
     except Exception as e:
         return None, f"futures execution frame error: {e}"
@@ -6005,6 +6306,8 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "tp3": format_price(levels["tp3"]),
             "sl": format_price(levels["sl"]),
             "confidence": confidence,
+            "playbook_confidence": confidence,
+            "raw_confidence": confidence,
             "trend": detect_trend(df),
             "volume": volume_strength(df),
             "smc": detect_smc(df),
@@ -6041,6 +6344,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
             "breakeven_trigger_r": 0.6,
             "adaptive_playbook": playbook.get("playbook"),
             "setup_lifecycle": "CONFIRMED",
+            "setup_confirmed": True,
             "b_plus_calibration_pending": b_plus_pending,
             "b_plus_mtf_path": bool(expert_mtf.get("b_plus_mtf_path")),
             "b_plus_mtf_reason": expert_mtf.get("reason") if expert_mtf.get("b_plus_mtf_path") else None,
@@ -6077,6 +6381,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         apply_adaptive_confidence_cap(signal, playbook.get("confidence_cap"), f"{playbook.get('playbook')} confidence cap")
         relative_strength_context(symbol, signal)
         adaptive_opportunity_score(signal)
+        _scan_diag_inc("playbook_candidates_built")
         _adaptive_log("PLAYBOOK_SIGNAL_BUILT", symbol=symbol, setup=strategy_name, conf=signal.get("display_confidence", signal.get("confidence")), rr=signal.get("risk_reward"))
         return signal, None, regime_info
     except Exception as e:
@@ -6086,6 +6391,7 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
 def finalize_adaptive_signal(signal, df, paid=True):
     try:
         _finalizer_diag_inc("accepted_from_playbook")
+        _scan_diag_inc("finalizer_candidates_received")
         direction = signal["direction"]
         interval = signal.get("timeframe", "5m")
         entry = _safe_float(signal["entry"])
@@ -6195,8 +6501,25 @@ def finalize_adaptive_signal(signal, df, paid=True):
             ai_ok, ai_reason = explain_predict_trade(signal)
         except Exception:
             ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
+        _log_confidence_calibration_trace(signal, ai_reason, "PASS" if ai_ok else "REJECT")
         if not ai_ok:
             return _finalizer_reject(f"AI model rejected adaptive signal: {ai_reason}", signal, stage="ai_model")
+        approval_type = str(signal.get("approval_type") or "NORMAL_APPROVAL").upper()
+        if approval_type == "REDUCED_SIZE_APPROVAL":
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = signal.get("risk_tier") or signal.get("risk_level") or "ELEVATED"
+            signal["size_multiplier"] = _safe_float(signal.get("size_multiplier"), AI_REDUCED_SIZE_MULTIPLIER) or AI_REDUCED_SIZE_MULTIPLIER
+        elif approval_type == "EARLY_CONFIRMATION_APPROVAL":
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+        elif approval_type == "RANGE_MACRO_TREND_APPROVAL":
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+        else:
+            signal["approval_type"] = "NORMAL_APPROVAL"
+            signal.setdefault("size_multiplier", 1.0)
         managed_signal, entry_reason = professional_entry_manager(signal, df)
         if not managed_signal:
             return _finalizer_reject(entry_reason, signal, stage="professional_entry_manager")
@@ -6205,6 +6528,15 @@ def finalize_adaptive_signal(signal, df, paid=True):
             _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
             return _finalizer_reject(final_reason, managed_signal, stage="fund_manager_review")
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
+        managed_approval_type = str(managed_signal.get("approval_type") or signal.get("approval_type") or "NORMAL_APPROVAL").upper()
+        if managed_approval_type == "REDUCED_SIZE_APPROVAL":
+            _finalizer_diag_inc("approved_reduced_size")
+        elif managed_approval_type == "EARLY_CONFIRMATION_APPROVAL":
+            _finalizer_diag_inc("approved_early_confirmation")
+        elif managed_approval_type == "RANGE_MACRO_TREND_APPROVAL":
+            _finalizer_diag_inc("approved_range_macro")
+        else:
+            _finalizer_diag_inc("approved_normal")
         _scan_diag_inc("finalized_candidates")
         if str(managed_signal.get("type") or trade_type).upper() == "FUTURES":
             _finalizer_diag_inc("finalized_futures")
@@ -6218,6 +6550,23 @@ def finalize_adaptive_signal(signal, df, paid=True):
             signal_object_created=True,
             return_value_is_none=False,
         )
+        try:
+            print(
+                "FINAL_SIGNAL_APPROVED "
+                f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+                f"symbol={managed_signal.get('pair')} "
+                f"timeframe={managed_signal.get('timeframe')} "
+                f"direction={managed_signal.get('direction')} "
+                f"approval_type={managed_signal.get('approval_type', signal.get('approval_type'))} "
+                f"playbook_confidence={managed_signal.get('playbook_confidence', signal.get('playbook_confidence'))} "
+                f"final_confidence={managed_signal.get('display_confidence', managed_signal.get('confidence'))} "
+                f"risk_tier={managed_signal.get('risk_tier', managed_signal.get('risk_level'))} "
+                f"size_multiplier={managed_signal.get('size_multiplier', 1.0)} "
+                f"rr={managed_signal.get('risk_reward')} "
+                f"ranking_score={managed_signal.get('ranking_score', managed_signal.get('opportunity_score', 0))}"
+            )
+        except Exception:
+            pass
         return managed_signal, None
     except Exception as e:
         return _finalizer_reject(f"adaptive finalize error: {e}", signal if isinstance(signal, dict) else None, stage="exception")
@@ -6829,7 +7178,7 @@ def generate_free_signal(symbol, interval="5m"):
 # ================= FREE SIGNALS ONLY =================
 def get_top_free_signals(limit=2):
     global LAST_USED_PAIRS
-    supply_cap = max(1, int(os.environ.get("MAX_CANDIDATES_PER_SCAN", "6") or 6))
+    supply_cap = max(1, min(int(os.environ.get("MAX_CANDIDATES_PER_SCAN", str(MAX_FINAL_SIGNALS_PER_SCAN)) or MAX_FINAL_SIGNALS_PER_SCAN), MAX_FINAL_SIGNALS_PER_SCAN))
     try:
         limit = max(1, min(int(limit), supply_cap, 10))
     except Exception:
@@ -6909,40 +7258,19 @@ def get_top_free_signals(limit=2):
     remaining = [x for x in candidates if x not in top_pool]
     candidates = top_pool + remaining
 
-    best = []
-    used_pairs = set()
-
-    # أول محاولة: استبعاد الأزواج المستخدمة مؤخرًا
-    for s in candidates:
-        if s["pair"] in LAST_USED_PAIRS:
-            continue
-
-        if s["pair"] not in used_pairs:
-            best.append(s)
-            used_pairs.add(s["pair"])
-            record_trade_type(s.get("type"))
-
-            LAST_USED_PAIRS.append(s["pair"])
+    best = _select_final_delivery_candidates(candidates, limit=limit, recently_used=LAST_USED_PAIRS)
+    for s in best:
+        record_trade_type(s.get("type"))
+        if s.get("pair") not in LAST_USED_PAIRS:
+            LAST_USED_PAIRS.append(s.get("pair"))
             if len(LAST_USED_PAIRS) > 6:
                 LAST_USED_PAIRS.pop(0)
-
-        if len(best) >= limit:
-            break
-
-    # لو ماكفوش، رجّع من الباقي عادي
-    if len(best) < limit:
-        for s in candidates:
-            if s["pair"] not in used_pairs:
-                best.append(s)
-                used_pairs.add(s["pair"])
-                record_trade_type(s.get("type"))
-
-            if len(best) >= limit:
-                break
 
     print(f"Top signals selected: {_selected_signal_summary(best)}")
     try:
         _scan_diag_inc("final_signals", len(best))
+        _scan_diag_inc("final_signals_selected", len(best))
+        _scan_diag_inc("signals_sent", len(best))
         for selected in best:
             _finalizer_append_trace(
                 selected,

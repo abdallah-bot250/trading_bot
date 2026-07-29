@@ -1648,6 +1648,14 @@ def format_signal(signal, plan=None):
     setup_line = f"\nStrategy: {setup}" if setup else ""
     confidence_line = f"{confidence}%" if confidence not in (None, "", "N/A") else "N/A"
     risk_value = signal.get("risk_percent") or signal.get("risk") or signal.get("recommended_risk") or "1%"
+    risk_mode_line = ""
+    try:
+        size_multiplier = float(signal.get("size_multiplier") or 1)
+    except Exception:
+        size_multiplier = 1
+    if str(signal.get("risk_mode") or "").lower() == "reduced size" or size_multiplier < 1:
+        pct = int(round((size_multiplier if size_multiplier < 1 else 0.5) * 100))
+        risk_mode_line = f"\nRisk Mode: Reduced Size\nSuggested Position Size: {pct}% of normal"
 
     market_bucket = signal_market_bucket(signal)
     market_details = ""
@@ -1698,7 +1706,7 @@ SL: {signal.get('sl', 'N/A')}
 
 Confidence: {confidence_line}
 Risk: {risk_value}
-RR: {rr if rr not in (None, '', 'N/A') else 'N/A'}{setup_line}
+RR: {rr if rr not in (None, '', 'N/A') else 'N/A'}{risk_mode_line}{setup_line}
 
 Why this trade:
 {why}

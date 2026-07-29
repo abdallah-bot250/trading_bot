@@ -1,6 +1,10 @@
 import numpy as np
 from signal_quality_shared import safe_b_plus_eligibility
 
+AI_NORMAL_APPROVAL_CONFIDENCE = 75
+AI_REDUCED_SIZE_MIN_CONFIDENCE = 70
+AI_REDUCED_SIZE_MULTIPLIER = 0.5
+
 # ================= AI DECISION ENGINE =================
 def predict_trade(signal):
     score = 0
@@ -211,6 +215,21 @@ def explain_predict_trade(signal):
         tf = signal.get("timeframe")
         safe_bplus_ok, safe_bplus_reason = safe_b_plus_eligibility(signal, allow_borderline_score=True)
 
+        mtf_state = str((signal.get("expert_mtf") or {}).get("state") or signal.get("mtf_state") or "").upper()
+        mtf_reason = str((signal.get("expert_mtf") or {}).get("reason") or signal.get("mtf_reason") or "").upper()
+        hard_mtf_conflict = (
+            bool(signal.get("mtf_hard_conflict"))
+            or mtf_state == "HARD_CONFLICT"
+            or "HARD_CONFLICT" in mtf_reason
+        )
+        setup_confirmed = bool(
+            signal.get("setup_confirmed")
+            or signal.get("strategy_name")
+            or signal.get("setup_type")
+            or signal.get("smart_money_setup")
+            or signal.get("futures_30m_setup")
+        )
+
         if entry <= 0 or tp <= 0 or sl <= 0:
             return False, "invalid entry/tp/sl"
         if direction == "LONG" and not (tp > entry and sl < entry):
@@ -221,10 +240,10 @@ def explain_predict_trade(signal):
             return False, "invalid direction"
         if rr and rr < 1.5:
             return False, f"RR {round(rr, 2)} below 1.5"
+        if hard_mtf_conflict:
+            return False, "hard MTF conflict"
         if confidence < 70 and not safe_bplus_ok:
             return False, f"display confidence {round(confidence, 2)} below 70"
-        if risk_level == "HIGH" and confidence < 82:
-            return False, "high risk requires stronger confidence"
         if volume_state == "THIN" and confidence < 78:
             return False, "thin volume requires stronger confirmation"
         if trend_power == "STRONG_BULL" and direction == "SHORT":
@@ -233,8 +252,34 @@ def explain_predict_trade(signal):
             return False, "LONG against strong bear trend"
         if structure == "MID_RANGE" and tf == "5m" and confidence < 82:
             return False, "5m mid-range setup lacks edge"
+        playbook_confidence = float(
+            signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence", confidence))) or 0
+        )
+        if risk_level == "HIGH" and confidence < 82:
+            if (
+                setup_confirmed
+                and playbook_confidence >= 80
+                and confidence >= AI_REDUCED_SIZE_MIN_CONFIDENCE
+            ):
+                signal["approval_type"] = "REDUCED_SIZE_APPROVAL"
+                signal["risk_tier"] = "HIGH"
+                signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+                return True, "REDUCED_SIZE_APPROVAL high risk with confirmed setup"
+            return False, "high risk requires stronger confidence"
         if confidence < 70 and safe_bplus_ok:
             return True, f"approved safe calibrated B+ ({safe_bplus_reason})"
+
+        if confidence >= AI_NORMAL_APPROVAL_CONFIDENCE:
+            signal.setdefault("approval_type", "NORMAL_APPROVAL")
+            signal.setdefault("risk_tier", risk_level or "NORMAL")
+            signal.setdefault("size_multiplier", 1.0)
+            return True, "approved normal confidence"
+
+        if confidence >= AI_REDUCED_SIZE_MIN_CONFIDENCE:
+            signal["approval_type"] = "REDUCED_SIZE_APPROVAL"
+            signal["risk_tier"] = risk_level or "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+            return True, "REDUCED_SIZE_APPROVAL confidence 70-74"
 
         allowed = predict_trade({**signal, "confidence": confidence})
         return (True, "approved") if allowed else (False, "legacy score below threshold")
