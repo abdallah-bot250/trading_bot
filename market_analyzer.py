@@ -108,7 +108,15 @@ FINALIZER_DIAGNOSTICS = {
         "LOW_VOLUME": 0,
         "LOW_LIQUIDITY": 0,
         "RR_FILTER": 0,
-        "OTHER": 0,
+        "UNCLEAR_MACRO_TREND": 0,
+        "QUALITY_REPORT": 0,
+        "B_PLUS_CALIBRATION": 0,
+        "SELF_REVIEW": 0,
+        "AI_MODEL_REJECT": 0,
+        "PROFESSIONAL_ENTRY_MANAGER": 0,
+        "FUND_MANAGER_REVIEW": 0,
+        "INVALID_SIGNAL_OBJECT": 0,
+        "OTHER_UNKNOWN": 0,
     },
 }
 SIGNAL_SUPPLY_24H = {
@@ -257,8 +265,29 @@ def _log_finalizer_diagnostic_summary():
         pass
 
 
-def _finalizer_rejection_bucket(reason):
+FINALIZER_REJECTION_CATEGORIES = [
+    "ENTRY_MOVED",
+    "SETUP_ARMED",
+    "RISK_SCORE",
+    "MISSING_MTF",
+    "LOW_VOLUME",
+    "LOW_LIQUIDITY",
+    "RR_FILTER",
+    "UNCLEAR_MACRO_TREND",
+    "QUALITY_REPORT",
+    "B_PLUS_CALIBRATION",
+    "SELF_REVIEW",
+    "AI_MODEL_REJECT",
+    "PROFESSIONAL_ENTRY_MANAGER",
+    "FUND_MANAGER_REVIEW",
+    "INVALID_SIGNAL_OBJECT",
+    "OTHER_UNKNOWN",
+]
+
+
+def _finalizer_rejection_bucket(reason, stage=None):
     text = str(reason or "").upper()
+    stage_key = str(stage or "").strip().lower()
     if "ENTRY_MOVED" in text or "LATE_ENTRY" in text or "ENTRY MANAGER REJECTED" in text:
         return "ENTRY_MOVED"
     if "SETUP_ARMED" in text:
@@ -267,24 +296,41 @@ def _finalizer_rejection_bucket(reason):
         return "RISK_SCORE"
     if "4H/1H DATA UNAVAILABLE" in text or "MTF DATA" in text or "FUTURES MTF DATA" in text:
         return "MISSING_MTF"
+    if "UNCLEAR 4H" in text or "UNCLEAR FUTURES BIAS" in text or "MACRO TREND" in text:
+        return "UNCLEAR_MACRO_TREND"
     if "LOW_LIQUIDITY" in text or "LIQUIDITY TOO WEAK" in text:
         return "LOW_LIQUIDITY"
     if "LOW_VOLUME" in text or "VOLUME TOO WEAK" in text or "30M VOLUME/LIQUIDITY" in text:
         return "LOW_VOLUME"
     if "RR " in text or "RISK/REWARD" in text or "NO SAFE 15M/30M RR ROOM" in text or "MINIMUM RR" in text:
         return "RR_FILTER"
-    return "OTHER"
+    if stage_key in {"quality_report", "quality_checklist"}:
+        return "QUALITY_REPORT"
+    if stage_key == "b_plus_calibration":
+        return "B_PLUS_CALIBRATION"
+    if stage_key == "self_review":
+        return "SELF_REVIEW"
+    if stage_key == "ai_model":
+        return "AI_MODEL_REJECT"
+    if stage_key == "professional_entry_manager":
+        return "PROFESSIONAL_ENTRY_MANAGER"
+    if stage_key == "fund_manager_review":
+        return "FUND_MANAGER_REVIEW"
+    if stage_key in {"invalid_signal_object", "exception"}:
+        return "INVALID_SIGNAL_OBJECT"
+    return "OTHER_UNKNOWN"
 
 
-def _finalizer_diag_rejection_breakdown(reason):
+def _finalizer_diag_rejection_breakdown(reason, stage=None):
     try:
-        bucket = _finalizer_rejection_bucket(reason)
+        bucket = _finalizer_rejection_bucket(reason, stage)
         breakdown = FINALIZER_DIAGNOSTICS.setdefault("rejection_breakdown", {})
-        for key in ["ENTRY_MOVED", "SETUP_ARMED", "RISK_SCORE", "MISSING_MTF", "LOW_VOLUME", "LOW_LIQUIDITY", "RR_FILTER", "OTHER"]:
+        for key in FINALIZER_REJECTION_CATEGORIES:
             breakdown.setdefault(key, 0)
         breakdown[bucket] = int(breakdown.get(bucket, 0) or 0) + 1
+        return bucket
     except Exception:
-        pass
+        return "OTHER_UNKNOWN"
 
 
 def _log_finalizer_rejection_report():
@@ -306,7 +352,16 @@ def _log_finalizer_rejection_report():
             f"LOW_VOLUME={int(breakdown.get('LOW_VOLUME', 0) or 0)} "
             f"LOW_LIQUIDITY={int(breakdown.get('LOW_LIQUIDITY', 0) or 0)} "
             f"RR_FILTER={int(breakdown.get('RR_FILTER', 0) or 0)} "
-            f"OTHER={int(breakdown.get('OTHER', 0) or 0)} "
+            f"UNCLEAR_MACRO_TREND={int(breakdown.get('UNCLEAR_MACRO_TREND', 0) or 0)} "
+            f"QUALITY_REPORT={int(breakdown.get('QUALITY_REPORT', 0) or 0)} "
+            f"B_PLUS_CALIBRATION={int(breakdown.get('B_PLUS_CALIBRATION', 0) or 0)} "
+            f"SELF_REVIEW={int(breakdown.get('SELF_REVIEW', 0) or 0)} "
+            f"AI_MODEL_REJECT={int(breakdown.get('AI_MODEL_REJECT', 0) or 0)} "
+            f"PROFESSIONAL_ENTRY_MANAGER={int(breakdown.get('PROFESSIONAL_ENTRY_MANAGER', 0) or 0)} "
+            f"FUND_MANAGER_REVIEW={int(breakdown.get('FUND_MANAGER_REVIEW', 0) or 0)} "
+            f"INVALID_SIGNAL_OBJECT={int(breakdown.get('INVALID_SIGNAL_OBJECT', 0) or 0)} "
+            f"OTHER_UNKNOWN={int(breakdown.get('OTHER_UNKNOWN', 0) or 0)} "
+            f"OTHER={int(breakdown.get('OTHER_UNKNOWN', 0) or 0)} "
             f"total_candidates={total_candidates} "
             f"accepted_from_playbook={total_candidates} "
             f"finalized={finalized} "
@@ -356,15 +411,32 @@ def _finalizer_append_trace(signal, final_candidates_count=None, final_signals_c
         pass
 
 
-def _finalizer_reject(reason):
+def _log_finalizer_stage_reject(signal, stage, reason, category):
+    try:
+        reason_clean = " ".join(str(reason or "unknown").split())[:260]
+        print(
+            "FINALIZER_STAGE_REJECT "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={(signal or {}).get('pair') or (signal or {}).get('symbol') or 'unknown'} "
+            f"timeframe={(signal or {}).get('timeframe') or 'unknown'} "
+            f"stage={stage or 'unknown'} "
+            f"reason={reason_clean} "
+            f"category={category or 'OTHER_UNKNOWN'}"
+        )
+    except Exception:
+        pass
+
+
+def _finalizer_reject(reason, signal=None, stage="unknown"):
     text = str(reason or "")
+    category = _finalizer_diag_rejection_breakdown(reason, stage)
     if "risk score" in text.lower():
         _finalizer_diag_inc("rejected_by_risk_score")
-    elif "4H/1H data unavailable" in text or "MTF data unavailable" in text or "futures MTF data" in text:
+    elif category == "MISSING_MTF" or "4H/1H data unavailable" in text or "MTF data unavailable" in text or "futures MTF data" in text:
         _finalizer_diag_inc("rejected_by_missing_mtf")
     else:
         _finalizer_diag_inc("rejected_by_other_finalizer_reason")
-    _finalizer_diag_rejection_breakdown(reason)
+    _log_finalizer_stage_reject(signal, stage, reason, category)
     _log_finalizer_diagnostic_summary()
     _log_finalizer_rejection_report()
     return None, reason
@@ -5912,7 +5984,7 @@ def finalize_adaptive_signal(signal, df, paid=True):
         max_risk = 80 if paid else 84
         if ai_engine_report["risk_score"] >= max_risk:
             _log_finalizer_risk_score_diagnostic(signal.get("pair"), signal_context, ai_engine_report, max_risk)
-            return _finalizer_reject(f"risk score {ai_engine_report['risk_score']} too high")
+            return _finalizer_reject(f"risk score {ai_engine_report['risk_score']} too high", signal, stage="risk_score")
 
         type_scores = evaluate_trade_types(
             direction=direction,
@@ -5929,9 +6001,10 @@ def finalize_adaptive_signal(signal, df, paid=True):
         trade_type, adjusted_type_scores = choose_trade_type(type_scores)
         signal["type"] = trade_type
         if trade_type == "FUTURES":
+            pre_futures_signal = signal
             signal, futures_reason = futures_apply_execution_frames(signal)
             if not signal:
-                return _finalizer_reject(futures_reason or "futures 15m/30m validation rejected")
+                return _finalizer_reject(futures_reason or "futures 15m/30m validation rejected", pre_futures_signal, stage="futures_execution")
         signal.update({
             "type_scores": adjusted_type_scores,
             "spot_score": adjusted_type_scores.get("SPOT", 0),
@@ -5956,11 +6029,11 @@ def finalize_adaptive_signal(signal, df, paid=True):
         })
         quality_ok, quality_reason = apply_signal_quality_report(signal)
         if not quality_ok:
-            return _finalizer_reject(quality_reason)
+            return _finalizer_reject(quality_reason, signal, stage="quality_report")
         if _safe_float(signal.get("display_confidence"), 0) < 70:
             calibrated, calibration_reason = apply_b_plus_calibration(signal)
             if not calibrated:
-                return _finalizer_reject(f"display confidence {signal.get('display_confidence')} below 70")
+                return _finalizer_reject(f"display confidence {signal.get('display_confidence')} below 70", signal, stage="b_plus_calibration")
         expert_context = {
             "mtf": signal.get("expert_mtf") or {},
             "volatility": signal.get("expert_volatility") or {},
@@ -5986,26 +6059,26 @@ def finalize_adaptive_signal(signal, df, paid=True):
             else:
                 failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
                 _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
-                return _finalizer_reject(f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}")
+                return _finalizer_reject(f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}", signal, stage="quality_checklist")
         self_ok, self_reason = expert_self_review(signal, checklist)
         signal["self_review"] = self_reason
         if not self_ok:
             _no_trade_reason(signal.get("pair"), interval, self_reason)
-            return _finalizer_reject(self_reason)
+            return _finalizer_reject(self_reason, signal, stage="self_review")
         try:
             from ai_model import explain_predict_trade
             ai_ok, ai_reason = explain_predict_trade(signal)
         except Exception:
             ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
         if not ai_ok:
-            return _finalizer_reject(f"AI model rejected adaptive signal: {ai_reason}")
+            return _finalizer_reject(f"AI model rejected adaptive signal: {ai_reason}", signal, stage="ai_model")
         managed_signal, entry_reason = professional_entry_manager(signal, df)
         if not managed_signal:
-            return _finalizer_reject(entry_reason)
+            return _finalizer_reject(entry_reason, signal, stage="professional_entry_manager")
         final_ok, final_reason = final_fund_manager_review(managed_signal)
         if not final_ok:
             _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
-            return _finalizer_reject(final_reason)
+            return _finalizer_reject(final_reason, managed_signal, stage="fund_manager_review")
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
         _scan_diag_inc("finalized_candidates")
         if str(managed_signal.get("type") or trade_type).upper() == "FUTURES":
@@ -6022,7 +6095,7 @@ def finalize_adaptive_signal(signal, df, paid=True):
         )
         return managed_signal, None
     except Exception as e:
-        return _finalizer_reject(f"adaptive finalize error: {e}")
+        return _finalizer_reject(f"adaptive finalize error: {e}", signal if isinstance(signal, dict) else None, stage="exception")
 
 
 def no_trade_summary(symbol, interval, market_summary, best_candidate, rejection_reason):
