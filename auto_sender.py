@@ -3069,6 +3069,36 @@ def get_monster_signals():
         log_forex_scan_summary(0)
         return []
 
+
+def log_sender_input_trace(signals, users, deliveries_attempted=0):
+    try:
+        summary = get_signal_scan_diagnostics()
+        symbols = []
+        for signal in signals or []:
+            pair = signal.get("pair") or signal.get("symbol")
+            if pair:
+                symbols.append(str(pair).upper())
+        eligible_users = 0
+        for user in users or []:
+            try:
+                user_info = unpack_delivery_user(user)
+                eligible, _reason = delivery_access_status(user_info)
+                if eligible:
+                    eligible_users += 1
+            except Exception:
+                continue
+        log(
+            "SENDER_INPUT_TRACE "
+            f"scan_cycle_id={summary.get('scan_cycle_id', 'unknown')} "
+            f"signals_fetched={len(signals) if signals else 0} "
+            f"symbols={','.join(symbols[:20]) if symbols else 'none'} "
+            f"eligible_users={eligible_users} "
+            f"deliveries_attempted={int(deliveries_attempted or 0)}"
+        )
+    except Exception as e:
+        log(f"SENDER_INPUT_TRACE_ERROR error={e}")
+
+
 def should_notify_no_signal(chat_id, plan="trial", state_key="market_wait"):
     try:
         now = datetime.now()
@@ -3253,6 +3283,7 @@ def run():
 
             users = get_users()
             log(f"Users loaded: {len(users)}")
+            log_sender_input_trace(signals, users, deliveries_attempted=0)
 
             if not signals:
                 log("No signals found")

@@ -318,6 +318,44 @@ def _log_finalizer_rejection_report():
         pass
 
 
+def _finalizer_success_trace(signal, market_type, signal_object_created=True, return_value_is_none=False):
+    try:
+        print(
+            "FINALIZER_SUCCESS_TRACE "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={signal.get('pair')} "
+            f"timeframe={signal.get('timeframe')} "
+            f"market_type={market_type} "
+            f"signal_object_created={bool(signal_object_created)} "
+            f"return_value_is_none={bool(return_value_is_none)} "
+            "appended_to_final_candidates=false "
+            "final_candidates_count=0 "
+            "appended_to_final_signals=false "
+            "final_signals_count=0"
+        )
+    except Exception:
+        pass
+
+
+def _finalizer_append_trace(signal, final_candidates_count=None, final_signals_count=None, final_candidates=False, final_signals=False):
+    try:
+        print(
+            "FINALIZER_SUCCESS_TRACE "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={signal.get('pair')} "
+            f"timeframe={signal.get('timeframe')} "
+            f"market_type={signal.get('type') or signal.get('market_type') or 'UNKNOWN'} "
+            "signal_object_created=true "
+            "return_value_is_none=false "
+            f"appended_to_final_candidates={bool(final_candidates)} "
+            f"final_candidates_count={0 if final_candidates_count is None else int(final_candidates_count)} "
+            f"appended_to_final_signals={bool(final_signals)} "
+            f"final_signals_count={0 if final_signals_count is None else int(final_signals_count)}"
+        )
+    except Exception:
+        pass
+
+
 def _finalizer_reject(reason):
     text = str(reason or "")
     if "risk score" in text.lower():
@@ -5894,9 +5932,6 @@ def finalize_adaptive_signal(signal, df, paid=True):
             signal, futures_reason = futures_apply_execution_frames(signal)
             if not signal:
                 return _finalizer_reject(futures_reason or "futures 15m/30m validation rejected")
-            _finalizer_diag_inc("finalized_futures")
-        else:
-            _finalizer_diag_inc("finalized_spot")
         signal.update({
             "type_scores": adjusted_type_scores,
             "spot_score": adjusted_type_scores.get("SPOT", 0),
@@ -5973,8 +6008,18 @@ def finalize_adaptive_signal(signal, df, paid=True):
             return _finalizer_reject(final_reason)
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
         _scan_diag_inc("finalized_candidates")
+        if str(managed_signal.get("type") or trade_type).upper() == "FUTURES":
+            _finalizer_diag_inc("finalized_futures")
+        else:
+            _finalizer_diag_inc("finalized_spot")
         _finalizer_diag_inc("sent_to_sender")
         _log_finalizer_diagnostic_summary()
+        _finalizer_success_trace(
+            managed_signal,
+            str(managed_signal.get("type") or trade_type).upper(),
+            signal_object_created=True,
+            return_value_is_none=False,
+        )
         return managed_signal, None
     except Exception as e:
         return _finalizer_reject(f"adaptive finalize error: {e}")
@@ -6622,6 +6667,13 @@ def get_top_free_signals(limit=2):
                     )
 
                     candidates.append(signal)
+                    _finalizer_append_trace(
+                        signal,
+                        final_candidates_count=len(candidates),
+                        final_signals_count=0,
+                        final_candidates=True,
+                        final_signals=False,
+                    )
                     candidate_pipeline_log("CANDIDATE_APPENDED", signal.get("pair"), signal.get("timeframe"), stage="candidate_pool", signal=signal, tier=signal.get("quality_tier") or signal.get("opportunity_tier"))
                     if SIGNAL_DEBUG_LOGS:
                         print(
@@ -6694,6 +6746,13 @@ def get_top_free_signals(limit=2):
     try:
         _scan_diag_inc("final_signals", len(best))
         for selected in best:
+            _finalizer_append_trace(
+                selected,
+                final_candidates_count=len(candidates),
+                final_signals_count=len(best),
+                final_candidates=True,
+                final_signals=True,
+            )
             candidate_pipeline_log(
                 "FINAL_SIGNAL_SELECTED",
                 selected.get("pair"),
