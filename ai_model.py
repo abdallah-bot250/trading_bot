@@ -5,6 +5,9 @@ AI_NORMAL_APPROVAL_CONFIDENCE = 75
 AI_REDUCED_SIZE_MIN_CONFIDENCE = 70
 AI_REDUCED_SIZE_MULTIPLIER = 0.5
 
+TRUE_LOW_LIQUIDITY_VOLUME_RATIO_MIN = 0.12
+TRUE_LOW_LIQUIDITY_SCORE_MIN = 35
+
 # ================= AI DECISION ENGINE =================
 def predict_trade(signal):
     score = 0
@@ -210,10 +213,21 @@ def explain_predict_trade(signal):
         rr = float(signal.get("risk_reward", 0) or 0)
         volume_state = str(signal.get("volume_state", signal.get("volume", ""))).upper()
         risk_level = str(signal.get("risk_level", "")).upper()
+        market_regime = str(signal.get("market_regime", signal.get("adaptive_regime", ""))).upper()
         trend_power = signal.get("trend_power")
         structure = signal.get("structure")
         tf = signal.get("timeframe")
         safe_bplus_ok, safe_bplus_reason = safe_b_plus_eligibility(signal, allow_borderline_score=True)
+        volume_ratio_raw = signal.get("volume_ratio")
+        liquidity_score_raw = signal.get("liquidity_score", signal.get("volume_score"))
+        try:
+            volume_ratio = float(volume_ratio_raw)
+        except Exception:
+            volume_ratio = None
+        try:
+            liquidity_score = float(liquidity_score_raw)
+        except Exception:
+            liquidity_score = None
 
         mtf_state = str((signal.get("expert_mtf") or {}).get("state") or signal.get("mtf_state") or "").upper()
         mtf_reason = str((signal.get("expert_mtf") or {}).get("reason") or signal.get("mtf_reason") or "").upper()
@@ -229,6 +243,15 @@ def explain_predict_trade(signal):
             or signal.get("smart_money_setup")
             or signal.get("futures_30m_setup")
         )
+        true_low_liquidity = (
+            bool(signal.get("liquidity_invalid"))
+            or bool(signal.get("liquidity_hard_reject"))
+            or market_regime in {"LOW_LIQUIDITY", "LOW_VOLUME_CHOP"}
+            or volume_ratio is None
+            or liquidity_score is None
+            or volume_ratio < TRUE_LOW_LIQUIDITY_VOLUME_RATIO_MIN
+            or liquidity_score < TRUE_LOW_LIQUIDITY_SCORE_MIN
+        )
 
         if entry <= 0 or tp <= 0 or sl <= 0:
             return False, "invalid entry/tp/sl"
@@ -242,10 +265,10 @@ def explain_predict_trade(signal):
             return False, f"RR {round(rr, 2)} below 1.5"
         if hard_mtf_conflict:
             return False, "hard MTF conflict"
+        if true_low_liquidity:
+            return False, "TRUE_LOW_LIQUIDITY_HARD_REJECT"
         if confidence < 70 and not safe_bplus_ok:
             return False, f"display confidence {round(confidence, 2)} below 70"
-        if volume_state == "THIN" and confidence < 78:
-            return False, "thin volume requires stronger confirmation"
         if trend_power == "STRONG_BULL" and direction == "SHORT":
             return False, "SHORT against strong bull trend"
         if trend_power == "STRONG_BEAR" and direction == "LONG":
@@ -255,11 +278,13 @@ def explain_predict_trade(signal):
         playbook_confidence = float(
             signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence", confidence))) or 0
         )
+        thin_soft_risk = volume_state == "THIN"
         if risk_level == "HIGH" and confidence < 82:
             if (
                 setup_confirmed
                 and playbook_confidence >= 80
                 and confidence >= AI_REDUCED_SIZE_MIN_CONFIDENCE
+                and not thin_soft_risk
             ):
                 signal["approval_type"] = "REDUCED_SIZE_APPROVAL"
                 signal["risk_tier"] = "HIGH"
@@ -273,13 +298,20 @@ def explain_predict_trade(signal):
             signal.setdefault("approval_type", "NORMAL_APPROVAL")
             signal.setdefault("risk_tier", risk_level or "NORMAL")
             signal.setdefault("size_multiplier", 1.0)
-            return True, "approved normal confidence"
+            return True, "approved normal confidence" if not thin_soft_risk else "approved normal confidence with THIN_VOLUME_SOFT_RISK"
 
         if confidence >= AI_REDUCED_SIZE_MIN_CONFIDENCE:
+            if thin_soft_risk and not (
+                setup_confirmed
+                and playbook_confidence >= 80
+                and rr >= 1.8
+                and risk_level in {"LOW", "MEDIUM", "NORMAL", "MODERATE", ""}
+            ):
+                return False, "THIN_VOLUME_SOFT_RISK requires stronger playbook/RR"
             signal["approval_type"] = "REDUCED_SIZE_APPROVAL"
-            signal["risk_tier"] = risk_level or "ELEVATED"
+            signal["risk_tier"] = "ELEVATED" if thin_soft_risk else (risk_level or "ELEVATED")
             signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
-            return True, "REDUCED_SIZE_APPROVAL confidence 70-74"
+            return True, "REDUCED_SIZE_APPROVAL confidence 70-74" if not thin_soft_risk else "REDUCED_SIZE_APPROVAL THIN_VOLUME_SOFT_RISK"
 
         allowed = predict_trade({**signal, "confidence": confidence})
         return (True, "approved") if allowed else (False, "legacy score below threshold")

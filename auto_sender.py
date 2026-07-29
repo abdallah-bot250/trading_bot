@@ -1799,6 +1799,8 @@ def log_signal_scan_summary(final_count):
             f"scan_attempts={scan_attempts} "
             f"scanned={summary.get('scanned', 0)} "
             f"playbooks_selected={summary.get('playbooks_selected', 0)} "
+            f"playbook_candidates_built={summary.get('playbook_candidates_built', 0)} "
+            f"finalizer_candidates_received={summary.get('finalizer_candidates_received', 0)} "
             f"setups_confirmed={summary.get('setups_confirmed', 0)} "
             f"entry_confirmations_passed={summary.get('entry_confirmations_passed', 0)} "
             f"candidates_built={summary.get('candidates_built', 0)} "
@@ -1823,6 +1825,10 @@ def log_signal_scan_summary(final_count):
             f"qualified_a_plus={summary.get('qualified_a_plus', 0)} "
             f"free_earn_locks_created={summary.get('free_earn_locks_created', 0)} "
             f"paid_deliveries={summary.get('paid_deliveries', 0)} "
+            f"final_signals_selected={summary.get('final_signals_selected', 0)} "
+            f"signals_handed_to_sender={summary.get('signals_handed_to_sender', 0)} "
+            f"deliveries_attempted={summary.get('deliveries_attempted', 0)} "
+            f"signals_sent={summary.get('signals_sent', 0)} "
             f"rejection_total={rejection_total} "
             f"final_signals={summary.get('final_signals', final_count)}"
         )
@@ -3450,9 +3456,19 @@ def run():
                         log(f"FREE_UNLOCK_CREDIT_USED chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
 
                     msg = format_signal(signal, delivery_product)
+                    try:
+                        from market_analyzer import _scan_diag_inc
+                        _scan_diag_inc("deliveries_attempted")
+                    except Exception:
+                        pass
                     sent_ok = send(chat_id, msg)
 
                     if sent_ok:
+                        try:
+                            from market_analyzer import _scan_diag_inc
+                            _scan_diag_inc("signals_sent")
+                        except Exception:
+                            pass
                         signal_sent_users += 1
                         log_plan_delivery_diag(email, delivery_product, chat_id, True, "sent")
                         write_log(chat_id, "INFO", f"Signal sent {signal['pair']} {signal['direction']} conf={signal_display_confidence(signal)}")

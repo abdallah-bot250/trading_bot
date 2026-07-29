@@ -1,12 +1,13 @@
 import sys
 from pathlib import Path
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ai_model import explain_predict_trade
-from market_analyzer import _select_final_delivery_candidates
+from market_analyzer import _select_final_delivery_candidates, _soft_armed_futures_approval
 
 
 def base_signal(**overrides):
@@ -26,6 +27,10 @@ def base_signal(**overrides):
         "risk_score": 70,
         "volume_state": "NORMAL",
         "volume_score": 60,
+        "volume_ratio": 0.9,
+        "liquidity_score": 60,
+        "liquidity_invalid": False,
+        "market_regime": "ACCUMULATION",
         "strategy_name": "trend_pullback_continuation",
         "setup_type": "trend_pullback_continuation",
         "setup_confirmed": True,
@@ -41,6 +46,21 @@ def assert_true(name, condition):
     if not condition:
         raise AssertionError(name)
     print(f"PASS {name}")
+
+
+def bullish_frame(rows=90):
+    data = []
+    price = 100.0
+    for i in range(rows):
+        price += 0.08
+        data.append({
+            "open": price - 0.05,
+            "high": price + 0.12,
+            "low": price - 0.12,
+            "close": price,
+            "volume": 100000 + i,
+        })
+    return pd.DataFrame(data)
 
 
 def main():
@@ -64,6 +84,71 @@ def main():
     sig = base_signal(expert_mtf={"state": "HARD_CONFLICT", "reason": "4H bull vs 1H bear"})
     ok, reason = explain_predict_trade(sig)
     assert_true("hard MTF conflict rejects", not ok and "MTF" in reason)
+
+    sig = base_signal(
+        pair="ONDOUSDT",
+        confidence=72,
+        display_confidence=72,
+        playbook_confidence=88,
+        final_score=71,
+        risk_level="LOW",
+        volume_state="THIN",
+        volume_score=35,
+        liquidity_score=35,
+        volume_ratio=0.7,
+        risk_reward=6.09,
+        setup_type="accumulation_reclaim",
+        strategy_name="accumulation_reclaim",
+        confidence_cap_reason="thin_volume",
+    )
+    ok, reason = explain_predict_trade(sig)
+    assert_true("ONDO-like thin volume soft risk becomes reduced approval", ok and sig.get("approval_type") == "REDUCED_SIZE_APPROVAL" and sig.get("size_multiplier") == 0.5)
+
+    sig = base_signal(volume_state="THIN", risk_level="LOW", market_regime="LOW_LIQUIDITY", liquidity_score=35, volume_ratio=0.7)
+    ok, reason = explain_predict_trade(sig)
+    assert_true("true low liquidity regime rejects", not ok and "LOW_LIQUIDITY" in reason)
+
+    sig = base_signal(volume_state="THIN", risk_level="LOW", liquidity_invalid=True, liquidity_score=60, volume_ratio=0.9)
+    ok, reason = explain_predict_trade(sig)
+    assert_true("liquidity_invalid rejects", not ok and "LOW_LIQUIDITY" in reason)
+
+    sig = base_signal(confidence=76, display_confidence=76, risk_level="LOW", volume_state="THIN", liquidity_score=35, volume_ratio=0.8)
+    ok, reason = explain_predict_trade(sig)
+    assert_true("thin volume confidence 76 safe normal approval", ok and sig.get("approval_type") == "NORMAL_APPROVAL")
+
+    sig = base_signal(confidence=71, display_confidence=71, playbook_confidence=72, risk_level="LOW", volume_state="THIN", liquidity_score=35, volume_ratio=0.8, risk_reward=2.0)
+    ok, reason = explain_predict_trade(sig)
+    assert_true("thin volume weak playbook rejects", not ok and "THIN_VOLUME_SOFT_RISK" in reason)
+
+    sig = base_signal(confidence=72, display_confidence=72, playbook_confidence=88, risk_level="LOW", volume_state="THIN", liquidity_score=35, volume_ratio=0.8, risk_reward=1.4)
+    ok, reason = explain_predict_trade(sig)
+    assert_true("thin volume bad RR rejects", not ok and "RR" in reason)
+
+    trigger_df = bullish_frame()
+    close = float(trigger_df["close"].iloc[-1])
+    setup = {"stage": "CONFIRMED", "support": close - 0.2, "recent_low": close - 0.2, "volume_score": 55}
+    trigger = {"stage": "ARMED", "reason": "15m candle close not decisive yet"}
+    early = _soft_armed_futures_approval(
+        "TESTUSDT",
+        "LONG",
+        base_signal(confidence=82, playbook_confidence=82),
+        {"ok": True},
+        setup,
+        trigger,
+        trigger_df,
+    )
+    assert_true("soft armed confirmed setup becomes early approval", bool(early and early.get("approval_type") == "EARLY_CONFIRMATION_APPROVAL"))
+
+    early = _soft_armed_futures_approval(
+        "TESTUSDT",
+        "LONG",
+        base_signal(confidence=82, playbook_confidence=82),
+        {"ok": True},
+        setup,
+        trigger,
+        None,
+    )
+    assert_true("missing trigger data remains armed reject", early is None)
 
     candidates = []
     for i, score in enumerate([99, 96, 94, 91, 88], start=1):

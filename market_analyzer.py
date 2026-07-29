@@ -102,6 +102,7 @@ FINALIZER_DIAGNOSTICS = {
     "finalized_spot": 0,
     "finalized_futures": 0,
     "sent_to_sender": 0,
+    "duplicate_penalty_avoided": 0,
     "rejected_hard_safety": 0,
     "rejected_duplicate_penalty": 0,
     "approved_normal": 0,
@@ -160,6 +161,7 @@ def reset_signal_scan_diagnostics():
         "finalized_spot": 0,
         "finalized_futures": 0,
         "sent_to_sender": 0,
+        "duplicate_penalty_avoided": 0,
         "rejected_hard_safety": 0,
         "rejected_duplicate_penalty": 0,
         "approved_normal": 0,
@@ -182,6 +184,8 @@ def reset_signal_scan_diagnostics():
         "finalized_candidates": 0,
         "final_signals_selected": 0,
         "signals_sent": 0,
+        "signals_handed_to_sender": 0,
+        "deliveries_attempted": 0,
         "rejections_by_code": {},
         "mtf_hard_conflict": 0,
         "mtf_soft_conflict": 0,
@@ -289,6 +293,7 @@ def _log_finalizer_diagnostic_summary():
             f"finalized_spot={FINALIZER_DIAGNOSTICS.get('finalized_spot', 0)} "
             f"finalized_futures={FINALIZER_DIAGNOSTICS.get('finalized_futures', 0)} "
             f"sent_to_sender={FINALIZER_DIAGNOSTICS.get('sent_to_sender', 0)} "
+            f"duplicate_penalty_avoided={FINALIZER_DIAGNOSTICS.get('duplicate_penalty_avoided', 0)} "
             f"approved_normal={FINALIZER_DIAGNOSTICS.get('approved_normal', 0)} "
             f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
             f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
@@ -357,6 +362,8 @@ def _log_confidence_calibration_trace(signal, ai_reason="", final_decision="UNKN
         ai_input_conf = signal.get("display_confidence", signal.get("confidence"))
         penalties = _signal_penalty_markers(signal)
         duplicate_penalties = _duplicate_penalty_markers(signal, ai_reason)
+        if duplicate_penalties and str(final_decision).upper() == "PASS":
+            _finalizer_diag_inc("duplicate_penalty_avoided")
         print(
             "CONFIDENCE_CALIBRATION_TRACE "
             f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
@@ -395,6 +402,7 @@ def _log_final_production_calibration_summary(selected_for_delivery=0, signals_s
             f"accepted_from_playbook={accepted} "
             f"rejected_hard_safety={FINALIZER_DIAGNOSTICS.get('rejected_hard_safety', 0)} "
             f"rejected_duplicate_penalty={FINALIZER_DIAGNOSTICS.get('rejected_duplicate_penalty', 0)} "
+            f"duplicate_penalty_avoided={FINALIZER_DIAGNOSTICS.get('duplicate_penalty_avoided', 0)} "
             f"approved_normal={FINALIZER_DIAGNOSTICS.get('approved_normal', 0)} "
             f"approved_reduced_size={FINALIZER_DIAGNOSTICS.get('approved_reduced_size', 0)} "
             f"approved_early_confirmation={FINALIZER_DIAGNOSTICS.get('approved_early_confirmation', 0)} "
@@ -6542,7 +6550,6 @@ def finalize_adaptive_signal(signal, df, paid=True):
             _finalizer_diag_inc("finalized_futures")
         else:
             _finalizer_diag_inc("finalized_spot")
-        _finalizer_diag_inc("sent_to_sender")
         _log_finalizer_diagnostic_summary()
         _finalizer_success_trace(
             managed_signal,
@@ -7270,7 +7277,8 @@ def get_top_free_signals(limit=2):
     try:
         _scan_diag_inc("final_signals", len(best))
         _scan_diag_inc("final_signals_selected", len(best))
-        _scan_diag_inc("signals_sent", len(best))
+        _scan_diag_inc("signals_handed_to_sender", len(best))
+        FINALIZER_DIAGNOSTICS["sent_to_sender"] = int(FINALIZER_DIAGNOSTICS.get("sent_to_sender", 0) or 0) + len(best)
         for selected in best:
             _finalizer_append_trace(
                 selected,
