@@ -2463,6 +2463,25 @@ def execute_trade(api_key, api_secret, signal, trade_type, risk_percent, chat_id
         sl = float(signal["sl"])
         display_confidence = signal_display_confidence(signal)
         if display_confidence < 70:
+            try:
+                playbook_confidence = signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence")))
+                quality_report = signal.get("quality_report") or {}
+                quality_confidence = quality_report.get("display_confidence", display_confidence)
+                engine_confidence = signal.get("engine_confidence", signal.get("confidence"))
+                log(
+                    "CONFIDENCE_BREAKDOWN "
+                    f"symbol={signal.get('pair')} "
+                    f"timeframe={signal.get('timeframe')} "
+                    f"playbook_confidence={playbook_confidence} "
+                    f"display_confidence={display_confidence} "
+                    f"quality_adjustment={_safe_float(quality_confidence, display_confidence) - _safe_float(playbook_confidence, 0)} "
+                    f"ai_adjustment={_safe_float(engine_confidence, playbook_confidence or 0) - _safe_float(playbook_confidence, 0)} "
+                    f"risk_adjustment={_safe_float(display_confidence, 0) - _safe_float(quality_confidence, display_confidence)} "
+                    f"final_confidence={display_confidence} "
+                    f"rejection_reason=Auto_trade_rejected_display_confidence_below_70"
+                )
+            except Exception:
+                pass
             log(f"SIGNAL_BLOCKED_LOW_DISPLAY_CONF pair={signal.get('pair')} display_conf={display_confidence}")
             record_execution_event(user_info or {}, signal, "REJECTED", "low_display_confidence", connection_ref)
             return None, "Auto trade rejected: display confidence below 70"

@@ -425,6 +425,102 @@ def _log_confidence_calibration_trace(signal, ai_reason="", final_decision="UNKN
         pass
 
 
+def _log_confidence_breakdown(signal, rejection_reason="display confidence below 70"):
+    try:
+        signal = signal or {}
+        quality_report = signal.get("quality_report") or {}
+        playbook_confidence = _safe_float(signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence"))), 0)
+        display_confidence = _safe_float(signal.get("display_confidence", signal.get("confidence")), 0)
+        quality_confidence = _safe_float(quality_report.get("display_confidence", display_confidence), display_confidence)
+        engine_confidence = _safe_float(signal.get("engine_confidence", signal.get("confidence")), playbook_confidence)
+        final_confidence = display_confidence
+        print(
+            "CONFIDENCE_BREAKDOWN "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={signal.get('pair') or signal.get('symbol')} "
+            f"timeframe={signal.get('timeframe')} "
+            f"playbook_confidence={round(playbook_confidence, 4)} "
+            f"display_confidence={round(display_confidence, 4)} "
+            f"quality_adjustment={round(quality_confidence - playbook_confidence, 4)} "
+            f"ai_adjustment={round(engine_confidence - playbook_confidence, 4)} "
+            f"risk_adjustment={round(display_confidence - quality_confidence, 4)} "
+            f"final_confidence={round(final_confidence, 4)} "
+            f"risk_score={signal.get('risk_score')} "
+            f"risk_level={signal.get('risk_level')} "
+            f"confidence_cap_reason={str(signal.get('confidence_cap_reason') or 'none').replace(' ', '_')} "
+            f"rejection_reason={str(rejection_reason or '').replace(' ', '_')}"
+        )
+    except Exception as e:
+        print(f"CONFIDENCE_BREAKDOWN_ERROR symbol={(signal or {}).get('pair')} error={type(e).__name__}")
+
+
+def _log_rr_space_diagnostic(symbol, timeframe, direction, entry_price, stop_loss, take_profit, nearest_support, nearest_resistance, calculated_rr, required_rr, rejection_reason):
+    try:
+        entry = _safe_float(entry_price)
+        support = _safe_float(nearest_support, 0)
+        resistance = _safe_float(nearest_resistance, 0)
+        distance_to_resistance_pct = None
+        distance_to_support_pct = None
+        if entry > 0 and resistance > 0:
+            distance_to_resistance_pct = round(((resistance - entry) / entry) * 100, 6)
+        if entry > 0 and support > 0:
+            distance_to_support_pct = round(((entry - support) / entry) * 100, 6)
+        print(
+            "RR_SPACE_DIAGNOSTIC "
+            f"symbol={symbol} "
+            f"timeframe={timeframe} "
+            f"direction={direction} "
+            f"entry_price={entry_price} "
+            f"stop_loss={stop_loss} "
+            f"take_profit={take_profit} "
+            f"nearest_support={nearest_support} "
+            f"nearest_resistance={nearest_resistance} "
+            f"calculated_rr={calculated_rr} "
+            f"required_rr={required_rr} "
+            f"distance_to_resistance_pct={distance_to_resistance_pct} "
+            f"distance_to_support_pct={distance_to_support_pct} "
+            f"rejection_reason={str(rejection_reason or '').replace(' ', '_')}"
+        )
+    except Exception as e:
+        print(f"RR_SPACE_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
+
+
+def _log_rr_space_diagnostic_from_context(symbol, timeframe, direction, entry, regime_info, atr_val, required_rr, rejection_reason):
+    try:
+        support = regime_info.get("support") or regime_info.get("recent_low")
+        resistance = regime_info.get("resistance") or regime_info.get("recent_high")
+        entry_val = _safe_float(entry)
+        atr_safe = max(_safe_float(atr_val), entry_val * 0.004)
+        buffer = max(atr_safe * 0.45, entry_val * 0.0025)
+        stop_loss = None
+        take_profit = None
+        calculated_rr = None
+        if entry_val > 0 and str(direction).upper() == "LONG":
+            stop_loss = (_safe_float(support) - buffer) if support and _safe_float(support) < entry_val else entry_val - max(atr_safe * 1.25, entry_val * 0.006)
+            risk = entry_val - _safe_float(stop_loss)
+            if resistance and _safe_float(resistance) > entry_val:
+                take_profit = _safe_float(resistance) - buffer * 0.25
+            else:
+                take_profit = entry_val + risk * max(1.8, _safe_float(required_rr, 1.5))
+            if risk > 0:
+                calculated_rr = round((_safe_float(take_profit) - entry_val) / risk, 4)
+        elif entry_val > 0:
+            stop_loss = (_safe_float(resistance) + buffer) if resistance and _safe_float(resistance) > entry_val else entry_val + max(atr_safe * 1.25, entry_val * 0.006)
+            risk = _safe_float(stop_loss) - entry_val
+            if support and _safe_float(support) < entry_val:
+                take_profit = _safe_float(support) + buffer * 0.25
+            else:
+                take_profit = entry_val - risk * max(1.8, _safe_float(required_rr, 1.5))
+            if risk > 0:
+                calculated_rr = round((entry_val - _safe_float(take_profit)) / risk, 4)
+        _log_rr_space_diagnostic(
+            symbol, timeframe, direction, entry_val, stop_loss, take_profit,
+            support, resistance, calculated_rr, required_rr, rejection_reason
+        )
+    except Exception as e:
+        print(f"RR_SPACE_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
+
+
 def _log_final_production_calibration_summary(selected_for_delivery=0, signals_sent=None):
     try:
         accepted = int(FINALIZER_DIAGNOSTICS.get("accepted_from_playbook", 0) or 0)
@@ -3201,6 +3297,39 @@ def _log_futures_mtf_unavailable_diagnostic(symbol, frames):
         print(f"FUTURES_MTF_DATA_DIAGNOSTIC_ERROR symbol={symbol} error={type(e).__name__}")
 
 
+def _log_mtf_history_diagnostic(symbol, timeframe, df, required_rows=100, rejection_stage="mtf_validation"):
+    try:
+        provider = "NONE"
+        rows_before = 0 if df is None else len(df)
+        rows_after = rows_before
+        if df is not None and len(df) > 0:
+            try:
+                provider = str(df.get("futures_data_provider", pd.Series(["UNKNOWN"])).iloc[-1])
+            except Exception:
+                provider = "UNKNOWN"
+            try:
+                probe = df.copy()
+                probe["ema20_probe"] = ema(probe, 20)
+                probe["ema50_probe"] = ema(probe, 50)
+                probe["atr_probe"] = atr(probe)
+                rows_after = len(probe.dropna(subset=["ema20_probe", "ema50_probe", "atr_probe"]))
+            except Exception:
+                rows_after = rows_before
+        print(
+            "MTF_HISTORY_DIAGNOSTIC "
+            f"provider={provider} "
+            f"symbol={symbol} "
+            f"timeframe={timeframe} "
+            f"rows_before_indicators={rows_before} "
+            f"rows_after_indicators={rows_after} "
+            f"required_rows={required_rows} "
+            f"indicator_warmup_rows={max(0, rows_before - rows_after)} "
+            f"rejection_stage={rejection_stage}"
+        )
+    except Exception as e:
+        print(f"MTF_HISTORY_DIAGNOSTIC_ERROR symbol={symbol} timeframe={timeframe} error={type(e).__name__}")
+
+
 def _futures_mtf_frame_status(df, timeframe, minimum_rows=100):
     try:
         rows = 0 if df is None else len(df)
@@ -5669,6 +5798,10 @@ def futures_bias_context(symbol):
         status_1h = _futures_mtf_frame_status(df_1h, "1h", minimum_rows=100)
         if not status_4h.get("ok") or not status_1h.get("ok"):
             _log_futures_mtf_unavailable_diagnostic(symbol, {"4h": df_4h, "1h": df_1h})
+            if not status_4h.get("ok"):
+                _log_mtf_history_diagnostic(symbol, "4h", df_4h, required_rows=100, rejection_stage=status_4h.get("reason"))
+            if not status_1h.get("ok"):
+                _log_mtf_history_diagnostic(symbol, "1h", df_1h, required_rows=100, rejection_stage=status_1h.get("reason"))
             invalid_reasons = []
             if not status_4h.get("ok"):
                 invalid_reasons.append(f"4H {status_4h.get('reason')} rows={status_4h.get('rows')}")
@@ -6210,6 +6343,11 @@ def futures_apply_execution_frames(signal):
                 return None, "ENTRY_MOVED"
         levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=FUTURES_MIN_RR)
         if not levels:
+            _log_rr_space_diagnostic_from_context(
+                symbol, FUTURES_TRIGGER_TIMEFRAME, direction, entry, regime_info, atr_val,
+                FUTURES_MIN_RR,
+                "no safe 15m/30m RR room",
+            )
             return None, "no safe 15m/30m RR room"
         if _safe_float(levels.get("risk_reward"), 0) < FUTURES_MIN_RR:
             return None, f"RR {levels.get('risk_reward')} below futures minimum {FUTURES_MIN_RR}"
@@ -6996,6 +7134,11 @@ def build_adaptive_signal_candidate(symbol, interval, df, paid=True):
         atr_val = _safe_float(regime_info.get("atr"))
         levels = _candidate_levels(entry, direction, regime_info, atr_val, rr_min=playbook.get("rr_min", 1.5))
         if not levels:
+            _log_rr_space_diagnostic_from_context(
+                symbol, interval, direction, entry, regime_info, atr_val,
+                playbook.get("rr_min", 1.5),
+                "not enough room to nearest support/resistance for safe RR",
+            )
             return None, "not enough room to nearest support/resistance for safe RR", regime_info
         if levels["risk_reward"] < playbook.get("rr_min", 1.5):
             return None, f"RR {levels['risk_reward']} below {playbook.get('rr_min', 1.5)}", regime_info
@@ -7192,6 +7335,7 @@ def finalize_adaptive_signal(signal, df, paid=True):
         if _safe_float(signal.get("display_confidence"), 0) < 70:
             calibrated, calibration_reason = apply_b_plus_calibration(signal)
             if not calibrated:
+                _log_confidence_breakdown(signal, f"display confidence {signal.get('display_confidence')} below 70")
                 return _finalizer_reject(f"display confidence {signal.get('display_confidence')} below 70", signal, stage="b_plus_calibration")
         expert_context = {
             "mtf": signal.get("expert_mtf") or {},
@@ -7622,6 +7766,7 @@ def generate_signal(symbol, interval="5m"):
     if _safe_float(signal.get("display_confidence"), 0) < 70:
         calibrated, calibration_reason = apply_b_plus_calibration(signal)
         if not calibrated:
+            _log_confidence_breakdown(signal, f"display confidence {signal.get('display_confidence')} below 70")
             return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
@@ -7885,6 +8030,7 @@ def generate_free_signal(symbol, interval="5m"):
     if _safe_float(signal.get("display_confidence"), 0) < 70:
         calibrated, calibration_reason = apply_b_plus_calibration(signal)
         if not calibrated:
+            _log_confidence_breakdown(signal, f"display confidence {signal.get('display_confidence')} below 70")
             return skip_signal(symbol, interval, f"display confidence {signal.get('display_confidence')} below 70")
     if signal["final_score"] < required_score:
         return skip_signal(symbol, interval, f"composite final score {signal['final_score']} below {required_score}: {signal.get('confidence_cap_reason')}")
