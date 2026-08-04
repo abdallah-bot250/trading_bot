@@ -1950,6 +1950,49 @@ def parse_binance_klines_to_df(data):
         return None
 
 
+def _parse_provider_klines_to_df(rows, provider):
+    try:
+        if not isinstance(rows, list) or not rows:
+            return None
+        parsed = []
+        provider_key = str(provider or "").upper()
+        for row in rows:
+            if not isinstance(row, list):
+                continue
+            try:
+                if provider_key == "BYBIT":
+                    # [startTime, open, high, low, close, volume, turnover]
+                    if len(row) < 6:
+                        continue
+                    parsed.append([int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
+                elif provider_key == "OKX":
+                    # [ts, open, high, low, close, vol, volCcy, volCcyQuote, confirm]
+                    if len(row) < 6:
+                        continue
+                    parsed.append([int(row[0]), float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
+                elif provider_key == "KUCOIN_FUTURES":
+                    # [time, open, high, low, close, volume] from futures kline/query
+                    if len(row) < 6:
+                        continue
+                    parsed.append([int(row[0]) * 1000, float(row[1]), float(row[2]), float(row[3]), float(row[4]), float(row[5])])
+            except Exception:
+                continue
+        if not parsed:
+            return None
+        df = pd.DataFrame(parsed, columns=["time", "open", "high", "low", "close", "volume"])
+        df = df.sort_values("time").drop_duplicates(subset=["time"], keep="last").reset_index(drop=True)
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.dropna(inplace=True)
+        df = df.reset_index(drop=True)
+        if len(df) > 2:
+            df = df.iloc[:-1].reset_index(drop=True)
+        return df if not df.empty else None
+    except Exception as e:
+        print(f"parse_futures_provider_klines_to_df error provider={provider} error={e}")
+        return None
+
+
 def _kucoin_interval_seconds(interval):
     mapping = {
         "1m": 60,
@@ -1966,6 +2009,259 @@ def _kucoin_interval_seconds(interval):
         "1d": 86400,
     }
     return mapping.get(str(interval or "").strip().lower(), 300)
+
+
+def _bybit_interval(interval):
+    mapping = {
+        "1m": "1",
+        "3m": "3",
+        "5m": "5",
+        "15m": "15",
+        "30m": "30",
+        "1h": "60",
+        "2h": "120",
+        "4h": "240",
+        "6h": "360",
+        "12h": "720",
+        "1d": "D",
+    }
+    return mapping.get(str(interval or "").strip().lower(), "15")
+
+
+def _okx_interval(interval):
+    mapping = {
+        "1m": "1m",
+        "3m": "3m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1H",
+        "2h": "2H",
+        "4h": "4H",
+        "6h": "6H",
+        "12h": "12H",
+        "1d": "1D",
+    }
+    return mapping.get(str(interval or "").strip().lower(), "15m")
+
+
+def _kucoin_futures_granularity(interval):
+    return _kucoin_interval_seconds(interval)
+
+
+def _futures_symbol_for_provider(symbol, provider):
+    normalized = _normalize_exchange_symbol(symbol)
+    base = normalized[:-4] if normalized.endswith("USDT") else normalized
+    provider_key = str(provider or "").upper()
+    if provider_key == "OKX":
+        return f"{base}-USDT-SWAP"
+    if provider_key == "KUCOIN_FUTURES":
+        kucoin_base = "XBT" if base == "BTC" else base
+        return f"{kucoin_base}USDTM"
+    return normalized
+
+
+def _log_futures_data_provider(provider, endpoint, status, fallback_used, latency_ms, symbols_loaded=0):
+    try:
+        print(
+            "FUTURES_DATA_PROVIDER "
+            f"provider={provider} "
+            f"endpoint={endpoint} "
+            f"status={status} "
+            f"fallback_used={str(bool(fallback_used)).lower()} "
+            f"latency_ms={int(latency_ms or 0)} "
+            f"symbols_loaded={int(symbols_loaded or 0)}"
+        )
+    except Exception:
+        pass
+
+
+def _log_futures_provider_summary(primary_provider, active_provider, fallback_reason, futures_symbols=0, klines_available=False, ticker_available=False):
+    try:
+        print(
+            "FUTURES_PROVIDER_SUMMARY "
+            f"primary_provider={primary_provider} "
+            f"active_provider={active_provider} "
+            f"fallback_reason={str(fallback_reason or 'none').replace(' ', '_')} "
+            f"futures_symbols={int(futures_symbols or 0)} "
+            f"klines_available={str(bool(klines_available)).lower()} "
+            f"ticker_available={str(bool(ticker_available)).lower()}"
+        )
+    except Exception:
+        pass
+
+
+def _fetch_futures_json(provider, endpoint, url, fallback_used=False):
+    started = time.time()
+    try:
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        latency_ms = (time.time() - started) * 1000
+        body = str(response.text or "")[:300].replace("\n", " ").replace("\r", " ")
+        _log_futures_data_provider(provider, endpoint, response.status_code, fallback_used, latency_ms)
+        if response.status_code != 200:
+            return None, response.status_code, body, None
+        try:
+            return response.json(), response.status_code, body, None
+        except Exception as e:
+            return None, response.status_code, body, type(e).__name__
+    except Exception as e:
+        latency_ms = (time.time() - started) * 1000
+        _log_futures_data_provider(provider, endpoint, f"exception:{type(e).__name__}", fallback_used, latency_ms)
+        return None, "exception", str(e)[:300], type(e).__name__
+
+
+def _extract_futures_symbol_count(provider, payload):
+    try:
+        provider_key = str(provider or "").upper()
+        if provider_key == "BINANCE_FUTURES" and isinstance(payload, dict):
+            return len([
+                row for row in payload.get("symbols", []) or []
+                if _normalize_exchange_symbol(row.get("symbol")).endswith("USDT")
+                and row.get("status") == "TRADING"
+                and row.get("contractType") in (None, "PERPETUAL")
+            ])
+        if provider_key == "BYBIT" and isinstance(payload, dict):
+            rows = ((payload.get("result") or {}).get("list") or [])
+            return len([row for row in rows if str(row.get("symbol") or "").endswith("USDT") and str(row.get("status") or "").lower() == "trading"])
+        if provider_key == "OKX" and isinstance(payload, dict):
+            rows = payload.get("data") or []
+            return len([row for row in rows if str(row.get("instId") or "").endswith("-USDT-SWAP") and str(row.get("state") or "").lower() == "live"])
+        if provider_key == "KUCOIN_FUTURES" and isinstance(payload, dict):
+            rows = payload.get("data") or []
+            return len([row for row in rows if str(row.get("symbol") or "").endswith("USDTM") and str(row.get("status") or "").lower() == "open"])
+    except Exception:
+        pass
+    return 0
+
+
+def _extract_futures_ticker_count(provider, payload):
+    try:
+        provider_key = str(provider or "").upper()
+        if provider_key == "BINANCE_FUTURES" and isinstance(payload, list):
+            return len([row for row in payload if isinstance(row, dict) and _normalize_exchange_symbol(row.get("symbol")).endswith("USDT")])
+        if provider_key == "BYBIT" and isinstance(payload, dict):
+            return len(((payload.get("result") or {}).get("list") or []))
+        if provider_key == "OKX" and isinstance(payload, dict):
+            return len(payload.get("data") or [])
+        if provider_key == "KUCOIN_FUTURES" and isinstance(payload, dict):
+            return 1 if payload.get("data") else 0
+    except Exception:
+        pass
+    return 0
+
+
+def _futures_provider_metadata(provider, symbol):
+    provider_key = str(provider or "").upper()
+    original_symbol = _futures_symbol_for_provider(symbol, provider_key)
+    if provider_key == "BINANCE_FUTURES":
+        return {
+            "provider": provider_key,
+            "symbol": original_symbol,
+            "exchange_info_url": "https://fapi.binance.com/fapi/v1/exchangeInfo",
+            "ticker_url": "https://fapi.binance.com/fapi/v1/ticker/24hr",
+        }
+    if provider_key == "BYBIT":
+        return {
+            "provider": provider_key,
+            "symbol": original_symbol,
+            "exchange_info_url": "https://api.bybit.com/v5/market/instruments-info?category=linear",
+            "ticker_url": "https://api.bybit.com/v5/market/tickers?category=linear",
+        }
+    if provider_key == "OKX":
+        return {
+            "provider": provider_key,
+            "symbol": original_symbol,
+            "exchange_info_url": "https://www.okx.com/api/v5/public/instruments?instType=SWAP",
+            "ticker_url": "https://www.okx.com/api/v5/market/tickers?instType=SWAP",
+        }
+    return {
+        "provider": "KUCOIN_FUTURES",
+        "symbol": original_symbol,
+        "exchange_info_url": "https://api-futures.kucoin.com/api/v1/contracts/active",
+        "ticker_url": f"https://api-futures.kucoin.com/api/v1/ticker?symbol={original_symbol}",
+    }
+
+
+def _futures_klines_url(provider, provider_symbol, interval, limit):
+    provider_key = str(provider or "").upper()
+    if provider_key == "BINANCE_FUTURES":
+        return f"https://fapi.binance.com/fapi/v1/klines?symbol={provider_symbol}&interval={interval}&limit={limit}"
+    if provider_key == "BYBIT":
+        return f"https://api.bybit.com/v5/market/kline?category=linear&symbol={provider_symbol}&interval={_bybit_interval(interval)}&limit={limit}"
+    if provider_key == "OKX":
+        return f"https://www.okx.com/api/v5/market/candles?instId={provider_symbol}&bar={_okx_interval(interval)}&limit={limit}"
+    end_at = int(time.time())
+    start_at = max(0, end_at - (_kucoin_futures_granularity(interval) * (int(limit or 250) + 8)))
+    return f"https://api-futures.kucoin.com/api/v1/kline/query?symbol={provider_symbol}&granularity={_kucoin_futures_granularity(interval)}&from={start_at}&to={end_at}"
+
+
+def _extract_futures_klines(provider, payload):
+    provider_key = str(provider or "").upper()
+    if provider_key == "BINANCE_FUTURES":
+        return payload if isinstance(payload, list) else None
+    if provider_key == "BYBIT" and isinstance(payload, dict):
+        return (payload.get("result") or {}).get("list")
+    if provider_key == "OKX" and isinstance(payload, dict):
+        return payload.get("data")
+    if provider_key == "KUCOIN_FUTURES" and isinstance(payload, dict):
+        return payload.get("data")
+    return None
+
+
+def get_futures_market_data(symbol, interval="15m", limit=250):
+    providers = ["BINANCE_FUTURES", "BYBIT", "OKX", "KUCOIN_FUTURES"]
+    fallback_reason = None
+    for index, provider in enumerate(providers):
+        fallback_used = index > 0
+        meta = _futures_provider_metadata(provider, symbol)
+        exchange_payload, exchange_status, exchange_body, exchange_exc = _fetch_futures_json(provider, "exchangeInfo", meta["exchange_info_url"], fallback_used=fallback_used)
+        futures_symbols = _extract_futures_symbol_count(provider, exchange_payload)
+        if str(exchange_status) == "451" and provider == "BINANCE_FUTURES":
+            fallback_reason = "BINANCE_FUTURES_HTTP_451"
+            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            continue
+        if str(exchange_status) != "200" or futures_symbols <= 0:
+            fallback_reason = f"{provider}_exchangeInfo_{exchange_status}"
+            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            continue
+
+        ticker_payload, ticker_status, ticker_body, ticker_exc = _fetch_futures_json(provider, "ticker/24hr", meta["ticker_url"], fallback_used=fallback_used)
+        ticker_count = _extract_futures_ticker_count(provider, ticker_payload)
+        ticker_available = str(ticker_status) == "200" and ticker_count > 0
+        if str(ticker_status) == "451" and provider == "BINANCE_FUTURES":
+            fallback_reason = "BINANCE_FUTURES_TICKER_HTTP_451"
+            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            continue
+
+        kline_url = _futures_klines_url(provider, meta["symbol"], interval, limit)
+        kline_payload, kline_status, kline_body, kline_exc = _fetch_futures_json(provider, "klines", kline_url, fallback_used=fallback_used)
+        if str(kline_status) == "451" and provider == "BINANCE_FUTURES":
+            fallback_reason = "BINANCE_FUTURES_KLINES_HTTP_451"
+            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, ticker_available)
+            continue
+        rows = _extract_futures_klines(provider, kline_payload)
+        if not rows:
+            fallback_reason = f"{provider}_klines_empty_or_status_{kline_status}"
+            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, ticker_available)
+            continue
+        if provider == "BINANCE_FUTURES":
+            df = parse_binance_klines_to_df(rows)
+        else:
+            df = _parse_provider_klines_to_df(rows, provider)
+        klines_available = df is not None and not df.empty
+        _log_futures_provider_summary("BINANCE_FUTURES", provider, fallback_reason or "none", futures_symbols, klines_available, ticker_available)
+        if klines_available:
+            try:
+                df["futures_data_provider"] = provider
+                df["futures_provider_symbol"] = meta["symbol"]
+            except Exception:
+                pass
+            log_market_source_once(provider, symbol, interval)
+            return df
+        fallback_reason = f"{provider}_parsed_empty"
+    _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason or "NO_FUTURES_PROVIDER_AVAILABLE", 0, False, False)
+    print(f"WARNING FUTURES_MARKET_DATA_FAILED symbol={symbol} timeframe={interval} reason={fallback_reason or 'NO_FUTURES_PROVIDER_AVAILABLE'}")
+    return None
 
 
 def _fetch_kucoin_candles_with_margin(kucoin_symbol, kucoin_interval, interval, requested_limit):
@@ -2663,90 +2959,75 @@ def cached_market_data(symbol, interval="5m", limit=250, ttl=MARKET_CONTEXT_TTL_
         return None
 
 
+def cached_futures_market_data(symbol, interval="15m", limit=250, ttl=MARKET_CONTEXT_TTL_SECONDS):
+    try:
+        key = ("FUTURES", symbol, interval, int(limit))
+        now = time.time()
+        cached = MARKET_CONTEXT_CACHE.get(key)
+        if cached and now - cached["time"] <= ttl:
+            return cached["df"]
+        df = get_futures_market_data(symbol, interval, limit=limit)
+        if df is not None and not df.empty:
+            MARKET_CONTEXT_CACHE[key] = {"time": now, "df": df}
+        return df
+    except Exception as e:
+        print(f"cached_futures_market_data error {symbol} {interval}: {e}")
+        return None
+
+
 def _diagnose_futures_mtf_data_source(symbol, interval, limit=260):
-    kucoin_tf_map = {
-        "1m": "1min",
-        "3m": "3min",
-        "5m": "5min",
-        "15m": "15min",
-        "30m": "30min",
-        "1h": "1hour",
-        "4h": "4hour",
-        "1d": "1day",
-    }
     result = {
         "symbol": symbol,
         "timeframe": interval,
         "requested_limit": limit,
-        "binance_status": None,
         "binance_futures_status": None,
-        "binance_us_status": None,
-        "kucoin_status": None,
-        "binance_empty": None,
+        "bybit_status": None,
+        "okx_status": None,
+        "kucoin_futures_status": None,
         "binance_futures_empty": None,
-        "binance_us_empty": None,
-        "kucoin_empty": None,
+        "bybit_empty": None,
+        "okx_empty": None,
+        "kucoin_futures_empty": None,
         "symbol_mapping": {
             "normalized": symbol,
-            "kucoin": symbol.replace("USDT", "-USDT"),
+            "binance_futures": _futures_symbol_for_provider(symbol, "BINANCE_FUTURES"),
+            "bybit": _futures_symbol_for_provider(symbol, "BYBIT"),
+            "okx": _futures_symbol_for_provider(symbol, "OKX"),
+            "kucoin_futures": _futures_symbol_for_provider(symbol, "KUCOIN_FUTURES"),
         },
         "fallback_used": False,
         "timeout_or_exception": None,
         "source_used": None,
         "failure_type": None,
     }
-    endpoints = [
-        ("binance", "binance_status", f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-        ("binance_futures", "binance_futures_status", f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-        ("binance_us", "binance_us_status", f"https://api.binance.us/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"),
-    ]
     try:
-        for label, status_key, url in endpoints:
+        for index, provider in enumerate(["BINANCE_FUTURES", "BYBIT", "OKX", "KUCOIN_FUTURES"]):
+            meta = _futures_provider_metadata(provider, symbol)
+            url = _futures_klines_url(provider, meta["symbol"], interval, limit)
+            label = provider.lower()
+            status_key = f"{label}_status"
+            empty_key = f"{label}_empty"
             try:
                 response = requests.get(url, timeout=REQUEST_TIMEOUT)
                 result[status_key] = response.status_code
-                empty_key = f"{label}_empty"
                 parsed = None
                 if response.status_code == 200:
                     try:
                         parsed = response.json()
                     except Exception as json_error:
                         result["failure_type"] = f"{label}_invalid_json:{type(json_error).__name__}"
-                    if isinstance(parsed, list):
-                        result[empty_key] = len(parsed) == 0
-                        if parsed:
-                            result["source_used"] = label.upper()
-                            return result
-                    else:
-                        result[empty_key] = True
+                    rows = _extract_futures_klines(provider, parsed)
+                    result[empty_key] = not bool(rows)
+                    if rows:
+                        result["source_used"] = provider
+                        result["fallback_used"] = index > 0
+                        return result
                 elif response.status_code == 451:
                     result["failure_type"] = "GLOBAL_BINANCE_BLOCKED"
             except requests.exceptions.Timeout as timeout_error:
                 result["timeout_or_exception"] = f"{label}_timeout:{type(timeout_error).__name__}"
             except Exception as endpoint_error:
                 result["timeout_or_exception"] = f"{label}_exception:{type(endpoint_error).__name__}"
-
-        result["fallback_used"] = True
-        kucoin_interval = kucoin_tf_map.get(interval, interval)
-        kucoin_symbol = result["symbol_mapping"]["kucoin"]
-        kucoin_url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
-        try:
-            response = requests.get(kucoin_url, timeout=REQUEST_TIMEOUT)
-            result["kucoin_status"] = response.status_code
-            if response.status_code == 200:
-                payload = response.json()
-                rows = payload.get("data") if isinstance(payload, dict) else None
-                result["kucoin_empty"] = not bool(rows)
-                if rows:
-                    result["source_used"] = "KUCOIN"
-                    return result
-                result["failure_type"] = "KUCOIN_EMPTY"
-            else:
-                result["failure_type"] = f"KUCOIN_STATUS_{response.status_code}"
-        except requests.exceptions.Timeout as timeout_error:
-            result["timeout_or_exception"] = f"kucoin_timeout:{type(timeout_error).__name__}"
-        except Exception as kucoin_error:
-            result["timeout_or_exception"] = f"kucoin_exception:{type(kucoin_error).__name__}"
     except Exception as e:
         result["timeout_or_exception"] = f"diagnostic_error:{type(e).__name__}"
     if not result.get("failure_type"):
@@ -5235,8 +5516,8 @@ def adaptive_mtf_playbook_context(symbol, interval, df):
 def futures_bias_context(symbol):
     """Production futures bias: 4H macro, 1H directional bias."""
     try:
-        df_4h = cached_market_data(symbol, "4h", 260)
-        df_1h = cached_market_data(symbol, "1h", 260)
+        df_4h = cached_futures_market_data(symbol, "4h", 260)
+        df_1h = cached_futures_market_data(symbol, "1h", 260)
         status_4h = _futures_mtf_frame_status(df_4h, "4h", minimum_rows=100)
         status_1h = _futures_mtf_frame_status(df_1h, "1h", minimum_rows=100)
         if not status_4h.get("ok") or not status_1h.get("ok"):
@@ -5739,8 +6020,8 @@ def futures_apply_execution_frames(signal):
         if range_macro_candidate and _safe_float(signal.get("playbook_confidence", signal.get("confidence")), 0) < 80:
             return None, f"unclear 4H macro trend requires confidence >=80: {macro}/{one_h}"
 
-        setup_df = cached_market_data(symbol, FUTURES_SETUP_TIMEFRAME, 240)
-        trigger_df = cached_market_data(symbol, FUTURES_TRIGGER_TIMEFRAME, 240)
+        setup_df = cached_futures_market_data(symbol, FUTURES_SETUP_TIMEFRAME, 240)
+        trigger_df = cached_futures_market_data(symbol, FUTURES_TRIGGER_TIMEFRAME, 240)
         setup = futures_setup_context(symbol, direction, one_h, setup_df)
         if not setup.get("ok"):
             if setup.get("stage") == "ARMED":
