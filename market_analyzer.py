@@ -94,6 +94,9 @@ SYMBOL_FILTER_LOG_CACHE = {}
 SYMBOL_FILTER_LOG_TTL_SECONDS = 1800
 SIGNAL_SCAN_DIAGNOSTICS = {}
 SIGNAL_SCAN_UNIQUE_SYMBOLS = set()
+FUTURES_PROVIDER_HEALTH_CACHE = {}
+FUTURES_PROVIDER_CYCLE_LOCK = {}
+FUTURES_PROVIDER_BLOCK_TTL_SECONDS = int(os.environ.get("FUTURES_PROVIDER_BLOCK_TTL_SECONDS", "2700"))
 FINALIZER_DIAGNOSTICS = {
     "accepted_from_playbook": 0,
     "rejected_by_risk_score": 0,
@@ -2091,6 +2094,95 @@ def _log_futures_provider_summary(primary_provider, active_provider, fallback_re
         pass
 
 
+def _futures_scan_cycle_id():
+    try:
+        return SIGNAL_SCAN_DIAGNOSTICS.get("scan_cycle_id") or "standalone"
+    except Exception:
+        return "standalone"
+
+
+def _futures_provider_order():
+    configured = os.environ.get("FUTURES_PROVIDER_ORDER", "okx,kucoin_futures,binance_futures,bybit")
+    aliases = {
+        "binance": "BINANCE_FUTURES",
+        "binance_futures": "BINANCE_FUTURES",
+        "bybit": "BYBIT",
+        "okx": "OKX",
+        "kucoin": "KUCOIN_FUTURES",
+        "kucoin_futures": "KUCOIN_FUTURES",
+    }
+    providers = []
+    for item in str(configured or "").split(","):
+        key = item.strip().lower()
+        provider = aliases.get(key)
+        if provider and provider not in providers:
+            providers.append(provider)
+    for provider in ["OKX", "KUCOIN_FUTURES", "BINANCE_FUTURES", "BYBIT"]:
+        if provider not in providers:
+            providers.append(provider)
+    return providers
+
+
+def _provider_health_block_reason(provider):
+    entry = FUTURES_PROVIDER_HEALTH_CACHE.get(str(provider or "").upper())
+    if not entry:
+        return None
+    blocked_until = float(entry.get("blocked_until") or 0)
+    if blocked_until > time.time():
+        return entry.get("reason") or "provider_temporarily_blocked"
+    return None
+
+
+def _mark_futures_provider_blocked(provider, reason):
+    provider_key = str(provider or "").upper()
+    if not provider_key:
+        return
+    FUTURES_PROVIDER_HEALTH_CACHE[provider_key] = {
+        "blocked_until": time.time() + FUTURES_PROVIDER_BLOCK_TTL_SECONDS,
+        "reason": reason,
+    }
+
+
+def _mark_futures_provider_healthy(provider):
+    provider_key = str(provider or "").upper()
+    if provider_key:
+        FUTURES_PROVIDER_HEALTH_CACHE[provider_key] = {
+            "blocked_until": 0,
+            "reason": "healthy",
+            "healthy_at": time.time(),
+        }
+
+
+def _log_futures_provider_cycle_lock(scan_cycle_id, selected_provider, selection_reason, provider_locked, symbols_loaded=0, ticker_available=False, klines_available=False):
+    try:
+        print(
+            "FUTURES_PROVIDER_CYCLE_LOCK "
+            f"scan_cycle_id={scan_cycle_id} "
+            f"selected_provider={selected_provider} "
+            f"selection_reason={str(selection_reason or 'none').replace(' ', '_')} "
+            f"provider_locked={str(bool(provider_locked)).lower()} "
+            f"symbols_loaded={int(symbols_loaded or 0)} "
+            f"ticker_available={str(bool(ticker_available)).lower()} "
+            f"klines_available={str(bool(klines_available)).lower()}"
+        )
+    except Exception:
+        pass
+
+
+def _log_futures_request_provider(scan_cycle_id, symbol, timeframe, provider, source_from_cycle_lock):
+    try:
+        print(
+            "FUTURES_REQUEST_PROVIDER "
+            f"scan_cycle_id={scan_cycle_id} "
+            f"symbol={symbol} "
+            f"timeframe={timeframe} "
+            f"provider={provider} "
+            f"source_from_cycle_lock={str(bool(source_from_cycle_lock)).lower()}"
+        )
+    except Exception:
+        pass
+
+
 def _fetch_futures_json(provider, endpoint, url, fallback_used=False):
     started = time.time()
     try:
@@ -2209,20 +2301,43 @@ def _extract_futures_klines(provider, payload):
 
 
 def get_futures_market_data(symbol, interval="15m", limit=250):
-    providers = ["BINANCE_FUTURES", "BYBIT", "OKX", "KUCOIN_FUTURES"]
+    scan_cycle_id = _futures_scan_cycle_id()
+    cycle_lock = FUTURES_PROVIDER_CYCLE_LOCK.get(scan_cycle_id)
+    providers = []
+    if cycle_lock and cycle_lock.get("provider"):
+        providers.append(cycle_lock["provider"])
+    providers.extend([provider for provider in _futures_provider_order() if provider not in providers])
     fallback_reason = None
+    last_provider_tried = None
+    last_failure_stage = None
+    last_cache_available = False
     for index, provider in enumerate(providers):
+        provider = str(provider or "").upper()
+        last_provider_tried = provider
+        blocked_reason = _provider_health_block_reason(provider)
+        if blocked_reason:
+            fallback_reason = f"{provider}_{blocked_reason}"
+            last_failure_stage = "health_cache"
+            continue
         fallback_used = index > 0
+        source_from_cycle_lock = bool(cycle_lock and cycle_lock.get("provider") == provider)
+        _log_futures_request_provider(scan_cycle_id, symbol, interval, provider, source_from_cycle_lock)
         meta = _futures_provider_metadata(provider, symbol)
         exchange_payload, exchange_status, exchange_body, exchange_exc = _fetch_futures_json(provider, "exchangeInfo", meta["exchange_info_url"], fallback_used=fallback_used)
         futures_symbols = _extract_futures_symbol_count(provider, exchange_payload)
         if str(exchange_status) == "451" and provider == "BINANCE_FUTURES":
             fallback_reason = "BINANCE_FUTURES_HTTP_451"
-            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            last_failure_stage = "exchangeInfo"
+            _mark_futures_provider_blocked(provider, fallback_reason)
+            continue
+        if str(exchange_status) == "403" and provider == "BYBIT":
+            fallback_reason = "BYBIT_exchangeInfo_403"
+            last_failure_stage = "exchangeInfo"
+            _mark_futures_provider_blocked(provider, fallback_reason)
             continue
         if str(exchange_status) != "200" or futures_symbols <= 0:
             fallback_reason = f"{provider}_exchangeInfo_{exchange_status}"
-            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            last_failure_stage = "exchangeInfo"
             continue
 
         ticker_payload, ticker_status, ticker_body, ticker_exc = _fetch_futures_json(provider, "ticker/24hr", meta["ticker_url"], fallback_used=fallback_used)
@@ -2230,19 +2345,31 @@ def get_futures_market_data(symbol, interval="15m", limit=250):
         ticker_available = str(ticker_status) == "200" and ticker_count > 0
         if str(ticker_status) == "451" and provider == "BINANCE_FUTURES":
             fallback_reason = "BINANCE_FUTURES_TICKER_HTTP_451"
-            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, False)
+            last_failure_stage = "ticker"
+            _mark_futures_provider_blocked(provider, fallback_reason)
+            continue
+        if str(ticker_status) == "403" and provider == "BYBIT":
+            fallback_reason = "BYBIT_ticker_403"
+            last_failure_stage = "ticker"
+            _mark_futures_provider_blocked(provider, fallback_reason)
             continue
 
         kline_url = _futures_klines_url(provider, meta["symbol"], interval, limit)
         kline_payload, kline_status, kline_body, kline_exc = _fetch_futures_json(provider, "klines", kline_url, fallback_used=fallback_used)
         if str(kline_status) == "451" and provider == "BINANCE_FUTURES":
             fallback_reason = "BINANCE_FUTURES_KLINES_HTTP_451"
-            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, ticker_available)
+            last_failure_stage = "klines"
+            _mark_futures_provider_blocked(provider, fallback_reason)
+            continue
+        if str(kline_status) == "403" and provider == "BYBIT":
+            fallback_reason = "BYBIT_klines_403"
+            last_failure_stage = "klines"
+            _mark_futures_provider_blocked(provider, fallback_reason)
             continue
         rows = _extract_futures_klines(provider, kline_payload)
         if not rows:
             fallback_reason = f"{provider}_klines_empty_or_status_{kline_status}"
-            _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason, futures_symbols, False, ticker_available)
+            last_failure_stage = "klines"
             continue
         if provider == "BINANCE_FUTURES":
             df = parse_binance_klines_to_df(rows)
@@ -2251,6 +2378,16 @@ def get_futures_market_data(symbol, interval="15m", limit=250):
         klines_available = df is not None and not df.empty
         _log_futures_provider_summary("BINANCE_FUTURES", provider, fallback_reason or "none", futures_symbols, klines_available, ticker_available)
         if klines_available:
+            _mark_futures_provider_healthy(provider)
+            if not cycle_lock:
+                FUTURES_PROVIDER_CYCLE_LOCK[scan_cycle_id] = {
+                    "provider": provider,
+                    "reason": fallback_reason or "provider_healthy",
+                    "symbols_loaded": futures_symbols,
+                    "ticker_available": ticker_available,
+                    "klines_available": True,
+                }
+                _log_futures_provider_cycle_lock(scan_cycle_id, provider, fallback_reason or "provider_healthy", True, futures_symbols, ticker_available, True)
             try:
                 df["futures_data_provider"] = provider
                 df["futures_provider_symbol"] = meta["symbol"]
@@ -2259,7 +2396,17 @@ def get_futures_market_data(symbol, interval="15m", limit=250):
             log_market_source_once(provider, symbol, interval)
             return df
         fallback_reason = f"{provider}_parsed_empty"
-    _log_futures_provider_summary("BINANCE_FUTURES", "NONE", fallback_reason or "NO_FUTURES_PROVIDER_AVAILABLE", 0, False, False)
+        last_failure_stage = "parse"
+    cache_key = ("FUTURES", symbol, interval, int(limit))
+    last_cache_available = bool(MARKET_CONTEXT_CACHE.get(cache_key))
+    none_reason = (
+        f"{fallback_reason or 'NO_FUTURES_PROVIDER_AVAILABLE'}"
+        f"_last_provider={last_provider_tried or 'none'}"
+        f"_failure_stage={last_failure_stage or 'unknown'}"
+        f"_cycle_lock={cycle_lock.get('provider') if cycle_lock else 'none'}"
+        f"_cache_available={str(last_cache_available).lower()}"
+    )
+    _log_futures_provider_summary("BINANCE_FUTURES", "NONE", none_reason, 0, False, False)
     print(f"WARNING FUTURES_MARKET_DATA_FAILED symbol={symbol} timeframe={interval} reason={fallback_reason or 'NO_FUTURES_PROVIDER_AVAILABLE'}")
     return None
 
