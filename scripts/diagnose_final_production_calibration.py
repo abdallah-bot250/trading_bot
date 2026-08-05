@@ -7,7 +7,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ai_model import explain_predict_trade
-from market_analyzer import _finalizer_rejection_bucket, _select_final_delivery_candidates, _soft_armed_futures_approval
+from market_analyzer import (
+    _duplicate_penalty_markers,
+    _finalizer_rejection_bucket,
+    _select_final_delivery_candidates,
+    _signal_penalty_markers,
+    _soft_armed_futures_approval,
+    evaluate_final_approval_mode,
+)
 
 
 def base_signal(**overrides):
@@ -107,6 +114,59 @@ def main():
     ok, reason = explain_predict_trade(sig)
     assert_true("duplicate high-risk penalty becomes reduced approval", ok and sig.get("approval_type") == "REDUCED_SIZE_APPROVAL")
     assert_true("reduced size multiplier is 50 percent", sig.get("size_multiplier") == 0.5)
+
+    yom_like = base_signal(
+        pair="YOMUSDT",
+        confidence=72,
+        display_confidence=70,
+        playbook_confidence=72,
+        risk_level="HIGH",
+        confidence_cap_reason="high_risk",
+        setup_confirmed=True,
+        risk_reward=2.0,
+    )
+    decision = evaluate_final_approval_mode(yom_like)
+    assert_true(
+        "Case A YOM-like rejects with one documented approval rule",
+        decision["approval_type"] == "REJECT" and "high_risk_requires" in decision["reason"]
+    )
+    assert_true("Case A high risk penalty is deduped", _signal_penalty_markers(yom_like).count("HIGH_RISK") == 1)
+
+    bdx_like = base_signal(
+        pair="BDXUSDT",
+        confidence=83,
+        display_confidence=68,
+        playbook_confidence=83,
+        risk_level="HIGH",
+        volume_state="THIN",
+        confidence_cap_reason="thin_volume_high_risk",
+        setup_confirmed=True,
+        risk_reward=2.0,
+    )
+    decision = evaluate_final_approval_mode(bdx_like)
+    assert_true("Case B BDX-like confidence 68 rejects", decision["approval_type"] == "REJECT" and "below_70" in decision["reason"])
+    assert_true("Case B duplicate markers are unique", len(_duplicate_penalty_markers(bdx_like, "high risk requires stronger confidence")) == len(set(_duplicate_penalty_markers(bdx_like, "high risk requires stronger confidence"))))
+
+    case_c = base_signal(
+        pair="CASECUSDT",
+        confidence=86,
+        display_confidence=72,
+        playbook_confidence=86,
+        risk_level="HIGH",
+        confidence_cap_reason="high_risk",
+        setup_confirmed=True,
+        risk_reward=2.0,
+    )
+    decision = evaluate_final_approval_mode(case_c)
+    assert_true("Case C high risk confirmed setup becomes reduced approval", decision["approval_type"] == "REDUCED_SIZE_APPROVAL")
+
+    case_d = base_signal(pair="CASEDUSDT", tp=96, tp1=96)
+    decision = evaluate_final_approval_mode(case_d)
+    assert_true("Case D invalid geometry hard rejects", decision["approval_type"] == "REJECT" and "invalid_LONG_geometry" in decision["reason"])
+
+    case_e = base_signal(pair="CASEEUSDT", expert_mtf={"state": "HARD_CONFLICT", "reason": "4H bull vs 1H bear"})
+    decision = evaluate_final_approval_mode(case_e)
+    assert_true("Case E hard MTF conflict hard rejects", decision["approval_type"] == "REJECT" and "hard_MTF_conflict" in decision["reason"])
 
     sig = base_signal(display_confidence=72, confidence=72, risk_level="HIGH")
     ok, reason = explain_predict_trade(sig)

@@ -112,6 +112,9 @@ FINALIZER_DIAGNOSTICS = {
     "approved_reduced_size": 0,
     "approved_early_confirmation": 0,
     "approved_range_macro": 0,
+    "approval_modes_evaluated": 0,
+    "rejected_after_approval_evaluation": 0,
+    "approved_reduced_size_symbols": [],
     "hard_armed_rejected": 0,
     "soft_armed_approved": 0,
     "confirmed_trigger_normal_flow": 0,
@@ -182,6 +185,9 @@ def reset_signal_scan_diagnostics():
         "approved_reduced_size": 0,
         "approved_early_confirmation": 0,
         "approved_range_macro": 0,
+        "approval_modes_evaluated": 0,
+        "rejected_after_approval_evaluation": 0,
+        "approved_reduced_size_symbols": [],
         "hard_armed_rejected": 0,
         "soft_armed_approved": 0,
         "confirmed_trigger_normal_flow": 0,
@@ -341,6 +347,41 @@ def _log_finalizer_diagnostic_summary():
         )
     except Exception:
         pass
+    _log_finalizer_cycle_summary()
+
+
+def _log_finalizer_cycle_summary():
+    try:
+        finalized_total = int(FINALIZER_DIAGNOSTICS.get("finalized_spot", 0) or 0) + int(FINALIZER_DIAGNOSTICS.get("finalized_futures", 0) or 0)
+        approved_normal = int(FINALIZER_DIAGNOSTICS.get("approved_normal", 0) or 0)
+        approved_reduced = int(FINALIZER_DIAGNOSTICS.get("approved_reduced_size", 0) or 0)
+        approved_early = int(FINALIZER_DIAGNOSTICS.get("approved_early_confirmation", 0) or 0)
+        approved_range = int(FINALIZER_DIAGNOSTICS.get("approved_range_macro", 0) or 0)
+        approval_modes = int(FINALIZER_DIAGNOSTICS.get("approval_modes_evaluated", 0) or 0)
+        print(
+            "FINALIZER_CYCLE_SUMMARY "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"accepted_from_playbook={FINALIZER_DIAGNOSTICS.get('accepted_from_playbook', 0)} "
+            f"approval_modes_evaluated={approval_modes} "
+            f"approved_normal={approved_normal} "
+            f"approved_reduced_size={approved_reduced} "
+            f"approved_early_confirmation={approved_early} "
+            f"approved_range_macro={approved_range} "
+            f"rejected_after_approval_evaluation={FINALIZER_DIAGNOSTICS.get('rejected_after_approval_evaluation', 0)} "
+            f"finalized_total={finalized_total} "
+            f"signals_sent={FINALIZER_DIAGNOSTICS.get('sent_to_sender', 0)}"
+        )
+        if approval_modes > 0 and (approved_normal + approved_reduced + approved_early + approved_range) == 0:
+            print(
+                "WARNING_APPROVAL_PATH_UNUSED "
+                f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+                f"approval_modes_evaluated={approval_modes}"
+            )
+        if approved_reduced > 0:
+            symbols = FINALIZER_DIAGNOSTICS.get("approved_reduced_size_symbols") or []
+            print(f"APPROVED_REDUCED_SIZE_SYMBOLS symbols={','.join([str(s) for s in symbols]) or 'none'}")
+    except Exception:
+        pass
 
 
 def _finalizer_is_hard_safety_bucket(bucket):
@@ -373,7 +414,11 @@ def _signal_penalty_markers(signal):
             markers.append("UNCLEAR_MACRO")
     except Exception:
         pass
-    return markers
+    deduped = []
+    for marker in markers:
+        if marker and marker not in deduped:
+            deduped.append(marker)
+    return deduped
 
 
 def _duplicate_penalty_markers(signal, ai_reason=""):
@@ -390,6 +435,152 @@ def _duplicate_penalty_markers(signal, ai_reason=""):
     except Exception:
         pass
     return duplicates
+
+
+def _finalizer_hard_reject_reasons(signal):
+    reasons = []
+    try:
+        entry = _safe_float(signal.get("entry"))
+        tp = _safe_float(signal.get("tp"))
+        sl = _safe_float(signal.get("sl"))
+        direction = str(signal.get("direction") or "").upper()
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        mtf = signal.get("expert_mtf") or {}
+        mtf_state = str(mtf.get("state") or signal.get("mtf_state") or "").upper()
+        mtf_reason = str(mtf.get("reason") or signal.get("mtf_reason") or "").upper()
+        market_regime = str(signal.get("market_regime") or signal.get("adaptive_regime") or "").upper()
+        volume_ratio = _safe_float(signal.get("volume_ratio"), None)
+        liquidity_score = _safe_float(signal.get("liquidity_score", signal.get("volume_score")), None)
+        trend_power = str(signal.get("trend_power") or "").upper()
+
+        if entry <= 0 or tp <= 0 or sl <= 0:
+            reasons.append("invalid_prices")
+        elif direction == "LONG" and not (tp > entry and sl < entry):
+            reasons.append("invalid_LONG_geometry")
+        elif direction == "SHORT" and not (tp < entry and sl > entry):
+            reasons.append("invalid_SHORT_geometry")
+        elif direction not in {"LONG", "SHORT"}:
+            reasons.append("invalid_direction")
+        if rr and rr < 1.5:
+            reasons.append("RR_below_minimum")
+        if bool(signal.get("mtf_hard_conflict")) or mtf_state == "HARD_CONFLICT" or "HARD_CONFLICT" in mtf_reason:
+            reasons.append("hard_MTF_conflict")
+        if bool(signal.get("liquidity_invalid")) or bool(signal.get("liquidity_hard_reject")) or market_regime in {"LOW_LIQUIDITY", "LOW_VOLUME_CHOP"}:
+            reasons.append("hard_liquidity_failure")
+        if volume_ratio is not None and volume_ratio < 0.12:
+            reasons.append("hard_liquidity_volume_ratio")
+        if liquidity_score is not None and liquidity_score < 35:
+            reasons.append("hard_liquidity_score")
+        if bool(signal.get("stale_entry")) or bool(signal.get("entry_stale")):
+            reasons.append("stale_entry")
+        if bool(signal.get("fake_breakout")) or market_regime == "FAKE_BREAKOUT":
+            reasons.append("fake_breakout")
+        if trend_power == "STRONG_BULL" and direction == "SHORT":
+            reasons.append("opposite_strong_trend")
+        if trend_power == "STRONG_BEAR" and direction == "LONG":
+            reasons.append("opposite_strong_trend")
+    except Exception as e:
+        reasons.append(f"hard_reject_check_error:{type(e).__name__}")
+    return reasons
+
+
+def evaluate_final_approval_mode(signal):
+    try:
+        hard_rejects = _finalizer_hard_reject_reasons(signal)
+        soft_penalties = _signal_penalty_markers(signal)
+        duplicate_penalties = _duplicate_penalty_markers(signal, "")
+        confidence = _safe_float(signal.get("display_confidence", signal.get("confidence")), 0)
+        playbook_confidence = _safe_float(signal.get("playbook_confidence", signal.get("raw_confidence", signal.get("confidence"))), 0)
+        rr = _safe_float(signal.get("risk_reward"), 0)
+        risk_level = str(signal.get("risk_level") or "").upper()
+        volume_state = str(signal.get("volume_state") or signal.get("volume") or "").upper()
+        setup_confirmed = bool(
+            signal.get("setup_confirmed")
+            or signal.get("strategy_name")
+            or signal.get("setup_type")
+            or signal.get("smart_money_setup")
+            or signal.get("futures_30m_setup")
+        )
+
+        result = {
+            "approval_type": "REJECT",
+            "reason": "approval_not_evaluated",
+            "hard_rejects": hard_rejects,
+            "soft_penalties": soft_penalties,
+            "duplicate_penalties": duplicate_penalties,
+            "approval_path_evaluated": True,
+        }
+        if hard_rejects:
+            result["reason"] = "hard_reject:" + ",".join(hard_rejects)
+            return result
+        if str(signal.get("approval_type") or "").upper() == "EARLY_CONFIRMATION_APPROVAL":
+            return {**result, "approval_type": "EARLY_CONFIRMATION_APPROVAL", "reason": "existing_early_confirmation_approval"}
+        if str(signal.get("approval_type") or "").upper() == "RANGE_MACRO_TREND_APPROVAL":
+            return {**result, "approval_type": "RANGE_MACRO_APPROVAL", "reason": "existing_range_macro_approval"}
+        if confidence < 70:
+            return {**result, "reason": f"display_confidence_below_70:{round(confidence, 2)}"}
+        if risk_level == "HIGH" and confidence < 82:
+            if setup_confirmed and playbook_confidence >= 80 and 70 <= confidence <= 74 and rr >= 1.5 and volume_state != "THIN":
+                return {**result, "approval_type": "REDUCED_SIZE_APPROVAL", "reason": "high_risk_confirmed_setup_reduced_size"}
+            return {**result, "reason": "high_risk_requires_stronger_playbook_or_confidence"}
+        if 70 <= confidence <= 74:
+            if setup_confirmed and playbook_confidence >= 80 and rr >= 1.5:
+                if volume_state == "THIN" and not (playbook_confidence >= 80 and rr >= 1.8 and risk_level in {"LOW", "MEDIUM", "NORMAL", "MODERATE", ""}):
+                    return {**result, "reason": "thin_volume_soft_risk_requires_stronger_playbook_rr"}
+                return {**result, "approval_type": "REDUCED_SIZE_APPROVAL", "reason": "confidence_70_74_reduced_size"}
+            return {**result, "reason": "confidence_70_74_requires_confirmed_setup_strong_playbook"}
+        return {**result, "approval_type": "NORMAL_APPROVAL", "reason": "normal_approval_confidence"}
+    except Exception as e:
+        return {
+            "approval_type": "REJECT",
+            "reason": f"approval_mode_error:{type(e).__name__}",
+            "hard_rejects": [],
+            "soft_penalties": [],
+            "duplicate_penalties": [],
+            "approval_path_evaluated": True,
+        }
+
+
+def _log_finalizer_approval_path_trace(signal, approval_result=None, final_decision="UNKNOWN", reject_stage="", reject_reason=""):
+    try:
+        approval_result = approval_result or {}
+        print(
+            "FINALIZER_APPROVAL_PATH_TRACE "
+            f"scan_cycle_id={SIGNAL_SCAN_DIAGNOSTICS.get('scan_cycle_id', 'unknown') if SIGNAL_SCAN_DIAGNOSTICS else 'unknown'} "
+            f"symbol={signal.get('pair')} "
+            f"timeframe={signal.get('timeframe')} "
+            f"playbook_confidence={signal.get('playbook_confidence', signal.get('raw_confidence', signal.get('confidence')))} "
+            f"display_confidence={signal.get('display_confidence', signal.get('confidence'))} "
+            f"final_confidence={signal.get('display_confidence', signal.get('confidence'))} "
+            f"risk_level={signal.get('risk_level')} "
+            f"hard_rejects={','.join(approval_result.get('hard_rejects') or []) or 'none'} "
+            f"soft_penalties={','.join(approval_result.get('soft_penalties') or []) or 'none'} "
+            f"duplicate_penalties={','.join(approval_result.get('duplicate_penalties') or []) or 'none'} "
+            f"approval_path_evaluated={str(bool(approval_result.get('approval_path_evaluated'))).lower()} "
+            f"approval_type={approval_result.get('approval_type') or signal.get('approval_type') or 'UNKNOWN'} "
+            f"final_decision={final_decision} "
+            f"reject_stage={reject_stage or 'none'} "
+            f"reject_reason={str(reject_reason or approval_result.get('reason') or 'none').replace(' ', '_')}"
+        )
+    except Exception:
+        pass
+
+
+def _log_post_approval_reject_trace(signal, approval_result=None, reject_stage="", reject_reason=""):
+    try:
+        approval_result = approval_result or {}
+        approval_type = str(approval_result.get("approval_type") or signal.get("approval_type") or "UNKNOWN").upper()
+        if bool(approval_result.get("approval_path_evaluated")) and approval_type != "REJECT":
+            _finalizer_diag_inc("rejected_after_approval_evaluation")
+            print(
+                "POST_APPROVAL_REJECT_TRACE "
+                f"symbol={signal.get('pair')} "
+                f"approval_type={approval_type} "
+                f"reject_stage={reject_stage or 'unknown'} "
+                f"reject_reason={str(reject_reason or 'unknown').replace(' ', '_')}"
+            )
+    except Exception:
+        pass
 
 
 def _log_confidence_calibration_trace(signal, ai_reason="", final_decision="UNKNOWN"):
@@ -552,6 +743,7 @@ def _log_final_production_calibration_summary(selected_for_delivery=0, signals_s
             f"acceptance_rate={acceptance_rate}% "
             f"top_rejection_reason={top_reason}"
         )
+        _log_finalizer_cycle_summary()
     except Exception:
         pass
 
@@ -7277,6 +7469,18 @@ def finalize_adaptive_signal(signal, df, paid=True):
             "sl": sl,
             "confidence": signal.get("confidence"),
         }
+        _log_finalizer_approval_path_trace(
+            signal,
+            {
+                "approval_type": "PENDING",
+                "reason": "finalizer_entered",
+                "hard_rejects": [],
+                "soft_penalties": [],
+                "duplicate_penalties": [],
+                "approval_path_evaluated": False,
+            },
+            final_decision="ENTERED",
+        )
 
         ai_engine_report = build_ai_engine_report(
             df,
@@ -7331,11 +7535,52 @@ def finalize_adaptive_signal(signal, df, paid=True):
         })
         quality_ok, quality_reason = apply_signal_quality_report(signal)
         if not quality_ok:
+            _log_finalizer_approval_path_trace(
+                signal,
+                {"approval_type": "REJECT", "reason": quality_reason, "hard_rejects": _finalizer_hard_reject_reasons(signal), "soft_penalties": _signal_penalty_markers(signal), "duplicate_penalties": [], "approval_path_evaluated": False},
+                final_decision="REJECT",
+                reject_stage="quality_report",
+                reject_reason=quality_reason,
+            )
             return _finalizer_reject(quality_reason, signal, stage="quality_report")
+        approval_result = evaluate_final_approval_mode(signal)
+        _finalizer_diag_inc("approval_modes_evaluated")
+        approval_type = str(approval_result.get("approval_type") or "REJECT").upper()
+        if approval_type == "REJECT":
+            if "display_confidence_below_70" in str(approval_result.get("reason") or ""):
+                _log_confidence_breakdown(signal, f"display confidence {signal.get('display_confidence')} below 70")
+            _log_finalizer_approval_path_trace(
+                signal,
+                approval_result,
+                final_decision="REJECT",
+                reject_stage="approval_mode",
+                reject_reason=approval_result.get("reason"),
+            )
+            return _finalizer_reject(approval_result.get("reason") or "approval mode rejected", signal, stage="approval_mode")
+        if approval_type == "REDUCED_SIZE_APPROVAL":
+            signal["approval_type"] = "REDUCED_SIZE_APPROVAL"
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = signal.get("risk_tier") or signal.get("risk_level") or "ELEVATED"
+            signal["size_multiplier"] = _safe_float(signal.get("size_multiplier"), AI_REDUCED_SIZE_MULTIPLIER) or AI_REDUCED_SIZE_MULTIPLIER
+        elif approval_type == "EARLY_CONFIRMATION_APPROVAL":
+            signal["approval_type"] = "EARLY_CONFIRMATION_APPROVAL"
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+        elif approval_type == "RANGE_MACRO_APPROVAL":
+            signal["approval_type"] = "RANGE_MACRO_TREND_APPROVAL"
+            signal["risk_mode"] = "Reduced Size"
+            signal["risk_tier"] = "ELEVATED"
+            signal["size_multiplier"] = AI_REDUCED_SIZE_MULTIPLIER
+        else:
+            signal["approval_type"] = "NORMAL_APPROVAL"
+            signal.setdefault("size_multiplier", 1.0)
+        _log_finalizer_approval_path_trace(signal, approval_result, final_decision="APPROVAL_MODE_PASS")
         if _safe_float(signal.get("display_confidence"), 0) < 70:
             calibrated, calibration_reason = apply_b_plus_calibration(signal)
             if not calibrated:
                 _log_confidence_breakdown(signal, f"display confidence {signal.get('display_confidence')} below 70")
+                _log_post_approval_reject_trace(signal, approval_result, "b_plus_calibration", f"display confidence {signal.get('display_confidence')} below 70")
                 return _finalizer_reject(f"display confidence {signal.get('display_confidence')} below 70", signal, stage="b_plus_calibration")
         expert_context = {
             "mtf": signal.get("expert_mtf") or {},
@@ -7362,11 +7607,13 @@ def finalize_adaptive_signal(signal, df, paid=True):
             else:
                 failed_names = ",".join([item["name"] for item in checklist.get("failed", [])])
                 _no_trade_reason(signal.get("pair"), interval, f"quality checklist {checklist['percent']}% failed={failed_names}")
+                _log_post_approval_reject_trace(signal, approval_result, "quality_checklist", f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}")
                 return _finalizer_reject(f"quality checklist {checklist['percent']}% below {EXPERT_QUALITY_MIN_PERCENT}% failed={failed_names}; supply={supply_reason}", signal, stage="quality_checklist")
         self_ok, self_reason = expert_self_review(signal, checklist)
         signal["self_review"] = self_reason
         if not self_ok:
             _no_trade_reason(signal.get("pair"), interval, self_reason)
+            _log_post_approval_reject_trace(signal, approval_result, "self_review", self_reason)
             return _finalizer_reject(self_reason, signal, stage="self_review")
         try:
             from ai_model import explain_predict_trade
@@ -7375,6 +7622,14 @@ def finalize_adaptive_signal(signal, df, paid=True):
             ai_ok, ai_reason = predict_trade(signal), "legacy AI decision"
         _log_confidence_calibration_trace(signal, ai_reason, "PASS" if ai_ok else "REJECT")
         if not ai_ok:
+            _log_finalizer_approval_path_trace(
+                signal,
+                approval_result,
+                final_decision="REJECT",
+                reject_stage="ai_model",
+                reject_reason=ai_reason,
+            )
+            _log_post_approval_reject_trace(signal, approval_result, "ai_model", f"AI model rejected adaptive signal: {ai_reason}")
             return _finalizer_reject(f"AI model rejected adaptive signal: {ai_reason}", signal, stage="ai_model")
         approval_type = str(signal.get("approval_type") or "NORMAL_APPROVAL").upper()
         if approval_type == "REDUCED_SIZE_APPROVAL":
@@ -7394,15 +7649,24 @@ def finalize_adaptive_signal(signal, df, paid=True):
             signal.setdefault("size_multiplier", 1.0)
         managed_signal, entry_reason = professional_entry_manager(signal, df)
         if not managed_signal:
+            _log_post_approval_reject_trace(signal, approval_result, "professional_entry_manager", entry_reason)
             return _finalizer_reject(entry_reason, signal, stage="professional_entry_manager")
         final_ok, final_reason = final_fund_manager_review(managed_signal)
         if not final_ok:
             _entry_manager_log("FINAL_REVIEW_FAILED", managed_signal.get("pair"), final_reason)
+            _log_post_approval_reject_trace(managed_signal, approval_result, "fund_manager_review", final_reason)
             return _finalizer_reject(final_reason, managed_signal, stage="fund_manager_review")
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
         managed_approval_type = str(managed_signal.get("approval_type") or signal.get("approval_type") or "NORMAL_APPROVAL").upper()
         if managed_approval_type == "REDUCED_SIZE_APPROVAL":
             _finalizer_diag_inc("approved_reduced_size")
+            try:
+                symbols = FINALIZER_DIAGNOSTICS.setdefault("approved_reduced_size_symbols", [])
+                pair = str(managed_signal.get("pair") or signal.get("pair") or "").upper()
+                if pair and pair not in symbols:
+                    symbols.append(pair)
+            except Exception:
+                pass
         elif managed_approval_type == "EARLY_CONFIRMATION_APPROVAL":
             _finalizer_diag_inc("approved_early_confirmation")
         elif managed_approval_type == "RANGE_MACRO_TREND_APPROVAL":
