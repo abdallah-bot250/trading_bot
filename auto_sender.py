@@ -581,6 +581,299 @@ def get_live_price(symbol):
         log(f"get_live_price error for {symbol}: {e}")
         return None
 
+
+def _parse_dt(value):
+    try:
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        text = str(value).replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            return datetime.strptime(str(value).split(".")[0], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def _spot_kucoin_symbol(symbol):
+    rest_symbol = normalize_symbol_for_rest(symbol)
+    if "-" in str(rest_symbol):
+        return rest_symbol
+    if str(rest_symbol).upper().endswith("USDT"):
+        return str(rest_symbol).upper().replace("USDT", "-USDT")
+    return str(rest_symbol).upper()
+
+
+def _spot_candle_interval(timeframe):
+    mapping = {
+        "1m": "1min",
+        "3m": "3min",
+        "5m": "5min",
+        "15m": "15min",
+        "30m": "30min",
+        "1h": "1hour",
+        "4h": "4hour",
+        "1d": "1day",
+    }
+    return mapping.get(str(timeframe or "15m").lower(), "15min")
+
+
+def _fetch_recent_spot_candles(symbol, timeframe="15m", limit=80):
+    """Diagnostics-only candle fetch. Does not affect trading decisions."""
+    failures = []
+    try:
+        rest_symbol = normalize_symbol_for_rest(symbol)
+        url = f"https://api.binance.com/api/v3/klines?symbol={rest_symbol}&interval={timeframe or '15m'}&limit={int(limit)}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            candles = []
+            for row in data if isinstance(data, list) else []:
+                candles.append({
+                    "timestamp": datetime.utcfromtimestamp(float(row[0]) / 1000.0),
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "source": "BINANCE_SPOT_KLINES",
+                })
+            if candles:
+                return candles, "BINANCE_SPOT_KLINES"
+        failures.append(f"BINANCE={response.status_code}")
+    except Exception as e:
+        failures.append(f"BINANCE={type(e).__name__}")
+
+    try:
+        kucoin_symbol = _spot_kucoin_symbol(symbol)
+        kucoin_interval = _spot_candle_interval(timeframe)
+        url = f"https://api.kucoin.com/api/v1/market/candles?type={kucoin_interval}&symbol={kucoin_symbol}"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            payload = response.json()
+            rows = (payload.get("data") if isinstance(payload, dict) else None) or []
+            candles = []
+            for row in rows[: int(limit)]:
+                candles.append({
+                    "timestamp": datetime.utcfromtimestamp(float(row[0])),
+                    "open": float(row[1]),
+                    "close": float(row[2]),
+                    "high": float(row[3]),
+                    "low": float(row[4]),
+                    "source": "KUCOIN_SPOT_KLINES",
+                })
+            candles.sort(key=lambda item: item["timestamp"])
+            if candles:
+                return candles[-int(limit):], "KUCOIN_SPOT_KLINES"
+        failures.append(f"KUCOIN={response.status_code}")
+    except Exception as e:
+        failures.append(f"KUCOIN={type(e).__name__}")
+
+    log(f"SPOT_CANDLE_DIAGNOSTIC_FAILED symbol={symbol} failures={';'.join(failures)}")
+    return [], "UNAVAILABLE"
+
+
+def _direction_touch_flags(direction, candle, entry, sl, tp1, tp2=None, tp3=None):
+    direction = str(direction or "").upper()
+    high = float(candle.get("high", 0) or 0)
+    low = float(candle.get("low", 0) or 0)
+    if direction == "SHORT":
+        return {
+            "entry": bool(high >= entry) if entry else False,
+            "sl": bool(high >= sl) if sl else False,
+            "tp1": bool(low <= tp1) if tp1 else False,
+            "tp2": bool(low <= tp2) if tp2 else False,
+            "tp3": bool(low <= tp3) if tp3 else False,
+        }
+    return {
+        "entry": bool(low <= entry) if entry else False,
+        "sl": bool(low <= sl) if sl else False,
+        "tp1": bool(high >= tp1) if tp1 else False,
+        "tp2": bool(high >= tp2) if tp2 else False,
+        "tp3": bool(high >= tp3) if tp3 else False,
+    }
+
+
+def _emit_spot_trade_lifecycle_trace(signal_id, pair, direction, timeframe, sent_at, entry, sl, tp1, tp2, tp3, current_price, outcome=None):
+    try:
+        candles, price_source = _fetch_recent_spot_candles(pair, timeframe or "15m", 80)
+        candle = candles[-1] if candles else {
+            "timestamp": None,
+            "open": current_price,
+            "high": current_price,
+            "low": current_price,
+            "close": current_price,
+            "source": "LIVE_PRICE_ONLY",
+        }
+        if not candles:
+            price_source = "LIVE_PRICE_ONLY"
+        flags = _direction_touch_flags(direction, candle, float(entry or 0), float(sl or 0), float(tp1 or 0), float(tp2 or 0), float(tp3 or 0))
+        first_known_event = "NONE"
+        if flags["sl"] and (flags["tp1"] or flags["tp2"] or flags["tp3"]):
+            first_known_event = "AMBIGUOUS_INTRABAR_ORDER"
+        elif flags["tp3"]:
+            first_known_event = "TP3_TOUCHED"
+        elif flags["tp2"]:
+            first_known_event = "TP2_TOUCHED"
+        elif flags["tp1"]:
+            first_known_event = "TP1_TOUCHED"
+        elif flags["sl"]:
+            first_known_event = "SL_TOUCHED"
+        elif flags["entry"]:
+            first_known_event = "ENTRY_TOUCHED"
+
+        sent_dt = _parse_dt(sent_at)
+        seconds_from_entry_to_sl = "unknown"
+        seconds_from_sl_to_tp1_if_later = "unknown"
+        sl_time = None
+        tp1_after_sl_time = None
+        entry_reached_time = None
+        for item in candles:
+            item_flags = _direction_touch_flags(direction, item, float(entry or 0), float(sl or 0), float(tp1 or 0), float(tp2 or 0), float(tp3 or 0))
+            ts = item.get("timestamp")
+            if entry_reached_time is None and item_flags["entry"]:
+                entry_reached_time = ts
+            if sl_time is None and item_flags["sl"]:
+                sl_time = ts
+            if sl_time is not None and tp1_after_sl_time is None and item_flags["tp1"] and ts and ts > sl_time:
+                tp1_after_sl_time = ts
+        if entry_reached_time and sl_time:
+            seconds_from_entry_to_sl = int((sl_time - entry_reached_time).total_seconds())
+        elif sent_dt and sl_time:
+            seconds_from_entry_to_sl = int((sl_time.replace(tzinfo=None) - sent_dt.replace(tzinfo=None)).total_seconds())
+        if sl_time and tp1_after_sl_time:
+            seconds_from_sl_to_tp1_if_later = int((tp1_after_sl_time - sl_time).total_seconds())
+
+        log(
+            "SPOT_TRADE_LIFECYCLE_TRACE "
+            f"signal_id={signal_id} symbol={pair} direction={direction} timeframe={timeframe or 'unknown'} "
+            f"sent_at={sent_at} entry={entry} stop_loss={sl} tp1={tp1} tp2={tp2} tp3={tp3} "
+            f"price_source={price_source} candle_timestamp={candle.get('timestamp')} "
+            f"open={candle.get('open')} high={candle.get('high')} low={candle.get('low')} close={candle.get('close')} "
+            f"entry_was_reached={str(flags['entry']).lower()} sl_was_touched={str(flags['sl']).lower()} "
+            f"tp1_was_touched={str(flags['tp1']).lower()} tp2_was_touched={str(flags['tp2']).lower()} tp3_was_touched={str(flags['tp3']).lower()} "
+            f"first_known_event={first_known_event} result_recorded={outcome or 'none'} "
+            f"seconds_from_entry_to_sl={seconds_from_entry_to_sl} seconds_from_sl_to_tp1_if_later={seconds_from_sl_to_tp1_if_later}"
+        )
+        return {
+            "first_known_event": first_known_event,
+            "sl_time": sl_time,
+            "tp1_after_sl_time": tp1_after_sl_time,
+            "candles": candles,
+            "price_source": price_source,
+        }
+    except Exception as e:
+        log(f"SPOT_TRADE_LIFECYCLE_TRACE_ERROR signal_id={signal_id} symbol={pair} error={type(e).__name__}")
+        return {}
+
+
+def emit_spot_stop_then_target_report(limit=100):
+    """Diagnostics-only report for real tracked SPOT signals."""
+    if not ENABLE_SIGNAL_TRACKING:
+        return
+    try:
+        conn = db()
+        c = conn.cursor()
+        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s", ("signal_log",))
+        columns = {(row[0] if not hasattr(row, "get") else row.get("column_name")) for row in (c.fetchall() or [])}
+        take_profits_select = "take_profits" if "take_profits" in columns else "NULL AS take_profits"
+        timeframe_select = "timeframe" if "timeframe" in columns else "NULL AS timeframe"
+        payload_select = "signal_payload" if "signal_payload" in columns else "NULL AS signal_payload"
+        confidence_sources = [name for name in ("display_confidence", "confidence", "final_score") if name in columns]
+        confidence_select = f"COALESCE({', '.join(confidence_sources)}, 0)" if confidence_sources else "0 AS confidence"
+        outcome_select = "outcome" if "outcome" in columns else "NULL AS outcome"
+        c.execute(f"""
+        SELECT id, pair, direction, entry, tp, sl, {take_profits_select}, sent_at, closed_at, {outcome_select}, {timeframe_select}, {payload_select}, {confidence_select}
+        FROM signal_log
+        WHERE signal_type = 'SPOT'
+        ORDER BY sent_at DESC
+        LIMIT %s
+        """, (int(limit),))
+        rows = c.fetchall() or []
+        conn.close()
+
+        totals = {
+            "total_spot_trades": len(rows),
+            "spot_losses": 0,
+            "spot_wins": 0,
+            "stop_then_tp1_count": 0,
+            "stop_then_tp2_count": 0,
+            "stop_then_tp3_count": 0,
+            "same_candle_sl_tp_ambiguous_count": 0,
+        }
+        examples = 0
+        for row in rows:
+            signal_id, pair, direction, entry, tp, sl, take_profits, sent_at, closed_at, outcome, timeframe, signal_payload, confidence = row
+            outcome_upper = str(outcome or "").upper()
+            if outcome_upper == "SL_HIT":
+                totals["spot_losses"] += 1
+            if outcome_upper in {"TP1_HIT", "TP2_HIT", "TP_HIT", "PARTIAL_WIN_THEN_REVERSED"}:
+                totals["spot_wins"] += 1
+            targets = _user_take_profit_targets(take_profits, tp)
+            tp1 = targets[0] if targets else _safe_float(tp)
+            tp2 = targets[1] if len(targets) > 1 else None
+            tp3 = targets[2] if len(targets) > 2 else None
+            trace = _emit_spot_trade_lifecycle_trace(
+                signal_id, pair, direction, timeframe, sent_at, entry, sl, tp1, tp2, tp3, None, outcome=outcome or "REPORT"
+            )
+            candles = trace.get("candles") or []
+            sl_time = trace.get("sl_time")
+            same_candle_ambiguous = False
+            later_tp1 = later_tp2 = later_tp3 = None
+            for candle in candles:
+                flags = _direction_touch_flags(direction, candle, float(entry or 0), float(sl or 0), float(tp1 or 0), float(tp2 or 0), float(tp3 or 0))
+                if flags["sl"] and (flags["tp1"] or flags["tp2"] or flags["tp3"]):
+                    same_candle_ambiguous = True
+                ts = candle.get("timestamp")
+                if sl_time and ts and ts > sl_time:
+                    if later_tp1 is None and flags["tp1"]:
+                        later_tp1 = ts
+                    if later_tp2 is None and flags["tp2"]:
+                        later_tp2 = ts
+                    if later_tp3 is None and flags["tp3"]:
+                        later_tp3 = ts
+            if same_candle_ambiguous:
+                totals["same_candle_sl_tp_ambiguous_count"] += 1
+            if sl_time and later_tp1:
+                totals["stop_then_tp1_count"] += 1
+            if sl_time and later_tp2:
+                totals["stop_then_tp2_count"] += 1
+            if sl_time and later_tp3:
+                totals["stop_then_tp3_count"] += 1
+
+            if examples < 20:
+                examples += 1
+                payload = {}
+                try:
+                    payload = json.loads(signal_payload or "{}") if signal_payload else {}
+                except Exception:
+                    payload = {}
+                atr = _safe_signal_float(payload.get("atr") or payload.get("atr_value"), 0)
+                entry_float = _safe_signal_float(entry, 0)
+                sl_float = _safe_signal_float(sl, 0)
+                stop_distance_pct = round((abs(entry_float - sl_float) / entry_float) * 100, 4) if entry_float else 0
+                stop_distance_in_atr = round(abs(entry_float - sl_float) / atr, 4) if atr else "unknown"
+                log(
+                    "SPOT_STOP_THEN_TARGET_REPORT "
+                    f"symbol={pair} signal_id={signal_id} entry={entry} SL={sl} TP1={tp1} TP2={tp2} TP3={tp3} "
+                    f"SL_timestamp={sl_time or 'unknown'} later_TP_timestamp={later_tp1 or later_tp2 or later_tp3 or 'none'} "
+                    f"maximum_adverse_excursion_pct=diagnostic_pending maximum_favorable_excursion_pct=diagnostic_pending "
+                    f"ATR_at_entry={atr or 'unknown'} stop_distance_pct={stop_distance_pct} stop_distance_in_ATR={stop_distance_in_atr} "
+                    f"setup_type={payload.get('setup_type') or 'unknown'} confidence={confidence} risk={payload.get('risk_level') or payload.get('risk_score') or 'unknown'} "
+                    f"market_regime={payload.get('market_regime') or 'unknown'} same_candle_ambiguous={str(same_candle_ambiguous).lower()} "
+                    f"outcome={outcome or 'none'} price_source={trace.get('price_source') or 'unknown'}"
+                )
+        log(
+            "SPOT_STOP_THEN_TARGET_REPORT_SUMMARY "
+            f"total_spot_trades={totals['total_spot_trades']} spot_losses={totals['spot_losses']} spot_wins={totals['spot_wins']} "
+            f"stop_then_tp1_count={totals['stop_then_tp1_count']} stop_then_tp2_count={totals['stop_then_tp2_count']} "
+            f"stop_then_tp3_count={totals['stop_then_tp3_count']} same_candle_sl_tp_ambiguous_count={totals['same_candle_sl_tp_ambiguous_count']}"
+        )
+    except Exception as e:
+        log(f"SPOT_STOP_THEN_TARGET_REPORT_ERROR error={type(e).__name__}:{e}")
+
+
 def _safe_signal_float(value, default=0.0):
     try:
         if value is None:
@@ -960,6 +1253,24 @@ def record_sent_signal(chat_id, plan, signal, delivery_mode=None, locked=False, 
         conn.close()
         signal_id = row[0] if row else None
         log(f"Signal tracked id={signal_id} chat_ref={mask_chat_id(chat_id)} pair={signal.get('pair')}")
+        try:
+            if str(signal.get("type", "")).upper() == "SPOT":
+                _emit_spot_trade_lifecycle_trace(
+                    signal_id,
+                    signal.get("pair"),
+                    signal.get("direction"),
+                    signal.get("timeframe"),
+                    datetime.utcnow().isoformat(),
+                    float(signal.get("entry", 0) or 0),
+                    float(signal.get("sl", 0) or 0),
+                    tp1,
+                    tp2,
+                    None,
+                    None,
+                    outcome="SENT",
+                )
+        except Exception:
+            pass
         if NEXORA_PROOF_MODE:
             log(
                 f"PROOF_SIGNAL_RECORDED id={signal_id} pair={signal.get('pair')} "
@@ -2649,8 +2960,10 @@ def update_signal_outcomes():
         take_profits_select = "take_profits" if "take_profits" in signal_log_columns else "NULL AS take_profits"
         outcome_select = "outcome" if "outcome" in signal_log_columns else "NULL AS outcome"
         pnl_select = "COALESCE(pnl_percent, 0)" if "pnl_percent" in signal_log_columns else "0 AS pnl_percent"
+        timeframe_select = "timeframe" if "timeframe" in signal_log_columns else "NULL AS timeframe"
+        signal_payload_select = "signal_payload" if "signal_payload" in signal_log_columns else "NULL AS signal_payload"
         c.execute("""
-        SELECT id, chat_id, pair, direction, entry, tp, sl, {take_profits_select}, {outcome_select}, {pnl_select}
+        SELECT id, chat_id, pair, direction, entry, tp, sl, {take_profits_select}, {outcome_select}, {pnl_select}, sent_at, signal_type, {timeframe_select}, {signal_payload_select}
         FROM signal_log
         WHERE status IN ('SENT', 'OPEN')
           AND chat_id IS NOT NULL
@@ -2661,11 +2974,13 @@ def update_signal_outcomes():
             take_profits_select=take_profits_select,
             outcome_select=outcome_select,
             pnl_select=pnl_select,
+            timeframe_select=timeframe_select,
+            signal_payload_select=signal_payload_select,
         ))
         open_signals = c.fetchall()
 
         for row in open_signals:
-            signal_id, chat_id, pair, direction, entry, tp, sl, take_profits, existing_outcome, existing_pnl_percent = row
+            signal_id, chat_id, pair, direction, entry, tp, sl, take_profits, existing_outcome, existing_pnl_percent, sent_at, signal_type, timeframe, signal_payload = row
             try:
                 current_price = get_live_price(pair)
                 if current_price is None:
@@ -2680,6 +2995,7 @@ def update_signal_outcomes():
                 targets = _user_take_profit_targets(take_profits, tp)
                 tp1 = targets[0] if targets else _safe_float(tp)
                 tp2 = targets[1] if len(targets) > 1 else tp1
+                tp3 = targets[2] if len(targets) > 2 else None
                 already_tp1 = str(existing_outcome or "").upper() in {"TP1_HIT", "PARTIAL_WIN_THEN_REVERSED"}
 
                 if direction == "LONG":
@@ -2726,6 +3042,21 @@ def update_signal_outcomes():
                             pnl_percent = ((entry - sl) / entry) * 100
 
                 if outcome:
+                    if str(signal_type or "").upper() == "SPOT":
+                        _emit_spot_trade_lifecycle_trace(
+                            signal_id,
+                            pair,
+                            direction,
+                            timeframe,
+                            sent_at,
+                            entry,
+                            sl,
+                            tp1,
+                            tp2,
+                            tp3,
+                            current_price,
+                            outcome=outcome,
+                        )
                     c.execute("""
                     UPDATE signal_log
                     SET status = %s,
@@ -2773,6 +3104,7 @@ Trading involves risk and past outcomes do not guarantee future results.
                 log(f"Signal tracking row error id={signal_id}: {inner_e}")
 
         conn.close()
+        emit_spot_stop_then_target_report(limit=100)
     except Exception as e:
         log(f"update_signal_outcomes error: {e}")
 
