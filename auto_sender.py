@@ -109,6 +109,13 @@ LAST_SIGNAL_CACHE = {
     "entry": None,
     "time": None
 }
+LAST_SPOT_TRACKING_SUMMARY = {
+    "spot_trades_tracked": 0,
+    "spot_wins": 0,
+    "spot_losses": 0,
+    "spot_stop_then_target": 0,
+    "spot_ambiguous_intrabar": 0,
+}
 
 # ================= SIGNAL MEMORY =================
 RECENT_SIGNAL_MEMORY = {}
@@ -695,6 +702,117 @@ def _direction_touch_flags(direction, candle, entry, sl, tp1, tp2=None, tp3=None
     }
 
 
+def _calculate_atr_from_candles(candles, period=14):
+    try:
+        if not candles or len(candles) < period + 1:
+            return None
+        true_ranges = []
+        ordered = sorted(candles, key=lambda item: item.get("timestamp") or datetime.min)
+        for index in range(1, len(ordered)):
+            high = float(ordered[index].get("high", 0) or 0)
+            low = float(ordered[index].get("low", 0) or 0)
+            prev_close = float(ordered[index - 1].get("close", 0) or 0)
+            if high <= 0 or low <= 0 or prev_close <= 0:
+                continue
+            true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+        if len(true_ranges) < period:
+            return None
+        return sum(true_ranges[-period:]) / period
+    except Exception:
+        return None
+
+
+def _spot_trade_path_metrics(candles, direction, sent_at, entry, sl, tp1, tp2=None, tp3=None):
+    metrics = {
+        "mae_pct": None,
+        "mfe_pct": None,
+        "time_to_sl": None,
+        "time_to_tp1": None,
+        "time_to_tp2": None,
+        "time_to_tp3": None,
+        "sl_time": None,
+        "tp1_time": None,
+        "tp2_time": None,
+        "tp3_time": None,
+        "same_candle_ambiguous": False,
+        "sl_before_later_target": False,
+    }
+    try:
+        direction = str(direction or "").upper()
+        sent_dt = _parse_dt(sent_at)
+        entry = float(entry or 0)
+        sl = float(sl or 0)
+        tp1 = float(tp1 or 0)
+        tp2 = float(tp2 or 0) if tp2 else 0
+        tp3 = float(tp3 or 0) if tp3 else 0
+        if not candles or entry <= 0:
+            return metrics
+        relevant = sorted(candles, key=lambda item: item.get("timestamp") or datetime.min)
+        if sent_dt:
+            relevant = [item for item in relevant if not item.get("timestamp") or item.get("timestamp").replace(tzinfo=None) >= sent_dt.replace(tzinfo=None)]
+        if not relevant:
+            relevant = candles
+        adverse_values = []
+        favorable_values = []
+        for candle in relevant:
+            high = float(candle.get("high", 0) or 0)
+            low = float(candle.get("low", 0) or 0)
+            ts = candle.get("timestamp")
+            flags = _direction_touch_flags(direction, candle, entry, sl, tp1, tp2, tp3)
+            if flags["sl"] and (flags["tp1"] or flags["tp2"] or flags["tp3"]):
+                metrics["same_candle_ambiguous"] = True
+            if direction == "SHORT":
+                adverse_values.append(((high - entry) / entry) * 100)
+                favorable_values.append(((entry - low) / entry) * 100)
+            else:
+                adverse_values.append(((entry - low) / entry) * 100)
+                favorable_values.append(((high - entry) / entry) * 100)
+            if metrics["sl_time"] is None and flags["sl"]:
+                metrics["sl_time"] = ts
+            if metrics["tp1_time"] is None and flags["tp1"]:
+                metrics["tp1_time"] = ts
+            if metrics["tp2_time"] is None and flags["tp2"]:
+                metrics["tp2_time"] = ts
+            if metrics["tp3_time"] is None and flags["tp3"]:
+                metrics["tp3_time"] = ts
+        metrics["mae_pct"] = round(max(adverse_values or [0]), 4)
+        metrics["mfe_pct"] = round(max(favorable_values or [0]), 4)
+        for key, target_key in [("time_to_sl", "sl_time"), ("time_to_tp1", "tp1_time"), ("time_to_tp2", "tp2_time"), ("time_to_tp3", "tp3_time")]:
+            event_time = metrics.get(target_key)
+            if sent_dt and event_time:
+                metrics[key] = int((event_time.replace(tzinfo=None) - sent_dt.replace(tzinfo=None)).total_seconds())
+        sl_time = metrics.get("sl_time")
+        metrics["sl_before_later_target"] = bool(
+            sl_time and any(metrics.get(key) and metrics[key] > sl_time for key in ("tp1_time", "tp2_time", "tp3_time"))
+        )
+    except Exception:
+        pass
+    return metrics
+
+
+def _classify_spot_loss(metrics, atr, stop_distance_in_atr, setup_type="", market_regime=""):
+    try:
+        if not metrics:
+            return "INSUFFICIENT_DATA"
+        if metrics.get("same_candle_ambiguous"):
+            return "AMBIGUOUS_INTRABAR_ORDER"
+        if atr is None or stop_distance_in_atr in (None, "unknown"):
+            return "INSUFFICIENT_DATA"
+        if metrics.get("sl_before_later_target") and float(stop_distance_in_atr) < 1.0:
+            return "STOP_INSIDE_NORMAL_NOISE"
+        setup_text = str(setup_type or "").upper()
+        regime_text = str(market_regime or "").upper()
+        if any(token in setup_text for token in ["SWEEP", "LIQUIDITY"]) or "SWEEP" in regime_text:
+            return "LIQUIDITY_SWEEP"
+        if metrics.get("sl_time") and not (metrics.get("tp1_time") or metrics.get("tp2_time") or metrics.get("tp3_time")):
+            return "NORMAL_VALID_LOSS"
+        if metrics.get("sl_before_later_target"):
+            return "BAD_ENTRY_TIMING"
+        return "NORMAL_VALID_LOSS"
+    except Exception:
+        return "INSUFFICIENT_DATA"
+
+
 def _emit_spot_trade_lifecycle_trace(signal_id, pair, direction, timeframe, sent_at, entry, sl, tp1, tp2, tp3, current_price, outcome=None):
     try:
         candles, price_source = _fetch_recent_spot_candles(pair, timeframe or "15m", 80)
@@ -770,6 +888,7 @@ def _emit_spot_trade_lifecycle_trace(signal_id, pair, direction, timeframe, sent
 
 def emit_spot_stop_then_target_report(limit=100):
     """Diagnostics-only report for real tracked SPOT signals."""
+    global LAST_SPOT_TRACKING_SUMMARY
     if not ENABLE_SIGNAL_TRACKING:
         return
     try:
@@ -819,6 +938,7 @@ def emit_spot_stop_then_target_report(limit=100):
             )
             candles = trace.get("candles") or []
             sl_time = trace.get("sl_time")
+            metrics = _spot_trade_path_metrics(candles, direction, sent_at, entry, sl, tp1, tp2, tp3)
             same_candle_ambiguous = False
             later_tp1 = later_tp2 = later_tp3 = None
             for candle in candles:
@@ -850,20 +970,42 @@ def emit_spot_stop_then_target_report(limit=100):
                 except Exception:
                     payload = {}
                 atr = _safe_signal_float(payload.get("atr") or payload.get("atr_value"), 0)
+                if not atr:
+                    atr = _calculate_atr_from_candles(candles, 14)
                 entry_float = _safe_signal_float(entry, 0)
                 sl_float = _safe_signal_float(sl, 0)
                 stop_distance_pct = round((abs(entry_float - sl_float) / entry_float) * 100, 4) if entry_float else 0
                 stop_distance_in_atr = round(abs(entry_float - sl_float) / atr, 4) if atr else "unknown"
+                loss_classification = _classify_spot_loss(
+                    metrics,
+                    atr,
+                    stop_distance_in_atr,
+                    payload.get("setup_type"),
+                    payload.get("market_regime"),
+                ) if outcome_upper == "SL_HIT" else "NOT_LOSS"
                 log(
                     "SPOT_STOP_THEN_TARGET_REPORT "
                     f"symbol={pair} signal_id={signal_id} entry={entry} SL={sl} TP1={tp1} TP2={tp2} TP3={tp3} "
-                    f"SL_timestamp={sl_time or 'unknown'} later_TP_timestamp={later_tp1 or later_tp2 or later_tp3 or 'none'} "
-                    f"maximum_adverse_excursion_pct=diagnostic_pending maximum_favorable_excursion_pct=diagnostic_pending "
+                    f"SL_timestamp={sl_time or metrics.get('sl_time') or 'unknown'} later_TP_timestamp={later_tp1 or later_tp2 or later_tp3 or 'none'} "
+                    f"maximum_adverse_excursion_pct={metrics.get('mae_pct') if metrics.get('mae_pct') is not None else 'unknown'} "
+                    f"maximum_favorable_excursion_pct={metrics.get('mfe_pct') if metrics.get('mfe_pct') is not None else 'unknown'} "
                     f"ATR_at_entry={atr or 'unknown'} stop_distance_pct={stop_distance_pct} stop_distance_in_ATR={stop_distance_in_atr} "
+                    f"time_to_SL={metrics.get('time_to_sl') if metrics.get('time_to_sl') is not None else 'unknown'} "
+                    f"time_to_TP1={metrics.get('time_to_tp1') if metrics.get('time_to_tp1') is not None else 'unknown'} "
+                    f"time_to_TP2={metrics.get('time_to_tp2') if metrics.get('time_to_tp2') is not None else 'unknown'} "
+                    f"time_to_TP3={metrics.get('time_to_tp3') if metrics.get('time_to_tp3') is not None else 'unknown'} "
                     f"setup_type={payload.get('setup_type') or 'unknown'} confidence={confidence} risk={payload.get('risk_level') or payload.get('risk_score') or 'unknown'} "
                     f"market_regime={payload.get('market_regime') or 'unknown'} same_candle_ambiguous={str(same_candle_ambiguous).lower()} "
-                    f"outcome={outcome or 'none'} price_source={trace.get('price_source') or 'unknown'}"
+                    f"sl_before_later_target={str(bool(sl_time and (later_tp1 or later_tp2 or later_tp3))).lower()} "
+                    f"loss_classification={loss_classification} outcome={outcome or 'none'} price_source={trace.get('price_source') or 'unknown'}"
                 )
+        LAST_SPOT_TRACKING_SUMMARY = {
+            "spot_trades_tracked": totals["total_spot_trades"],
+            "spot_wins": totals["spot_wins"],
+            "spot_losses": totals["spot_losses"],
+            "spot_stop_then_target": totals["stop_then_tp1_count"] + totals["stop_then_tp2_count"] + totals["stop_then_tp3_count"],
+            "spot_ambiguous_intrabar": totals["same_candle_sl_tp_ambiguous_count"],
+        }
         log(
             "SPOT_STOP_THEN_TARGET_REPORT_SUMMARY "
             f"total_spot_trades={totals['total_spot_trades']} spot_losses={totals['spot_losses']} spot_wins={totals['spot_wins']} "
@@ -2095,6 +2237,68 @@ def signal_plan_block_reason(plan, signal):
         return f"plan_filter_error error={e}"
 
 
+def log_production_signal_health_summary(summary, final_count=0):
+    try:
+        breakdown = {}
+        try:
+            breakdown = (summary.get("adaptive_build") or {}).get("rejection_breakdown") or summary.get("rejections_by_code") or {}
+        except Exception:
+            breakdown = {}
+        top_reasons = sorted(
+            [(str(k), int(v or 0)) for k, v in (breakdown or {}).items()],
+            key=lambda item: item[1],
+            reverse=True,
+        )[:5]
+        rejection_total = sum(value for _, value in top_reasons)
+        provider_used = "unknown"
+        finalizer = {}
+        try:
+            from market_analyzer import FINALIZER_DIAGNOSTICS, FUTURES_PROVIDER_CYCLE_LOCK
+            finalizer = dict(FINALIZER_DIAGNOSTICS or {})
+            cycle = FUTURES_PROVIDER_CYCLE_LOCK.get(summary.get("scan_cycle_id")) or {}
+            provider_used = cycle.get("provider") or "unknown"
+            futures_symbols_available = cycle.get("symbols_loaded", 0)
+        except Exception:
+            futures_symbols_available = 0
+        tracking = dict(LAST_SPOT_TRACKING_SUMMARY or {})
+        log(
+            "PRODUCTION_SIGNAL_HEALTH_SUMMARY "
+            f"scan_cycle_id={summary.get('scan_cycle_id', 'unknown')} "
+            f"SPOT_symbols_scanned={summary.get('unique_symbols_scanned', summary.get('scanned', 0))} "
+            f"SPOT_playbook_candidates={summary.get('playbook_candidates_built', 0)} "
+            f"SPOT_finalizer_received={summary.get('finalizer_candidates_received', 0)} "
+            f"SPOT_normal_approved={finalizer.get('approved_spot_normal', 0)} "
+            f"SPOT_reduced_approved={finalizer.get('approved_spot_reduced_size', 0)} "
+            f"SPOT_finalized={finalizer.get('finalized_spot', 0)} "
+            f"SPOT_sent={summary.get('signals_sent', 0)} "
+            f"FUTURES_provider_used={provider_used} "
+            f"FUTURES_symbols_available={futures_symbols_available} "
+            f"FUTURES_symbols_scanned={summary.get('unique_symbols_scanned', summary.get('scanned', 0))} "
+            f"FUTURES_playbook_candidates={summary.get('playbook_candidates_built', 0)} "
+            f"FUTURES_finalizer_received={summary.get('finalizer_candidates_received', 0)} "
+            f"FUTURES_normal_approved={finalizer.get('approved_futures_normal', 0)} "
+            f"FUTURES_reduced_approved={finalizer.get('approved_futures_reduced_size', 0)} "
+            f"FUTURES_early_approved={finalizer.get('approved_futures_early_confirmation', 0)} "
+            f"FUTURES_range_approved={finalizer.get('approved_futures_range_macro', 0)} "
+            f"FUTURES_finalized={finalizer.get('finalized_futures', 0)} "
+            f"FUTURES_sent={summary.get('signals_sent', 0)} "
+            f"REJECTIONS_hard_reject_count={summary.get('rejected_fake_breakout', 0) + summary.get('liquidity_invalid', 0) + summary.get('mtf_hard_conflict', 0)} "
+            f"REJECTIONS_soft_reject_count={summary.get('quality_score', 0) + summary.get('late_entry', 0)} "
+            f"REJECTIONS_missing_data_count={summary.get('rejected_mtf', 0)} "
+            f"REJECTIONS_provider_failure_count={summary.get('data_source_failure', 0)} "
+            f"REJECTIONS_post_approval_reject_count={finalizer.get('rejected_after_approval_evaluation', 0)} "
+            f"REJECTIONS_top_5_rejection_reasons={json.dumps(top_reasons, separators=(',', ':'))} "
+            f"TRACKING_spot_trades_tracked={tracking.get('spot_trades_tracked', 0)} "
+            f"TRACKING_spot_wins={tracking.get('spot_wins', 0)} "
+            f"TRACKING_spot_losses={tracking.get('spot_losses', 0)} "
+            f"TRACKING_spot_stop_then_target={tracking.get('spot_stop_then_target', 0)} "
+            f"TRACKING_spot_ambiguous_intrabar={tracking.get('spot_ambiguous_intrabar', 0)} "
+            f"final_signals={final_count}"
+        )
+    except Exception as e:
+        log(f"PRODUCTION_SIGNAL_HEALTH_SUMMARY_ERROR error={e}")
+
+
 def log_signal_scan_summary(final_count):
     try:
         summary = get_signal_scan_diagnostics(final_count)
@@ -2156,6 +2360,7 @@ def log_signal_scan_summary(final_count):
         )
         if MIN_DAILY_SIGNAL_TARGET > 0 and int(final_count or 0) < MIN_DAILY_SIGNAL_TARGET:
             log(f"SIGNAL_SUPPLY_LOW target={MIN_DAILY_SIGNAL_TARGET} actual={int(final_count or 0)}")
+        log_production_signal_health_summary(summary, final_count)
         return summary
     except Exception as e:
         log(f"SIGNAL_SCAN_SUMMARY_ERROR error={e}")

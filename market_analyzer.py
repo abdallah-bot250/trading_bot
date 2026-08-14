@@ -112,6 +112,12 @@ FINALIZER_DIAGNOSTICS = {
     "approved_reduced_size": 0,
     "approved_early_confirmation": 0,
     "approved_range_macro": 0,
+    "approved_spot_normal": 0,
+    "approved_spot_reduced_size": 0,
+    "approved_futures_normal": 0,
+    "approved_futures_reduced_size": 0,
+    "approved_futures_early_confirmation": 0,
+    "approved_futures_range_macro": 0,
     "approval_modes_evaluated": 0,
     "rejected_after_approval_evaluation": 0,
     "approved_reduced_size_symbols": [],
@@ -185,6 +191,12 @@ def reset_signal_scan_diagnostics():
         "approved_reduced_size": 0,
         "approved_early_confirmation": 0,
         "approved_range_macro": 0,
+        "approved_spot_normal": 0,
+        "approved_spot_reduced_size": 0,
+        "approved_futures_normal": 0,
+        "approved_futures_reduced_size": 0,
+        "approved_futures_early_confirmation": 0,
+        "approved_futures_range_macro": 0,
         "approval_modes_evaluated": 0,
         "rejected_after_approval_evaluation": 0,
         "approved_reduced_size_symbols": [],
@@ -7658,8 +7670,13 @@ def finalize_adaptive_signal(signal, df, paid=True):
             return _finalizer_reject(final_reason, managed_signal, stage="fund_manager_review")
         _entry_manager_log("FINAL_REVIEW_PASSED", managed_signal.get("pair"), final_reason)
         managed_approval_type = str(managed_signal.get("approval_type") or signal.get("approval_type") or "NORMAL_APPROVAL").upper()
+        final_market_type = str(managed_signal.get("type") or trade_type).upper()
         if managed_approval_type == "REDUCED_SIZE_APPROVAL":
             _finalizer_diag_inc("approved_reduced_size")
+            if final_market_type == "FUTURES":
+                _finalizer_diag_inc("approved_futures_reduced_size")
+            else:
+                _finalizer_diag_inc("approved_spot_reduced_size")
             try:
                 symbols = FINALIZER_DIAGNOSTICS.setdefault("approved_reduced_size_symbols", [])
                 pair = str(managed_signal.get("pair") or signal.get("pair") or "").upper()
@@ -7669,19 +7686,27 @@ def finalize_adaptive_signal(signal, df, paid=True):
                 pass
         elif managed_approval_type == "EARLY_CONFIRMATION_APPROVAL":
             _finalizer_diag_inc("approved_early_confirmation")
+            if final_market_type == "FUTURES":
+                _finalizer_diag_inc("approved_futures_early_confirmation")
         elif managed_approval_type == "RANGE_MACRO_TREND_APPROVAL":
             _finalizer_diag_inc("approved_range_macro")
+            if final_market_type == "FUTURES":
+                _finalizer_diag_inc("approved_futures_range_macro")
         else:
             _finalizer_diag_inc("approved_normal")
+            if final_market_type == "FUTURES":
+                _finalizer_diag_inc("approved_futures_normal")
+            else:
+                _finalizer_diag_inc("approved_spot_normal")
         _scan_diag_inc("finalized_candidates")
-        if str(managed_signal.get("type") or trade_type).upper() == "FUTURES":
+        if final_market_type == "FUTURES":
             _finalizer_diag_inc("finalized_futures")
         else:
             _finalizer_diag_inc("finalized_spot")
         _log_finalizer_diagnostic_summary()
         _finalizer_success_trace(
             managed_signal,
-            str(managed_signal.get("type") or trade_type).upper(),
+            final_market_type,
             signal_object_created=True,
             return_value_is_none=False,
         )
