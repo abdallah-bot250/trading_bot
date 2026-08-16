@@ -6049,6 +6049,29 @@ def _futures_atr(df):
         return 0.0
 
 
+def _previous_futures_range(df, lookback=36):
+    """Return the previous confirmed high/low without the current evaluated candle."""
+    try:
+        if df is None or len(df) < 2:
+            return {"previous_range_high": None, "previous_range_low": None, "previous_range_rows": 0}
+        prior = df.iloc[:-1].copy()
+        if prior.empty:
+            return {"previous_range_high": None, "previous_range_low": None, "previous_range_rows": 0}
+        prior_high = pd.to_numeric(prior.get("high"), errors="coerce").dropna()
+        prior_low = pd.to_numeric(prior.get("low"), errors="coerce").dropna()
+        if prior_high.empty or prior_low.empty:
+            return {"previous_range_high": None, "previous_range_low": None, "previous_range_rows": 0}
+        prior_high = prior_high.tail(int(lookback))
+        prior_low = prior_low.tail(int(lookback))
+        return {
+            "previous_range_high": _safe_float(prior_high.max()),
+            "previous_range_low": _safe_float(prior_low.min()),
+            "previous_range_rows": int(min(len(prior_high), len(prior_low))),
+        }
+    except Exception:
+        return {"previous_range_high": None, "previous_range_low": None, "previous_range_rows": 0}
+
+
 def _futures_level_context(df):
     try:
         close = _safe_float(df["close"].iloc[-1])
@@ -6057,16 +6080,30 @@ def _futures_level_context(df):
         resistance = nearest_resistance(close, levels.get("resistance", []))
         recent_high = _safe_float(df["high"].tail(36).max())
         recent_low = _safe_float(df["low"].tail(36).min())
+        previous_range = _previous_futures_range(df, 36)
         return {
             "close": close,
             "support": support,
             "resistance": resistance,
             "recent_high": recent_high,
             "recent_low": recent_low,
+            "previous_range_high": previous_range.get("previous_range_high"),
+            "previous_range_low": previous_range.get("previous_range_low"),
+            "previous_range_rows": previous_range.get("previous_range_rows", 0),
             "levels": levels,
         }
     except Exception:
-        return {"close": 0, "support": None, "resistance": None, "recent_high": None, "recent_low": None, "levels": {}}
+        return {
+            "close": 0,
+            "support": None,
+            "resistance": None,
+            "recent_high": None,
+            "recent_low": None,
+            "previous_range_high": None,
+            "previous_range_low": None,
+            "previous_range_rows": 0,
+            "levels": {},
+        }
 
 
 def _log_futures_30m_volume_liquidity_rejection(symbol, direction, setup_df, volume_profile, volume_score, minimum_required=40):
@@ -6118,22 +6155,42 @@ def _log_futures_30m_volume_liquidity_rejection(symbol, direction, setup_df, vol
         print(f"FUTURES_30M_VOLUME_LIQUIDITY_REJECTION_ERROR symbol={symbol} error={type(e).__name__}")
 
 
+def _log_futures_pipeline_event(event, symbol, direction, timeframe, reason, **extra):
+    try:
+        details = " ".join(f"{key}={str(value).replace(' ', '_')}" for key, value in extra.items())
+        print(
+            f"{event} "
+            f"symbol={symbol} "
+            f"direction={direction} "
+            f"timeframe={timeframe} "
+            f"reason={str(reason).replace(' ', '_')} "
+            f"{details}".strip()
+        )
+    except Exception:
+        pass
+
+
 def futures_setup_context(symbol, direction, bias, setup_df):
     """30m setup validation. RSI/MACD alone never qualifies a setup."""
     try:
         if setup_df is None or len(setup_df) < 100:
+            _log_futures_pipeline_event("FUTURES_30M_SETUP_REJECT", symbol, direction, FUTURES_SETUP_TIMEFRAME, "30m setup data unavailable")
             return {"ok": False, "stage": "WATCHING", "reason": "30m setup data unavailable"}
         close = _safe_float(setup_df["close"].iloc[-1])
         if close <= 0:
+            _log_futures_pipeline_event("FUTURES_30M_SETUP_REJECT", symbol, direction, FUTURES_SETUP_TIMEFRAME, "invalid 30m close")
             return {"ok": False, "stage": "WATCHING", "reason": "invalid 30m close"}
         atr_val = _futures_atr(setup_df)
         if atr_val <= 0:
+            _log_futures_pipeline_event("FUTURES_30M_SETUP_REJECT", symbol, direction, FUTURES_SETUP_TIMEFRAME, "30m ATR unavailable")
             return {"ok": False, "stage": "WATCHING", "reason": "30m ATR unavailable"}
         levels = _futures_level_context(setup_df)
         support = levels.get("support")
         resistance = levels.get("resistance")
         recent_high = levels.get("recent_high")
         recent_low = levels.get("recent_low")
+        previous_range_high = levels.get("previous_range_high")
+        previous_range_low = levels.get("previous_range_low")
         ema20v = _safe_float(ema(setup_df, 20).iloc[-1])
         ema50v = _safe_float(ema(setup_df, 50).iloc[-1])
         last = setup_df.iloc[-1]
@@ -6147,6 +6204,7 @@ def futures_setup_context(symbol, direction, bias, setup_df):
         if recent_high and recent_low and recent_high > recent_low:
             range_pos = (close - recent_low) / (recent_high - recent_low)
             if 0.42 < range_pos < 0.58:
+                _log_futures_pipeline_event("FUTURES_30M_SETUP_REJECT", symbol, direction, FUTURES_SETUP_TIMEFRAME, "price in middle of 30m range", range_position=round(range_pos, 2))
                 return {"ok": False, "stage": "WATCHING", "reason": f"price in middle of 30m range position={round(range_pos, 2)}"}
         else:
             range_pos = 0.5
@@ -6155,10 +6213,10 @@ def futures_setup_context(symbol, direction, bias, setup_df):
         reason = None
         if direction == "LONG":
             pullback = close >= min(ema20v, ema50v) * 0.995 and close <= max(ema20v, ema50v) * 1.015 and bias in ["BULL", "RANGE"]
-            breakout_retest = recent_high and _safe_float(prev["close"]) > recent_high * 0.995 and _safe_float(last["low"]) <= recent_high + atr_val * 0.35 and close > recent_high
-            sweep_reclaim = recent_low and _safe_float(last["low"]) < recent_low and close > recent_low and lower_wick_ratio >= 0.35
+            breakout_retest = previous_range_high and _safe_float(prev["close"]) > previous_range_high * 0.995 and _safe_float(last["low"]) <= previous_range_high + atr_val * 0.35 and close > previous_range_high
+            sweep_reclaim = previous_range_low and _safe_float(last["low"]) < previous_range_low and close > previous_range_low and lower_wick_ratio >= 0.35
             sr_rejection = support and abs(close - support) <= max(atr_val * 0.9, close * 0.006) and lower_wick_ratio >= 0.28
-            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["low"]) > _safe_float(setup_df["high"].iloc[-3]) and close <= (recent_low + (recent_high - recent_low) * 0.55 if recent_high and recent_low else close)
+            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["low"]) > _safe_float(setup_df["high"].iloc[-3]) and close <= (previous_range_low + (previous_range_high - previous_range_low) * 0.55 if previous_range_high and previous_range_low else close)
             if pullback:
                 setup, reason = "Trend pullback to EMA20/EMA50 or structure", "30m pullback held dynamic support"
             if breakout_retest:
@@ -6171,10 +6229,10 @@ def futures_setup_context(symbol, direction, bias, setup_df):
                 setup, reason = "FVG / Order Block", "30m bullish imbalance confirmed by structure"
         else:
             pullback = close <= max(ema20v, ema50v) * 1.005 and close >= min(ema20v, ema50v) * 0.985 and bias in ["BEAR", "RANGE"]
-            breakdown_retest = recent_low and _safe_float(prev["close"]) < recent_low * 1.005 and _safe_float(last["high"]) >= recent_low - atr_val * 0.35 and close < recent_low
-            sweep_reject = recent_high and _safe_float(last["high"]) > recent_high and close < recent_high and upper_wick_ratio >= 0.35
+            breakdown_retest = previous_range_low and _safe_float(prev["close"]) < previous_range_low * 1.005 and _safe_float(last["high"]) >= previous_range_low - atr_val * 0.35 and close < previous_range_low
+            sweep_reject = previous_range_high and _safe_float(last["high"]) > previous_range_high and close < previous_range_high and upper_wick_ratio >= 0.35
             sr_rejection = resistance and abs(resistance - close) <= max(atr_val * 0.9, close * 0.006) and upper_wick_ratio >= 0.28
-            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["high"]) < _safe_float(setup_df["low"].iloc[-3]) and close >= (recent_low + (recent_high - recent_low) * 0.45 if recent_high and recent_low else close)
+            fvg_or_ob = len(setup_df) >= 4 and _safe_float(last["high"]) < _safe_float(setup_df["low"].iloc[-3]) and close >= (previous_range_low + (previous_range_high - previous_range_low) * 0.45 if previous_range_high and previous_range_low else close)
             if pullback:
                 setup, reason = "Trend pullback to EMA20/EMA50 or structure", "30m pullback held dynamic resistance"
             if breakdown_retest:
@@ -6188,10 +6246,30 @@ def futures_setup_context(symbol, direction, bias, setup_df):
 
         if not setup:
             adaptive_setup_lifecycle(symbol, "ARMED", "30m setup exists only as watchlist; no confirmed retest/pullback/rejection")
+            _log_futures_pipeline_event(
+                "FUTURES_30M_SETUP_REJECT",
+                symbol,
+                direction,
+                FUTURES_SETUP_TIMEFRAME,
+                "30m setup without confirmed retest/pullback/rejection",
+                previous_range_high=previous_range_high,
+                previous_range_low=previous_range_low,
+            )
             return {"ok": False, "stage": "ARMED", "reason": "30m setup without confirmed retest/pullback/rejection"}
         if volume_score < 40:
             _log_futures_30m_volume_liquidity_rejection(symbol, direction, setup_df, volume_profile, volume_score, minimum_required=40)
+            _log_futures_pipeline_event("FUTURES_30M_SETUP_REJECT", symbol, direction, FUTURES_SETUP_TIMEFRAME, "30m volume/liquidity too weak", volume_score=round(volume_score, 1))
             return {"ok": False, "stage": "WATCHING", "reason": f"30m volume/liquidity too weak score={round(volume_score, 1)}"}
+        _log_futures_pipeline_event(
+            "FUTURES_30M_SETUP_CONFIRMED",
+            symbol,
+            direction,
+            FUTURES_SETUP_TIMEFRAME,
+            reason,
+            setup=setup,
+            previous_range_high=previous_range_high,
+            previous_range_low=previous_range_low,
+        )
         return {
             "ok": True,
             "setup": setup,
@@ -6201,6 +6279,8 @@ def futures_setup_context(symbol, direction, bias, setup_df):
             "resistance": resistance,
             "recent_high": recent_high,
             "recent_low": recent_low,
+            "previous_range_high": previous_range_high,
+            "previous_range_low": previous_range_low,
             "range_position": range_pos,
             "atr": atr_val,
             "volume_score": volume_score,
