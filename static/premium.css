@@ -2190,6 +2190,11 @@ body.nx-dashboard-hard-ui .nx-change.down {
   color: #fb7185 !important;
 }
 
+body.nx-dashboard-hard-ui .nx-change.is-muted,
+.nx-change.is-muted {
+  color: #94a3b8 !important;
+}
+
 body.nx-dashboard-hard-ui .page-wrap {
   margin-left: calc(var(--nx-dash-sidebar) + var(--nx-dash-gap)) !important;
   margin-right: var(--nx-dash-gap) !important;

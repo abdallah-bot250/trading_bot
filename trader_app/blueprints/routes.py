@@ -1729,6 +1729,7 @@ def dashboard():
             "closed_signals": 0,
             "wins": 0,
             "win_rate": None,
+            "total_outcome": None,
             "today_outcome": None,
             "avg_rr": None,
             "best_strategy": "Not enough data yet",
@@ -1818,6 +1819,7 @@ def dashboard():
                             WHERE {status_closed}
                               AND (COALESCE(outcome, '') IN ('TP1_HIT','TP2_HIT','TP3_HIT','TP_HIT') OR {pnl_expr} > 0)
                         ) AS wins,
+                        COALESCE(SUM(CASE WHEN {status_closed} THEN {pnl_expr} ELSE 0 END), 0) AS total_outcome,
                         COALESCE(SUM(CASE WHEN sent_at >= date_trunc('day', NOW()) AND {status_closed} THEN {pnl_expr} ELSE 0 END), 0) AS today_outcome,
                         MAX(sent_at) AS last_scan,
                         AVG({rr_expr}) AS avg_rr,
@@ -1832,6 +1834,7 @@ def dashboard():
                 signal_performance["wins"] = int(perf.get("wins") or 0)
                 signal_performance["has_closed_outcomes"] = bool(signal_performance["closed_signals"])
                 signal_performance["win_rate"] = round((signal_performance["wins"] / signal_performance["closed_signals"]) * 100, 2) if signal_performance["closed_signals"] else None
+                signal_performance["total_outcome"] = round(float(perf.get("total_outcome") or 0), 2) if signal_performance["closed_signals"] else None
                 signal_performance["today_outcome"] = round(float(perf.get("today_outcome") or 0), 2) if signal_performance["closed_signals"] else None
                 signal_performance["last_scan"] = perf.get("last_scan") or "No scans yet"
                 signal_performance["market_status"] = "Live monitoring" if signal_performance["total_signals"] else "Waiting for qualified setup"
@@ -1962,7 +1965,6 @@ def dashboard():
         trades = int(user.get("trades", 0) or 0)
         trade_amount = float(user.get("trade_amount", 10) or 10)
         affiliate_balance = float(user.get("affiliate_balance", 0) or 0)
-        verified_pnl = signal_performance["today_outcome"] if signal_performance["today_outcome"] is not None else None
         verified_win_rate = signal_performance["win_rate"]
         verified_ai_score = signal_performance["latest_confidence"]
         affiliate_net_balance = round(affiliate_balance + float(total_comm or 0) - float(total_withdrawn or 0), 2)
@@ -2023,19 +2025,27 @@ def dashboard():
             "free_signal_limit": free_signal_limit,
             "active_signals": signal_performance["active_signals"],
             "total_signals": signal_performance["total_signals"],
+            "total_outcome": signal_performance["total_outcome"],
+            "total_outcome_display": metric_display(signal_performance["total_outcome"], prefix="$"),
             "today_outcome": signal_performance["today_outcome"],
             "today_outcome_display": metric_display(signal_performance["today_outcome"], prefix="$"),
             "real_win_rate": verified_win_rate,
             "real_win_rate_display": metric_display(verified_win_rate, "%"),
         }
         dashboard_chart_scores = [
-            0,
-            0,
             float(verified_win_rate or 0),
             float(verified_ai_score or 0),
             min(max(float(affiliate_net_balance or 0), 0), 100),
             min(signal_performance["closed_signals"], 100),
+            min(signal_performance["active_signals"], 100),
+            min(signal_performance["total_signals"], 100),
         ]
+        dashboard_chart_available = bool(
+            signal_performance["closed_signals"]
+            or signal_performance["total_signals"]
+            or verified_ai_score is not None
+            or affiliate_net_balance
+        )
         notifications = []
         if not is_linked:
             notifications.append("Link Telegram to receive signals and activate the full experience.")
@@ -2098,6 +2108,7 @@ def dashboard():
             dashboard_subtitle=dashboard_subtitle,
             dashboard_widgets=dashboard_widgets,
             dashboard_chart_scores=dashboard_chart_scores,
+            dashboard_chart_available=dashboard_chart_available,
             notifications=notifications,
             recent_activity=recent_activity,
             signal_performance=signal_performance,
