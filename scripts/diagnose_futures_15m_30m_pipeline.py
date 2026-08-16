@@ -56,9 +56,19 @@ def fake_cache_factory(frames):
     return fake_cached
 
 
+def trigger_fixture(direction="LONG", close=100.0, rows=100):
+    frame = candles("up" if direction == "LONG" else "down", rows=rows, start=100.0, step=0.02)
+    if direction == "LONG":
+        frame.loc[frame.index[-1], ["open", "high", "low", "close"]] = [close - 0.4, close + 0.15, close - 0.5, close]
+    else:
+        frame.loc[frame.index[-1], ["open", "high", "low", "close"]] = [close + 0.4, close + 0.5, close - 0.15, close]
+    return frame
+
+
 def run():
     original_cache = ma.cached_market_data
     original_futures_cache = ma.cached_futures_market_data
+    original_level_context = ma._futures_level_context
     try:
         bull_4h = candles("up", start=100, step=0.18)
         bull_1h = candles("up", start=105, step=0.12)
@@ -146,6 +156,51 @@ def run():
         impulse_trigger = ma.futures_trigger_context("AVAXUSDT", "LONG", candles("up", start=100, step=0.02, impulse=True), {"support": 99, "resistance": 102})
         assert_true(not impulse_trigger["ok"], "Large impulse candle before entry must be rejected")
 
+        zone_df_inside = candles("up", rows=100, start=99.0, step=0.01)
+        zone_df_inside.loc[zone_df_inside.index[-1], ["open", "high", "low", "close"]] = [100.1, 100.35, 99.8, 100.2]
+        zone_inside = ma._futures_entry_zone_status("LONG", {"support": 100.2}, zone_df_inside, 0.2, 100.2)
+        assert_true(zone_inside["touched"] is True, "Entry reference inside candle must be touched")
+        assert_true(zone_inside["distance_pct"] == 0, "Entry exactly on reference must have zero distance")
+
+        zone_df_near = candles("up", rows=100, start=99.0, step=0.01)
+        zone_df_near.loc[zone_df_near.index[-1], ["open", "high", "low", "close"]] = [100.85, 101.05, 100.7, 101.0]
+        zone_near = ma._futures_entry_zone_status("LONG", {"support": 100.5}, zone_df_near, 0.2, 101.0)
+        assert_true(zone_near["near"] is True, "Entry outside but inside 0.6 percent tolerance must be near")
+        assert_true(0.59 <= zone_near["tolerance_pct"] <= 0.61, "Entry tolerance must be interpreted as 0.6 percent, not 0.006 percent")
+
+        zone_df_far = candles("up", rows=100, start=99.0, step=0.01)
+        zone_df_far.loc[zone_df_far.index[-1], ["open", "high", "low", "close"]] = [101.8, 102.2, 101.7, 102.0]
+        zone_far = ma._futures_entry_zone_status("LONG", {"support": 100.5}, zone_df_far, 0.2, 102.0)
+        assert_true(zone_far["touched"] is False and zone_far["near"] is False, "Far entry must not be touched or near")
+
+        assert_true(ma.nearest_support(100.0, [99.0, 101.0]) == 99.0, "nearest_support returns only levels below current price")
+        assert_true(ma.nearest_resistance(100.0, [99.0, 101.0]) == 101.0, "nearest_resistance returns only levels above current price")
+
+        short_room_ok = ma._futures_directional_room_context("SHORT", 100.0, 94.0, 103.0, 0.8)
+        assert_true(short_room_ok["reject"] is False, "SHORT with support far below entry must not be rejected for room")
+        short_room_bad = ma._futures_directional_room_context("SHORT", 100.0, 99.8, 103.0, 0.8)
+        assert_true(short_room_bad["reject"] is True, "SHORT near support must reject")
+        short_wrong_side = ma._futures_directional_room_context("SHORT", 100.0, 101.0, 103.0, 0.8)
+        assert_true(short_wrong_side["support"] is None and short_wrong_side["reject"] is False, "Support above SHORT entry must not be used for room")
+
+        long_room_ok = ma._futures_directional_room_context("LONG", 100.0, 97.0, 106.0, 0.8)
+        assert_true(long_room_ok["reject"] is False, "LONG with resistance far above entry must not be rejected for room")
+        long_room_bad = ma._futures_directional_room_context("LONG", 100.0, 97.0, 100.2, 0.8)
+        assert_true(long_room_bad["reject"] is True, "LONG near resistance must reject")
+        long_wrong_side = ma._futures_directional_room_context("LONG", 100.0, 97.0, 99.0, 0.8)
+        assert_true(long_wrong_side["resistance"] is None and long_wrong_side["reject"] is False, "Resistance below LONG entry must not be used for room")
+
+        ma._futures_level_context = lambda df: {"support": None, "resistance": None, "levels": {}}
+        short_real_reject = ma.futures_trigger_context("ADAUSDT", "SHORT", trigger_fixture("SHORT", 100.0), {"support": 99.8, "resistance": 102.0})
+        assert_true(short_real_reject["reason"] == "SHORT too close to support", "Real futures_trigger_context must reject SHORT when support below entry is too close")
+        short_real_pass = ma.futures_trigger_context("ADAUSDT", "SHORT", trigger_fixture("SHORT", 100.0), {"support": 94.0, "resistance": 102.0})
+        assert_true(short_real_pass.get("reason") != "SHORT too close to support", "Real futures_trigger_context must not reject SHORT when support below entry has enough room")
+        long_real_reject = ma.futures_trigger_context("XRPUSDT", "LONG", trigger_fixture("LONG", 100.0), {"support": 97.0, "resistance": 100.2})
+        assert_true(long_real_reject["reason"] == "LONG too close to resistance", "Real futures_trigger_context must reject LONG when resistance above entry is too close")
+        long_real_pass = ma.futures_trigger_context("XRPUSDT", "LONG", trigger_fixture("LONG", 100.0), {"support": 97.0, "resistance": 106.0})
+        assert_true(long_real_pass.get("reason") != "LONG too close to resistance", "Real futures_trigger_context must not reject LONG when resistance above entry has enough room")
+        ma._futures_level_context = original_level_context
+
         sample_signal = {
             "type": "FUTURES",
             "pair": "BTCUSDT",
@@ -183,6 +238,7 @@ def run():
     finally:
         ma.cached_market_data = original_cache
         ma.cached_futures_market_data = original_futures_cache
+        ma._futures_level_context = original_level_context
 
 
 if __name__ == "__main__":

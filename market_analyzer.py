@@ -3412,10 +3412,12 @@ def cached_futures_market_data(symbol, interval="15m", limit=250, ttl=MARKET_CON
         now = time.time()
         cached = MARKET_CONTEXT_CACHE.get(key)
         if cached and now - cached["time"] <= ttl:
+            _log_futures_data_source(symbol, interval, cached["df"])
             return cached["df"]
         df = get_futures_market_data(symbol, interval, limit=limit)
         if df is not None and not df.empty:
             MARKET_CONTEXT_CACHE[key] = {"time": now, "df": df}
+            _log_futures_data_source(symbol, interval, df)
         return df
     except Exception as e:
         print(f"cached_futures_market_data error {symbol} {interval}: {e}")
@@ -3532,6 +3534,26 @@ def _log_mtf_history_diagnostic(symbol, timeframe, df, required_rows=100, reject
         )
     except Exception as e:
         print(f"MTF_HISTORY_DIAGNOSTIC_ERROR symbol={symbol} timeframe={timeframe} error={type(e).__name__}")
+
+
+def _log_futures_data_source(symbol, timeframe, df):
+    try:
+        provider = "NONE"
+        if df is not None and len(df) > 0:
+            try:
+                provider = str(df.get("futures_data_provider", pd.Series(["UNKNOWN"])).iloc[-1])
+            except Exception:
+                provider = "UNKNOWN"
+        market_type = "FUTURES" if provider and provider not in {"NONE", "SPOT", "KUCOIN_SPOT"} else "SPOT_FALLBACK"
+        print(
+            "FUTURES_DATA_SOURCE "
+            f"symbol={symbol} "
+            f"timeframe={timeframe} "
+            f"provider={provider} "
+            f"market_type={market_type}"
+        )
+    except Exception:
+        pass
 
 
 def _futures_mtf_frame_status(df, timeframe, minimum_rows=100):
@@ -6314,6 +6336,7 @@ def futures_trigger_context(symbol, direction, trigger_df, setup_info):
         levels = _futures_level_context(trigger_df)
         support = levels.get("support") or setup_info.get("support")
         resistance = levels.get("resistance") or setup_info.get("resistance")
+        room = _futures_directional_room_context(direction, close, support, resistance, atr_val)
         trigger = None
         reason = None
         if direction == "LONG":
@@ -6331,7 +6354,9 @@ def futures_trigger_context(symbol, direction, trigger_df, setup_info):
                 trigger = trigger or "15m volume/momentum confirmation"
                 reason = reason or "volume and momentum confirm LONG"
             if resistance and (resistance - close) < max(atr_val * FUTURES_MIN_TP1_ATR_ROOM, close * 0.004):
+                _log_futures_room_diagnostic(symbol, direction, close, support, resistance, None, None, 0.0, FUTURES_MIN_RR, room, "REJECT_LONG_TOO_CLOSE_TO_RESISTANCE")
                 return {"ok": False, "stage": "INVALIDATED", "reason": "LONG too close to resistance"}
+            _log_futures_room_diagnostic(symbol, direction, close, support, resistance, None, None, 0.0, FUTURES_MIN_RR, room, "PASS")
         else:
             close_confirm = close < _safe_float(last["open"]) and close <= _safe_float(prev["close"]) and close <= ema20v * 1.002
             local_break_retest = _safe_float(last["high"]) >= _safe_float(prev["low"]) - atr_val * 0.35 and close < _safe_float(prev["low"])
@@ -6347,7 +6372,9 @@ def futures_trigger_context(symbol, direction, trigger_df, setup_info):
                 trigger = trigger or "15m volume/momentum confirmation"
                 reason = reason or "volume and momentum confirm SHORT"
             if support and (close - support) < max(atr_val * FUTURES_MIN_TP1_ATR_ROOM, close * 0.004):
+                _log_futures_room_diagnostic(symbol, direction, close, support, resistance, None, None, 0.0, FUTURES_MIN_RR, room, "REJECT_SHORT_TOO_CLOSE_TO_SUPPORT")
                 return {"ok": False, "stage": "INVALIDATED", "reason": "SHORT too close to support"}
+            _log_futures_room_diagnostic(symbol, direction, close, support, resistance, None, None, 0.0, FUTURES_MIN_RR, room, "PASS")
         if not trigger:
             adaptive_setup_lifecycle(symbol, "ARMED", "30m setup ready; waiting for 15m trigger close")
             return {"ok": False, "stage": "ARMED", "reason": "15m trigger not confirmed yet"}
@@ -6414,6 +6441,128 @@ def _log_setup_armed_evaluation_trace(
         pass
 
 
+def _futures_entry_zone_status(direction, setup, trigger_df, atr_val, close):
+    try:
+        setup = setup if isinstance(setup, dict) else {}
+        last = trigger_df.iloc[-1] if trigger_df is not None and len(trigger_df) else {}
+        candle_high = _safe_float(last.get("high") if hasattr(last, "get") else 0)
+        candle_low = _safe_float(last.get("low") if hasattr(last, "get") else 0)
+        reference = _safe_float(setup.get("support") if direction == "LONG" else setup.get("resistance"), 0.0)
+        if reference <= 0:
+            reference = _safe_float(setup.get("recent_low") if direction == "LONG" else setup.get("recent_high"), 0.0)
+        zone_low = reference
+        zone_high = reference
+        tolerance = max(_safe_float(atr_val) * 1.0, _safe_float(close) * 0.006) if close else 0.0
+        if close and zone_low and zone_high and zone_low <= close <= zone_high:
+            distance = 0.0
+        elif close and zone_low and zone_high:
+            distance = min(abs(close - zone_low), abs(close - zone_high))
+        else:
+            distance = 0.0
+        touched = bool(zone_low and zone_high and candle_low and candle_high and candle_low <= zone_high and candle_high >= zone_low)
+        near = bool(zone_low and zone_high and tolerance and distance <= tolerance)
+        return {
+            "zone_low": zone_low,
+            "zone_high": zone_high,
+            "distance": distance,
+            "distance_pct": (distance / close) * 100 if close else 0.0,
+            "tolerance": tolerance,
+            "tolerance_pct": (tolerance / close) * 100 if close else 0.0,
+            "touched": touched,
+            "near": near,
+        }
+    except Exception:
+        return {
+            "zone_low": 0.0,
+            "zone_high": 0.0,
+            "distance": 0.0,
+            "distance_pct": 0.0,
+            "tolerance": 0.0,
+            "tolerance_pct": 0.0,
+            "touched": False,
+            "near": False,
+        }
+
+
+def _log_futures_entry_zone_diagnostic(symbol, direction, trigger_df, entry, zone, trigger_soft, trigger_confirmed):
+    try:
+        provider = "UNKNOWN"
+        if trigger_df is not None and len(trigger_df) > 0:
+            try:
+                provider = str(trigger_df.get("futures_data_provider", pd.Series(["UNKNOWN"])).iloc[-1])
+            except Exception:
+                provider = "UNKNOWN"
+        print(
+            "FUTURES_ENTRY_ZONE_DIAGNOSTIC "
+            f"symbol={symbol} "
+            f"direction={direction} "
+            f"market_provider={provider} "
+            f"entry={round(_safe_float(entry), 8)} "
+            f"zone_low={round(_safe_float(zone.get('zone_low')), 8)} "
+            f"zone_high={round(_safe_float(zone.get('zone_high')), 8)} "
+            f"distance_pct={round(_safe_float(zone.get('distance_pct')), 5)} "
+            f"tolerance_pct={round(_safe_float(zone.get('tolerance_pct')), 5)} "
+            f"touched={bool(zone.get('touched'))} "
+            f"near={bool(zone.get('near'))} "
+            f"trigger_soft={bool(trigger_soft)} "
+            f"trigger_confirmed={bool(trigger_confirmed)}"
+        )
+    except Exception:
+        pass
+
+
+def _futures_directional_room_context(direction, entry, support, resistance, atr_val):
+    try:
+        entry = _safe_float(entry)
+        support = _safe_float(support, 0.0)
+        resistance = _safe_float(resistance, 0.0)
+        valid_support = support if support > 0 and support < entry else None
+        valid_resistance = resistance if resistance > 0 and resistance > entry else None
+        min_room = max(_safe_float(atr_val) * FUTURES_MIN_TP1_ATR_ROOM, entry * 0.004) if entry else 0.0
+        distance_to_support = (entry - valid_support) if valid_support else None
+        distance_to_resistance = (valid_resistance - entry) if valid_resistance else None
+        if direction == "LONG":
+            reject = valid_resistance is not None and distance_to_resistance < min_room
+            reason = "LONG too close to resistance" if reject else "valid resistance room" if valid_resistance else "no valid resistance above entry"
+        else:
+            reject = valid_support is not None and distance_to_support < min_room
+            reason = "SHORT too close to support" if reject else "valid support room" if valid_support else "no valid support below entry"
+        return {
+            "support": valid_support,
+            "resistance": valid_resistance,
+            "distance_to_support": distance_to_support,
+            "distance_to_resistance": distance_to_resistance,
+            "distance_to_support_pct": (distance_to_support / entry) * 100 if entry and distance_to_support is not None else None,
+            "distance_to_resistance_pct": (distance_to_resistance / entry) * 100 if entry and distance_to_resistance is not None else None,
+            "min_room": min_room,
+            "reject": reject,
+            "reason": reason,
+        }
+    except Exception:
+        return {"support": None, "resistance": None, "reject": False, "reason": "room diagnostic unavailable"}
+
+
+def _log_futures_room_diagnostic(symbol, direction, entry, support, resistance, stop, target, rr, required_rr, room, decision):
+    try:
+        print(
+            "FUTURES_ROOM_DIAGNOSTIC "
+            f"symbol={symbol} "
+            f"direction={direction} "
+            f"entry={round(_safe_float(entry), 8)} "
+            f"support={round(_safe_float(support), 8) if support is not None else 'None'} "
+            f"resistance={round(_safe_float(resistance), 8) if resistance is not None else 'None'} "
+            f"distance_to_support_pct={round(_safe_float(room.get('distance_to_support_pct')), 5) if room.get('distance_to_support_pct') is not None else 'None'} "
+            f"distance_to_resistance_pct={round(_safe_float(room.get('distance_to_resistance_pct')), 5) if room.get('distance_to_resistance_pct') is not None else 'None'} "
+            f"stop={round(_safe_float(stop), 8) if stop is not None else 'None'} "
+            f"target={round(_safe_float(target), 8) if target is not None else 'None'} "
+            f"calculated_rr={round(_safe_float(rr), 4)} "
+            f"required_rr={round(_safe_float(required_rr), 4)} "
+            f"decision={decision}"
+        )
+    except Exception:
+        pass
+
+
 def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger, trigger_df):
     try:
         confidence = _safe_float(signal.get("playbook_confidence", signal.get("confidence")), 0)
@@ -6427,19 +6576,13 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
         close = _safe_float(trigger_df["close"].iloc[-1]) if lower_tf_data_available else 0.0
         last = trigger_df.iloc[-1] if lower_tf_data_available else {}
         prev = trigger_df.iloc[-2] if lower_tf_data_available else {}
-        reference = _safe_float(setup.get("support") if direction == "LONG" else setup.get("resistance"), 0.0)
-        if reference <= 0:
-            reference = _safe_float(setup.get("recent_low") if direction == "LONG" else setup.get("recent_high"), 0.0)
-        candle_high = _safe_float(last.get("high") if hasattr(last, "get") else 0)
-        candle_low = _safe_float(last.get("low") if hasattr(last, "get") else 0)
         candle_open = _safe_float(last.get("open") if hasattr(last, "get") else 0)
         prev_close = _safe_float(prev.get("close") if hasattr(prev, "get") else close)
-        entry_distance = abs(close - reference) if reference and close else 0.0
-        entry_tolerance = max(atr_val * 1.0, close * 0.006) if close else 0.0
-        entry_distance_pct = (entry_distance / close) * 100 if close else 0.0
-        entry_tolerance_pct = (entry_tolerance / close) * 100 if close else 0.0
-        entry_zone_touched = bool(reference and candle_low and candle_high and candle_low <= reference <= candle_high)
-        entry_zone_near = bool(reference and entry_tolerance and entry_distance <= entry_tolerance)
+        entry_zone = _futures_entry_zone_status(direction, setup, trigger_df, atr_val, close)
+        entry_distance_pct = entry_zone.get("distance_pct", 0.0)
+        entry_tolerance_pct = entry_zone.get("tolerance_pct", 0.0)
+        entry_zone_touched = bool(entry_zone.get("touched"))
+        entry_zone_near = bool(entry_zone.get("near"))
         candle_direction_aligned = (
             (direction == "LONG" and (close >= candle_open or close >= prev_close))
             or (direction == "SHORT" and (close <= candle_open or close <= prev_close))
@@ -6458,6 +6601,7 @@ def _soft_armed_futures_approval(symbol, direction, signal, bias, setup, trigger
         trigger_stage = str(trigger.get("stage") or "UNKNOWN").upper()
         trigger_missing = trigger_stage == "ARMED" and ("UNAVAILABLE" in str(trigger.get("reason", "")).upper() or "INVALID 15M" in str(trigger.get("reason", "")).upper())
         lower_tf_trigger_confirmed = bool(trigger.get("ok"))
+        _log_futures_entry_zone_diagnostic(symbol, direction, trigger_df, close, entry_zone, lower_tf_soft_trigger, lower_tf_trigger_confirmed)
         confirmed_trigger_flow = bool(lower_tf_trigger_confirmed or trigger_stage == "CONFIRMED")
         reason = trigger.get("reason") or "15m trigger still armed"
         allowed = (
