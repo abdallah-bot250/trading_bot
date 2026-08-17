@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ page.title }} | Nexora AI Trader</title>
-<link rel="stylesheet" href="/static/premium.css?v=saas-layer-1">
+<link rel="stylesheet" href="/static/premium.css?v=20260817_factory1">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <script>(function(){try{document.documentElement.setAttribute("data-theme",localStorage.getItem("nexora-theme")||"dark")}catch(e){document.documentElement.setAttribute("data-theme","dark")}})();</script>
 </head>
@@ -39,6 +39,22 @@
         <a href="/dashboard">Back to Dashboard</a>
       </div>
     </header>
+
+    <section class="nx-page-story nx-saas-story" aria-label="{{ page.title }} overview">
+      <div>
+        <span>Product Layer</span>
+        <h2>{{ page.title }} inside Nexora</h2>
+        <p>
+          {{ page.summary }} This screen is part of the SaaS presentation layer: polished, read-only, and safe.
+          Available features are labeled honestly, while beta and coming-soon items do not pretend to be live backend systems.
+        </p>
+      </div>
+      <div class="nx-page-story-steps">
+        <article><strong>01</strong><span>Feature status</span></article>
+        <article><strong>02</strong><span>Verified data</span></article>
+        <article><strong>03</strong><span>Safe action</span></article>
+      </div>
+    </section>
 
     {% if page_key == 'pricing' %}
     <section class="nx-panel">
@@ -154,6 +170,6 @@
 </main>
 <script>window.NEXORA_LANG = "{{ current_lang }}";</script>
 <script src="/static/i18n.js?v=20260714_lang6"></script>
-<script src="/static/nexora-ui.js?v=saas-layer-1"></script>
+<script src="/static/nexora-ui.js?v=20260817_factory1"></script>
 </body>
 </html>

@@ -2560,7 +2560,7 @@ def _dashboard_section(section_key):
                 ("Email", user.get("email")),
                 ("Telegram Chat", user.get("chat_id") or "Not linked"),
                 ("Plan", user.get("plan_label")),
-                ("Profit", f"${round(float(user.get('profit') or 0), 2)}"),
+                ("Bot Delivery", "Ready" if user.get("chat_id") else "Link Telegram"),
             ],
             "actions": [("Connect Telegram", "/bot-check"), ("Dashboard", "/dashboard")],
         },
