@@ -3862,3 +3862,277 @@ html[dir="ltr"] .nx-auth-final .nx-auth-card-final{text-align:left!important}
   .nx-auth-final .nx-auth-page{padding-top:132px!important}
   .nx-auth-final .nx-auth-card-final{padding:22px 18px!important}
 }
+
+/* === NEXORA DASHBOARD GLOBAL EXCHANGE POLISH v20260817 === */
+body.nx-dashboard-hard-ui {
+  background:
+    radial-gradient(circle at 78% -8%, rgba(212, 175, 55, .18), transparent 34rem),
+    radial-gradient(circle at 18% 4%, rgba(0, 194, 255, .12), transparent 32rem),
+    radial-gradient(circle at 70% 62%, rgba(23, 201, 100, .10), transparent 42rem),
+    linear-gradient(135deg, #030711 0%, #08111f 44%, #02050a 100%) !important;
+}
+
+body.nx-dashboard-hard-ui::before {
+  background:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px) !important;
+  background-size: 42px 42px !important;
+  opacity: .55 !important;
+}
+
+body.nx-dashboard-hard-ui .page-wrap {
+  padding-bottom: 54px !important;
+}
+
+body.nx-dashboard-hard-ui .hero {
+  position: relative !important;
+  overflow: hidden !important;
+  padding: 30px !important;
+  text-align: left !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(212, 175, 55, .18) !important;
+  background:
+    linear-gradient(120deg, rgba(8,17,31,.96), rgba(13,24,42,.86)),
+    radial-gradient(circle at 88% 16%, rgba(212,175,55,.18), transparent 24rem) !important;
+  box-shadow: 0 26px 90px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.06) !important;
+}
+
+html[dir="rtl"] body.nx-dashboard-hard-ui .hero {
+  text-align: right !important;
+}
+
+body.nx-dashboard-hard-ui .hero::after {
+  content: "" !important;
+  position: absolute !important;
+  width: 440px !important;
+  height: 440px !important;
+  right: -150px !important;
+  top: -220px !important;
+  border-radius: 50% !important;
+  background: radial-gradient(circle, rgba(212,175,55,.22), transparent 68%) !important;
+  pointer-events: none !important;
+}
+
+body.nx-dashboard-hard-ui .hero h1 {
+  position: relative !important;
+  z-index: 1 !important;
+  margin: 18px 0 8px !important;
+  color: #f8fafc !important;
+  font-size: clamp(34px, 4.2vw, 58px) !important;
+  line-height: 1.02 !important;
+  letter-spacing: 0 !important;
+  text-shadow: 0 18px 42px rgba(0,0,0,.28) !important;
+}
+
+body.nx-dashboard-hard-ui .hero h1::before {
+  content: "NEXORA AI TRADER" !important;
+  display: block !important;
+  width: fit-content !important;
+  margin-bottom: 14px !important;
+  padding: 8px 12px !important;
+  border-radius: 999px !important;
+  color: #08111f !important;
+  background: linear-gradient(135deg, #f7d774, #d4af37) !important;
+  font-size: 12px !important;
+  font-weight: 1000 !important;
+  letter-spacing: .13em !important;
+}
+
+body.nx-dashboard-hard-ui .hero p {
+  position: relative !important;
+  z-index: 1 !important;
+  max-width: 740px !important;
+  color: #b9c7d8 !important;
+  font-size: 16px !important;
+  line-height: 1.75 !important;
+}
+
+body.nx-dashboard-hard-ui .status-strip,
+body.nx-dashboard-hard-ui .premium-status-grid,
+body.nx-dashboard-hard-ui .quick-actions,
+body.nx-dashboard-hard-ui .nx-command-bar,
+body.nx-dashboard-hard-ui .nx-sale-grid,
+body.nx-dashboard-hard-ui .nx-ai-grid,
+body.nx-dashboard-hard-ui .nx-table-card,
+body.nx-dashboard-hard-ui .plan-dashboard,
+body.nx-dashboard-hard-ui .glass-box,
+body.nx-dashboard-hard-ui .box,
+body.nx-dashboard-hard-ui .plans {
+  max-width: 1280px !important;
+}
+
+body.nx-dashboard-hard-ui .status-pill,
+body.nx-dashboard-hard-ui .premium-status-card,
+body.nx-dashboard-hard-ui .nx-status-tile,
+body.nx-dashboard-hard-ui .nx-sale-card,
+body.nx-dashboard-hard-ui .nx-ai-card,
+body.nx-dashboard-hard-ui .nx-table-card,
+body.nx-dashboard-hard-ui .plan-dashboard,
+body.nx-dashboard-hard-ui .dashboard-panel,
+body.nx-dashboard-hard-ui .widget,
+body.nx-dashboard-hard-ui .glass-box,
+body.nx-dashboard-hard-ui .box,
+body.nx-dashboard-hard-ui .card {
+  border-radius: 18px !important;
+  border: 1px solid rgba(148, 163, 184, .16) !important;
+  background:
+    radial-gradient(circle at 96% 0%, rgba(212,175,55,.10), transparent 19rem),
+    linear-gradient(145deg, rgba(12,24,42,.92), rgba(7,16,29,.96)) !important;
+  box-shadow: 0 20px 70px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.055) !important;
+  backdrop-filter: blur(22px) !important;
+}
+
+body.nx-dashboard-hard-ui .status-strip {
+  justify-content: flex-start !important;
+  gap: 10px !important;
+}
+
+body.nx-dashboard-hard-ui .status-pill {
+  padding: 11px 14px !important;
+  color: #dbe7f5 !important;
+}
+
+body.nx-dashboard-hard-ui .premium-status-grid,
+body.nx-dashboard-hard-ui .nx-sale-grid,
+body.nx-dashboard-hard-ui .widget-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 14px !important;
+}
+
+body.nx-dashboard-hard-ui .premium-status-card,
+body.nx-dashboard-hard-ui .nx-sale-card,
+body.nx-dashboard-hard-ui .widget,
+body.nx-dashboard-hard-ui .card.mini-stat {
+  min-height: 122px !important;
+  padding: 18px !important;
+}
+
+body.nx-dashboard-hard-ui .premium-status-card span,
+body.nx-dashboard-hard-ui .nx-sale-card span,
+body.nx-dashboard-hard-ui .widget span,
+body.nx-dashboard-hard-ui .card h3 {
+  color: #d4af37 !important;
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  letter-spacing: .10em !important;
+}
+
+body.nx-dashboard-hard-ui .premium-status-card strong,
+body.nx-dashboard-hard-ui .nx-sale-card strong,
+body.nx-dashboard-hard-ui .widget strong,
+body.nx-dashboard-hard-ui .card p {
+  color: #f8fafc !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+body.nx-dashboard-hard-ui .quick-actions {
+  justify-content: flex-start !important;
+}
+
+body.nx-dashboard-hard-ui .quick-actions button,
+body.nx-dashboard-hard-ui button,
+body.nx-dashboard-hard-ui .tier-actions a,
+body.nx-dashboard-hard-ui .premium-upgrade-box a,
+body.nx-dashboard-hard-ui .manual,
+body.nx-dashboard-hard-ui .pay {
+  border-radius: 12px !important;
+  border: 1px solid rgba(212, 175, 55, .24) !important;
+  background: linear-gradient(135deg, rgba(212,175,55,.95), rgba(247,215,116,.92)) !important;
+  color: #08111f !important;
+  box-shadow: 0 14px 32px rgba(212,175,55,.18) !important;
+}
+
+body.nx-dashboard-hard-ui .quick-actions a:nth-child(2) button,
+body.nx-dashboard-hard-ui .quick-actions a:nth-child(3) button,
+body.nx-dashboard-hard-ui .quick-actions a:nth-child(4) button,
+body.nx-dashboard-hard-ui .quick-actions a:nth-child(5) button {
+  background: rgba(10, 24, 42, .86) !important;
+  color: #e6edf7 !important;
+}
+
+body.nx-dashboard-hard-ui input,
+body.nx-dashboard-hard-ui select {
+  border: 1px solid rgba(148,163,184,.20) !important;
+  border-radius: 12px !important;
+  background: rgba(3, 10, 20, .72) !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035) !important;
+}
+
+body.nx-dashboard-hard-ui .section-title {
+  margin-top: 34px !important;
+  color: #f8fafc !important;
+  font-size: 24px !important;
+  letter-spacing: 0 !important;
+}
+
+body.nx-dashboard-hard-ui .plans {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)) !important;
+  gap: 16px !important;
+  padding: 0 !important;
+}
+
+body.nx-dashboard-hard-ui .card {
+  width: auto !important;
+  min-height: 100% !important;
+  text-align: left !important;
+  transform: none !important;
+  animation: none !important;
+}
+
+html[dir="rtl"] body.nx-dashboard-hard-ui .card {
+  text-align: right !important;
+}
+
+body.nx-dashboard-hard-ui .card::before {
+  opacity: 0 !important;
+}
+
+body.nx-dashboard-hard-ui .price {
+  color: #f7d774 !important;
+  font-size: 28px !important;
+}
+
+body.nx-dashboard-hard-ui .helper-text,
+body.nx-dashboard-hard-ui .notification-row,
+body.nx-dashboard-hard-ui .activity-row {
+  border-radius: 14px !important;
+  border: 1px solid rgba(148,163,184,.12) !important;
+  background: rgba(8,17,31,.62) !important;
+  color: #cbd5e1 !important;
+}
+
+body.nx-dashboard-hard-ui .nx-table th,
+body.nx-dashboard-hard-ui .nx-table td {
+  white-space: nowrap !important;
+}
+
+@media (max-width: 1180px) {
+  body.nx-dashboard-hard-ui .premium-status-grid,
+  body.nx-dashboard-hard-ui .nx-sale-grid,
+  body.nx-dashboard-hard-ui .widget-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 680px) {
+  body.nx-dashboard-hard-ui .hero {
+    padding: 22px !important;
+  }
+  body.nx-dashboard-hard-ui .premium-status-grid,
+  body.nx-dashboard-hard-ui .nx-sale-grid,
+  body.nx-dashboard-hard-ui .widget-grid {
+    grid-template-columns: 1fr !important;
+  }
+  body.nx-dashboard-hard-ui .quick-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+  body.nx-dashboard-hard-ui .quick-actions a,
+  body.nx-dashboard-hard-ui .quick-actions form,
+  body.nx-dashboard-hard-ui .quick-actions button {
+    width: 100% !important;
+  }
+}

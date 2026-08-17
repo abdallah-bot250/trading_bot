@@ -687,7 +687,7 @@ input, select {
 @media(max-width:900px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid{grid-template-columns:1fr 1fr}}@media(max-width:620px){.nx-command-bar,.nx-sale-grid,.nx-ai-grid,.nx-kv{grid-template-columns:1fr}.nx-table-card{overflow-x:auto}}
 
 </style>
-<link rel="stylesheet" href="/static/premium.css?v=20260817_dash_real1">
+<link rel="stylesheet" href="/static/premium.css?v=20260817_dash_real2">
 <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
 <link rel="manifest" href="/static/site.webmanifest">
 <meta name="theme-color" content="#20D68A">
@@ -848,8 +848,8 @@ input, select {
 </div>
 {% endif %}
 
-    <h1>🚀 Nexora AI Trader</h1>
-    <p>AI-assisted trading console for signals, risk controls, and Telegram delivery.</p>
+    <h1>Nexora Trading Console</h1>
+    <p>Live signal intelligence, risk controls, Telegram delivery, and verified performance tracking in one premium workspace.</p>
 
     <div class="status-strip">
         <div class="status-pill">
@@ -979,14 +979,14 @@ input, select {
 
         <a href="/manual" style="text-decoration:none;">
             <button type="button" style="background:#38bdf8; color:white; width:auto; padding:14px 30px; border-radius:14px; font-weight:bold;">
-                📘 User Guide
+                User Guide
             </button>
         </a>
 
         <form action="/logout" method="POST" style="display:inline-block;margin:0;">
             {{ csrf_field() }}
             <button type="submit" style="background:#ef4444; color:white;">
-                🚪 Logout
+                Logout
             </button>
         </form>
     </div>
@@ -1221,7 +1221,7 @@ input, select {
 
     <!-- AFFILIATE PROGRAM -->
     <div class="glass-box" style="margin-top:30px; padding:24px; max-width:1000px; margin-left:auto; margin-right:auto;">
-        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">💸 Affiliate Program</h2>
+        <h2 style="color:#38bdf8; margin-top:0; margin-bottom:10px;">Affiliate Program</h2>
         <p style="color:#cbd5e1; margin-top:0;">Earn by sharing the bot — every new subscription from your link is tracked for you.</p>
 
         <p>🔗 <b>Your referral link:</b></p>
@@ -1232,7 +1232,7 @@ input, select {
             <input id="refCode" type="text" value="{{referral_code}}" readonly
                    style="width:180px; padding:12px; border-radius:10px; border:none; background:#0f172a; color:white;">
             <button type="button" onclick="copyRef()" style="background:#38bdf8; color:white; width:auto; padding:12px 20px;">
-                📋 Copy
+                Copy
             </button>
         </div>
         {% if referral_qr_url %}
@@ -1294,7 +1294,7 @@ input, select {
     <div style="margin-top:22px; text-align:center;">
         <a href="/admin">
             <button style="background:#f59e0b; color:white; width:auto; padding:12px 25px;">
-                👑 Admin Dashboard
+                Admin Dashboard
             </button>
         </a>
 <!-- Legacy owner upgrade button removed from commercial UI. -->
@@ -1304,7 +1304,7 @@ input, select {
 
 <!-- BOT TOGGLE -->
 <div class="box" style="max-width:850px; margin-top:25px;">
-    <h2 style="margin-top:0;">🤖 Bot Control</h2>
+    <h2 style="margin-top:0;">Bot Control</h2>
     <p style="color:#cbd5e1; line-height:1.8;">
         Control signal delivery or auto-trading execution based on your plan and current settings.
     </p>
@@ -1313,20 +1313,20 @@ input, select {
         {{ csrf_field() }}
         {% if bot_active == 1 %}
             <button style="background:#dc2626; color:white; width:auto; padding:12px 25px;">
-                🔴 Pause Bot
+                Pause Bot
             </button>
         {% else %}
             <button style="background:#16a34a; color:white; width:auto; padding:12px 25px;">
-                🟢 Start Bot
+                Start Bot
             </button>
         {% endif %}
     </form>
 
     <div class="helper-text">
         {% if bot_active == 1 %}
-            🟢 The bot is active and will send trades automatically based on market conditions and your plan.
+            The bot is active and will send trades automatically based on market conditions and your plan.
         {% else %}
-            🔴 The bot is paused — start it to receive signals or run auto-trading.
+            The bot is paused — start it to receive signals or run auto-trading.
         {% endif %}
     </div>
 </div>
@@ -1375,7 +1375,7 @@ input, select {
 <div id="vip-settings" class="glass-box" style="max-width:900px; margin:30px auto; padding:25px;">
     <h2 style="color:#facc15; margin-top:0;">Elite Auto Trading Settings</h2>
     <p style="color:#cbd5e1; text-align:center; line-height:1.8;">
-        Connect your API and configure trading settings — the bot cannot withdraw or deposit, only execute trades.
+        Connect your API and configure trading settings. The bot cannot withdraw or deposit, only execute trades.
     </p>
 
     <form action="/save-api" method="POST" style="margin-bottom:20px;">
@@ -1385,7 +1385,7 @@ input, select {
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
         <input name="api_secret" type="text" placeholder="Bybit API Secret"
                style="width:100%; padding:12px; margin-bottom:10px; border-radius:10px; border:none; background:#0f172a; color:white;">
-        <button type="submit" style="background:#38bdf8; color:white;">💾 Save API</button>
+        <button type="submit" style="background:#38bdf8; color:white;">Save API</button>
     </form>
 
     <form action="/save-settings" method="POST">
@@ -1438,12 +1438,12 @@ input, select {
             Stop-loss required for every auto trade
         </label>
 
-        <button type="submit" style="background:#22c55e; color:white;">✅ Save Trading Settings</button>
+        <button type="submit" style="background:#22c55e; color:white;">Save Trading Settings</button>
     </form>
 </div>
 {% endif %}
 
-<h2 class="section-title">Subscription Plans</h2>
+<h2 class="section-title">Plan Management</h2>
 <div style="text-align:center; margin:-8px 0 22px;">
     <a href="/invoice-history" style="color:#38bdf8; text-decoration:none; font-weight:700;">Invoice History</a>
 </div>
@@ -1667,6 +1667,6 @@ window.NEXORA_LANG = "{{ current_lang }}";
 </script>
 <script src="/static/i18n.js?v=20260714_lang6"></script>
 
-<script src="/static/nexora-ui.js?v=20260817_dash_real1"></script>
+<script src="/static/nexora-ui.js?v=20260817_dash_real2"></script>
 </body>
 </html>
