@@ -86,6 +86,128 @@
       {% endfor %}
     </section>
 
+    {% if page.title == 'My Plan' %}
+    <section class="nx-plan-catalog" id="subscription-plans" aria-label="Subscription plans">
+      <div class="nx-panel-head">
+        <div>
+          <span>Subscription Catalog</span>
+          <h2>Choose your active plan</h2>
+        </div>
+        <a href="/invoice-history">Invoice History</a>
+      </div>
+      <p class="nx-plan-catalog-note">
+        These are the same checkout and manual-payment actions used across Nexora. No payment route or subscription logic is changed here.
+      </p>
+
+      <div class="plans nx-plan-catalog-grid">
+        <article class="card {% if user.plan == 'basic' %}current-plan{% endif %}">
+          {% if user.plan == "basic" %}<div class="current-badge">YOUR CURRENT PLAN</div>{% endif %}
+          <h2>Basic</h2>
+          <div class="price"><span>$49</span> $25</div>
+          <div class="current-badge">Limited Time Offer</div>
+          <ul>
+            <li>5 signals per day</li>
+            <li>Telegram delivery</li>
+            <li>Basic dashboard</li>
+            <li>Best for testing signal quality</li>
+          </ul>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="basic">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe</button>
+          </form>
+          <a href="/manual-payment/basic"><button class="manual">Manual Payment</button></a>
+        </article>
+
+        <article class="card {% if user.plan == 'pro' %}current-plan{% endif %}">
+          {% if user.plan == "pro" %}<div class="current-badge">YOUR CURRENT PLAN</div>{% endif %}
+          <h2>Pro</h2>
+          <div class="price"><span>$119</span> $59.99</div>
+          <div class="current-badge">Limited Time Offer</div>
+          <ul>
+            <li>Everything in Basic</li>
+            <li>AI analysis</li>
+            <li>Portfolio tracker</li>
+            <li>Risk analysis and history</li>
+          </ul>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="pro">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe</button>
+          </form>
+          <a href="/manual-payment/pro"><button class="manual">Manual Payment</button></a>
+        </article>
+
+        <article class="card vip {% if user.plan == 'vip' %}current-plan{% endif %}">
+          {% if user.plan == "vip" %}<div class="current-badge">YOUR CURRENT PLAN</div>{% endif %}
+          <h2>Elite</h2>
+          <div class="price"><span>$199</span> $99.99</div>
+          <div class="current-badge">Limited Time Offer</div>
+          <ul>
+            <li>Everything in Pro</li>
+            <li>Priority support</li>
+            <li>Live scanner access</li>
+            <li>Advanced AI signal context</li>
+          </ul>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="vip">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe</button>
+          </form>
+          <a href="/manual-payment/vip"><button class="manual">Manual Payment</button></a>
+        </article>
+
+        <article class="card featured {% if user.plan == 'pro_2y' %}current-plan{% endif %}">
+          {% if user.plan == "pro_2y" %}<div class="current-badge">YOUR CURRENT PLAN</div>{% endif %}
+          <h2>Pro 2 Years</h2>
+          <div class="price"><span>$1499</span> $999</div>
+          <div class="current-badge">Long-Term Access</div>
+          <ul>
+            <li>2 years access</li>
+            <li>All Pro features</li>
+            <li>AI analysis and risk filters</li>
+            <li>Telegram signal delivery</li>
+          </ul>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="pro_2y">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe</button>
+          </form>
+          <a href="/manual-payment/pro_2y"><button class="manual">Manual Payment</button></a>
+        </article>
+
+        <article class="card featured">
+          <div class="current-badge">Separate Market Subscription</div>
+          <h2>VIP ALL FOREX</h2>
+          <div class="price"><span>$299</span> $150 <small>/ month</small></div>
+          <div class="current-badge">Yearly: $1250 instead of $1800</div>
+          <ul>
+            <li>Forex-only signal access</li>
+            <li>Major Forex pairs and Gold/Silver when providers are healthy</li>
+            <li>Runs alongside your crypto plan</li>
+            <li>Forex auto trade is not available yet</li>
+          </ul>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="vip_all_forex">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe Monthly</button>
+          </form>
+          <form action="/create-payment" method="POST">
+            {{ csrf_field() }}
+            <input type="hidden" name="plan" value="vip_all_forex_yearly">
+            <input type="text" name="coupon" placeholder="Coupon code">
+            <button class="pay">Subscribe Yearly</button>
+          </form>
+        </article>
+      </div>
+    </section>
+    {% endif %}
+
     <section class="nx-product-grid nx-product-grid-three">
       <article class="nx-product-panel">
         <div class="nx-panel-head">

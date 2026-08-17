@@ -4606,3 +4606,169 @@ body.nx-dashboard-hard-ui .plans .card.vip {
     border-radius: 20px !important;
   }
 }
+
+/* === NEXORA PLAN VISIBILITY FIX v20260817 === */
+body.nx-dashboard-hard-ui #subscription-plans,
+body.nx-product-console-page #subscription-plans {
+  scroll-margin-top: 28px !important;
+}
+
+body.nx-dashboard-hard-ui .plans,
+body.nx-product-console-page .nx-plan-catalog-grid {
+  display: grid !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 18px !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog {
+  margin: 22px 0 !important;
+  padding: 22px !important;
+  border-radius: 24px !important;
+  border: 1px solid rgba(212,175,55,.24) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(212,175,55,.15), transparent 18rem),
+    linear-gradient(145deg, rgba(8,17,31,.92), rgba(4,11,22,.96)) !important;
+  box-shadow: 0 24px 80px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .nx-panel-head {
+  align-items: center !important;
+  margin-bottom: 10px !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .nx-panel-head h2 {
+  margin: 6px 0 0 !important;
+  color: #fff !important;
+  font-size: clamp(24px, 2.6vw, 38px) !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .nx-panel-head a {
+  padding: 10px 14px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(212,175,55,.34) !important;
+  color: #fff4cf !important;
+  background: rgba(212,175,55,.10) !important;
+  text-decoration: none !important;
+  font-weight: 900 !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog-note {
+  margin: 0 0 18px !important;
+  color: #9fb0c4 !important;
+  line-height: 1.7 !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .card {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 470px !important;
+  padding: 22px !important;
+  border-radius: 22px !important;
+  border: 1px solid rgba(212,175,55,.24) !important;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(212,175,55,.16), transparent 12rem),
+    linear-gradient(145deg, rgba(9,20,35,.96), rgba(4,11,22,.98)) !important;
+  box-shadow: 0 22px 70px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .card.featured,
+body.nx-product-console-page .nx-plan-catalog .card.vip,
+body.nx-product-console-page .nx-plan-catalog .card.current-plan {
+  border-color: rgba(212,175,55,.50) !important;
+  box-shadow: 0 28px 95px rgba(212,175,55,.10), 0 22px 70px rgba(0,0,0,.36) !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .card h2 {
+  margin: 0 0 12px !important;
+  color: #fff !important;
+  font-size: 24px !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .price {
+  color: #f7d774 !important;
+  font-size: 28px !important;
+  font-weight: 1000 !important;
+  letter-spacing: -.02em !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .price span {
+  color: #94a3b8 !important;
+  font-size: 17px !important;
+  text-decoration: line-through !important;
+  margin-inline-end: 8px !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog .current-badge {
+  width: fit-content !important;
+  margin: 8px 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(212,175,55,.34) !important;
+  color: #f7d774 !important;
+  background: rgba(212,175,55,.13) !important;
+  font-size: 11px !important;
+  font-weight: 1000 !important;
+  letter-spacing: .08em !important;
+  text-transform: uppercase !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog ul {
+  flex: 1 !important;
+  margin: 14px 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+  color: #cbd5e1 !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog li {
+  padding: 8px 0 !important;
+  border-bottom: 1px solid rgba(148,163,184,.08) !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog li::before {
+  content: "✓" !important;
+  color: #17c964 !important;
+  font-weight: 1000 !important;
+  margin-inline-end: 8px !important;
+}
+
+body.nx-product-console-page .nx-plan-catalog input[name="coupon"] {
+  width: 100% !important;
+  margin: 0 0 10px !important;
+  padding: 12px 13px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(148,163,184,.24) !important;
+  background: rgba(3,10,20,.78) !important;
+  color: #fff !important;
+}
+
+body.nx-dashboard-hard-ui .plans .pay,
+body.nx-dashboard-hard-ui .plans .manual,
+body.nx-product-console-page .nx-plan-catalog .pay,
+body.nx-product-console-page .nx-plan-catalog .manual {
+  width: 100% !important;
+  min-height: 44px !important;
+  border-radius: 13px !important;
+  border: 1px solid rgba(212,175,55,.34) !important;
+  font-weight: 950 !important;
+  cursor: pointer !important;
+}
+
+body.nx-dashboard-hard-ui .plans .pay,
+body.nx-product-console-page .nx-plan-catalog .pay {
+  color: #101826 !important;
+  background: linear-gradient(135deg, #f7d774, #d4af37) !important;
+  box-shadow: 0 16px 36px rgba(212,175,55,.22) !important;
+}
+
+body.nx-dashboard-hard-ui .plans .manual,
+body.nx-product-console-page .nx-plan-catalog .manual {
+  margin-top: 10px !important;
+  color: #eaf2fb !important;
+  background: rgba(3,10,20,.74) !important;
+}
